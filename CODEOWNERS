@@ -1,0 +1,37 @@
+# CODEOWNERS
+#
+# This file establishes ownership for two surfaces:
+#
+#   1. `.review/**` — Tier 3 artifact handoff payloads per ADR-0006 / ADR-0007.
+#      Belt-and-suspenders for the `.github/workflows/artifact-review-guard.yml`
+#      label-gated merge guard: even if a future change weakens that workflow,
+#      CODEOWNERS review on `.review/**` provides a second policy surface.
+#
+#   2. `agent/vendor/pi/{VERSION,CHECKSUMS}` — the pi runtime trust pin per
+#      ADR-0009. A malicious bump landing a forged digest + matching forged
+#      release tag would defeat `fetch_pi_binary()`'s checksum gate. Requiring
+#      named-reviewer approval on every bump PR closes that path. The same
+#      logic applies to `agent/vendor/nvm/{VERSION,CHECKSUMS}` per ADR-0010
+#      — the nvm installer trust root sha256-gates a curl-to-bash, so a
+#      malicious bump would defeat ih_ensure_nvm's verify-then-execute order.
+#      Extended to `agent/vendor/{gh,yq,shellcheck}/{VERSION,CHECKSUMS}` per
+#      ADR-0011 and `agent/vendor/gitleaks/{VERSION,CHECKSUMS}` per ADR-0037
+#      — each is a separate sha256-pinned trust root with the same
+#      malicious-co-mutation vector.
+#
+# All other paths are intentionally unowned — no default CODEOWNERS behavior
+# is introduced elsewhere in the repo by this file.
+
+/.review/** @pdavis
+/agent/vendor/pi/VERSION @pdavis
+/agent/vendor/pi/CHECKSUMS @pdavis
+/agent/vendor/nvm/VERSION @pdavis
+/agent/vendor/nvm/CHECKSUMS @pdavis
+/agent/vendor/gh/VERSION @pdavis
+/agent/vendor/gh/CHECKSUMS @pdavis
+/agent/vendor/yq/VERSION @pdavis
+/agent/vendor/yq/CHECKSUMS @pdavis
+/agent/vendor/shellcheck/VERSION @pdavis
+/agent/vendor/shellcheck/CHECKSUMS @pdavis
+/agent/vendor/gitleaks/VERSION @pdavis
+/agent/vendor/gitleaks/CHECKSUMS @pdavis

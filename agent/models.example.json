@@ -1,0 +1,57 @@
+// agent/models.json — pi custom model registry
+//
+// Pi's built-in `github-copilot` provider catalog is hardcoded per pi release
+// (docs/providers.md: "For each provider, pi knows all available models. The
+// list is updated with every pi release."). This file lets us add Copilot
+// models ahead of the next pi release using pi's documented merge-by-id
+// semantics:
+//
+//   - Built-in models are kept.
+//   - Custom models are upserted by `id` within the provider.
+//   - If a custom model `id` matches a built-in model `id`, the custom model
+//     replaces that built-in model.
+//   - If a custom model `id` is new, it is added alongside built-in models.
+//
+// Prerequisite for any new Copilot model: it must be enabled in the VS Code
+// Copilot Chat model picker (Settings → Models → Manage). The Copilot proxy
+// will not serve a model your account has not enabled there, regardless of
+// what this file says.
+//
+// Upstream tier gates: Copilot subscription tier (free / pro / pro+ /
+// business / enterprise / max) gates which models the proxy will serve. A
+// model excluded from your tier (e.g. MAI-Code-1-Flash on enterprise as of
+// 2026-06-07) cannot be unlocked locally; no models.json entry will help.
+//
+// To add a model, uncomment the github-copilot block below and append an
+// entry with at minimum `id` and `name`. The full schema is in the installed
+// pi package: <pi_install>/docs/models.md ("Model Configuration" table).
+// Pi requires any provider object to specify at least one of `baseUrl`,
+// `headers`, `compat`, `modelOverrides`, or a non-empty `models` array — an
+// empty stub block is rejected at load time, so we leave the block out
+// entirely until a model is actually being added.
+//
+// Verify after editing: `pi --list-models <pattern>` should resolve the new
+// id. JSONC comments and trailing commas are supported.
+//
+// Example (do not enable until the model is exposed by Copilot to your tier
+// AND enabled in your VS Code Copilot Chat picker):
+//
+//   "providers": {
+//     "github-copilot": {
+//       "models": [
+//         {
+//           "id": "mai-code-1-flash",
+//           "name": "MAI Code 1 Flash",
+//           "reasoning": false,
+//           "input": ["text"],
+//           "contextWindow": 200000,
+//           "maxTokens": 16384
+//         }
+//       ]
+//     }
+//   }
+//
+// See: ADR-0026 (forward-fix pattern).
+{
+  "providers": {}
+}

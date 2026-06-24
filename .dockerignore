@@ -1,0 +1,78 @@
+# .dockerignore — trims the build context for packaging/zeta/Dockerfile.
+#
+# Repo root is the build context (Dockerfile needs agent/, adrs/, scripts/,
+# packaging/zeta/, agent/vendor/pi/CHECKSUMS). Without these ignore rules,
+# BuildKit would transfer .git/, .review/, drafts/, etc. — bloating context
+# and risking secrets-in-layers (docker does not read .gitignore).
+
+# --- VCS ------------------------------------------------------------------
+**/.git
+**/.github
+**/.gitignore
+**/.gitattributes
+
+# --- Editor / OS noise ----------------------------------------------------
+**/.DS_Store
+**/.idea
+**/.vscode
+**/*.swp
+**/*~
+
+# --- Lint / CI metadata ---------------------------------------------------
+**/.markdownlint-cli2.yaml
+**/.markdownlintignore
+**/.shellcheckrc
+
+# --- Tier 3 artifacts (NEVER merge to image) ------------------------------
+.review/
+
+# --- Local cache / dev clutter --------------------------------------------
+**/.cache/
+**/node_modules/
+**/dist/
+**/build/
+**/coverage/
+**/*.log
+
+# --- Pi runtime data that must never leak into an image layer -------------
+agent/auth.json
+agent/bin/
+agent/sessions/
+agent/logs/
+agent/cache/
+agent/tmp/
+agent/models.json
+agent/keybindings.json
+
+# --- Vendored binaries: keep OUT of the runtime image (security-review LOW # 2) ---
+# The fetcher stage explicitly needs agent/vendor/pi/CHECKSUMS to verify the
+# pi binary download; the runtime stage must not bake vendored binaries into
+# the published OCI artifact (bloats SBOM, expands supply-chain attack surface
+# of the cosign-signed pack per ADR-0014 amendment 2).
+agent/vendor/**
+!agent/vendor/pi/
+!agent/vendor/pi/CHECKSUMS
+
+# --- Common secret-bearing dotfiles (security-review LOW # 1) -------------
+# Defense-in-depth against a contributor accidentally dropping any of these
+# into the working tree; they would otherwise bake into /repo/agent/ or
+# /repo/scripts/ in the runtime image and be redistributed via the signed
+# OCI artifact. Zero-cost; repo currently does not contain any of these.
+**/.env
+**/.env.*
+**/.envrc
+**/*.pem
+**/*.key
+**/id_rsa*
+**/id_ed25519*
+**/.aws/
+**/.azure/
+**/.config/gh/
+**/.npmrc
+**/.netrc
+
+# --- Other packaging dirs (when they exist) -------------------------------
+# Guard against future packaging/<other-substrate>/ dirs bloating the ζ
+# build context. Re-include packaging/zeta/ explicitly.
+packaging/*
+!packaging/zeta/

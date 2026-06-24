@@ -1,0 +1,19 @@
+{
+  "lastChangelogVersion": "0.78.1",
+  "defaultProvider": "github-copilot",
+  "defaultModel": "gpt-5.5",
+  "defaultThinkingLevel": "medium",
+  "extensionSettings": {
+    "compactionOptimizer": {
+      "mode": "hybrid"
+    },
+    "ghIdentityGuard": {
+      "expectedIdentity": "<your-github-login>"
+    }
+  },
+  "enabledModels": [
+    "anthropic/claude-opus-4-7",
+    "github-copilot/gpt-5.4-mini",
+    "github-copilot/gpt-4o"
+  ]
+}

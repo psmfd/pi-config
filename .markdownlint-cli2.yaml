@@ -1,0 +1,29 @@
+# markdownlint-cli2 configuration for pi_config
+#
+# Repo style notes:
+# - Long-form prose and wide tables are intentional; MD013 (line-length) and
+#   MD060 (table-column-style) are disabled to match authored style across
+#   skills, agent wrappers, AGENTS.md, README, ADRs, and rules.
+# - Most authored markdown leads with YAML frontmatter then a paragraph
+#   (skills, agent wrappers, rules); MD041 (first-line-heading) is disabled
+#   to allow this pattern.
+# - All other markdownlint defaults remain in force; minor formatting
+#   consistency rules (MD022/MD031/MD032/MD040) are enforced going forward.
+config:
+  default: true
+  MD013: false   # line-length
+  MD041: false   # first-line-heading
+  MD060: false   # table-column-style
+  MD024:
+    siblings_only: true   # no-duplicate-heading
+
+globs:
+  - "**/*.md"
+
+ignores:
+  - "node_modules/**"
+  - "agent/npm/node_modules/**"
+  - ".git/**"
+  - ".review/**"        # Tier 3 working-artifact area (ADR-0006/0007); gitignored, never merged
+  - "docs/archive/**"   # Frozen reference for rescinded substrates (ADR-0020); preserved verbatim
+  - "agent/extensions/compaction-optimizer/archive/**"   # Runtime session archives (ADR-0019); gitignored, never merged

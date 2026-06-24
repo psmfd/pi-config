@@ -1,0 +1,6 @@
+{
+	"name": "pi_config-extensions",
+	"private": true,
+	"type": "module",
+	"description": "Marker package.json so tsc + eslint resolve `import` syntax as ESM. Required by ADR-0021 to satisfy `module: NodeNext` ESM/CJS interop checks against ESM-only pi SDK packages. Contains NO dependencies — the actual deps live in $HOME/.cache/pi_config/extension-deps/ (see scripts/lib/extension-deps.sh)."
+}

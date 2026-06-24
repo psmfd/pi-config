@@ -1,0 +1,53 @@
+# Pi runtime data — never commit
+agent/auth.json
+agent/trust.json
+agent/bin/
+agent/sessions/
+agent/logs/
+agent/cache/
+agent/tmp/
+*.log
+setup.local.env
+
+# Operator-owned runtime config — the repo ships generic *.example templates
+# (agent/settings.example.json, agent/models.example.json); setup.sh seeds the
+# real files from them on first install if absent. The live files carry each
+# operator's personal provider/model/theme choices and must never be committed.
+# See ADR-0049.
+agent/settings.json
+agent/models.json
+
+# Per-extension runtime state (schema-versioned JSON, ADR-0019/ADR-0030). Written
+# to ~/.pi/agent/extensions/<ns>/state.json, which resolves INTO this repo via the
+# setup.sh `~/.pi → repo` symlink — so a stray `git add -A` would commit it.
+agent/extensions/*/state.json
+
+# cache-meter measurement log (#338/ADR-0034) — per-run JSONL of token usage,
+# written into the same symlinked subtree. Runtime data, never committed.
+agent/extensions/cache-meter/turns.jsonl
+
+# gh-identity-guard local-only, per-developer config (ADR-0022/0027). Never
+# committed — these carry per-host GitHub identity choices, not shared content.
+/.gh-identity-allowlist
+/.gh-expected-identity
+
+# Compaction-optimizer runtime output (ADR-0019). Default archive.path resolves
+# into this repo via the setup.sh `~/.pi → repo` symlink; without these entries
+# a stray `git add -A` would commit raw session transcripts.
+agent/extensions/compaction-optimizer/archive/
+agent/extensions/compaction-optimizer/failure.log
+
+# agent-expertise-api client local secrets (ADR-0028). The real env file holds
+# the API key and must never be committed; only .env.example is tracked.
+agent/extensions/expertise-client/.env.local
+
+# Orchestrator-produced review drafts (ADR-0006) — working artifacts before convergence
+drafts/
+
+# Extension type-check + lint dependency cache symlink target (ADR-0021).
+# The actual deps live in $HOME/.cache/pi_config/extension-deps/<hash>/;
+# `scripts/lib/extension-deps.sh` symlinks this name at the repo root so tsc
+# + eslint can resolve modules via the standard upward `node_modules` walk.
+/node_modules
+# CocoIndex Code (ccc)
+/.cocoindex_code/

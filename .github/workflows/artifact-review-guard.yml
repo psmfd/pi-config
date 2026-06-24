@@ -1,0 +1,28 @@
+# Fails any PR carrying the `artifact-review` label, enforcing the Tier 3
+# never-merge contract from ADR-0006 / ADR-0007. The job name
+# `block-artifact-review-merge` is the required status check on `main`.
+#
+# See:
+#   - adrs/0006-artifact-handoff-and-review-format.md § Tiered transport ladder
+#   - adrs/0007-tier-3-payload-path.md § Coupled deliverables
+#   - .review/README.md
+
+name: artifact-review-guard
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled, ready_for_review]
+
+permissions: {}
+
+jobs:
+  block-artifact-review-merge:
+    if: contains(github.event.pull_request.labels.*.name, 'artifact-review')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse merge for artifact-review-labeled PR
+        run: |
+          echo "::error::PRs labeled 'artifact-review' must not be merged."
+          echo "::error::Tier 3 payloads live on the feature branch only; close with: gh pr close ${{ github.event.pull_request.number }} --delete-branch"
+          echo "::error::See ADR-0006 § Tiered transport ladder and ADR-0007 § Coupled deliverables."
+          exit 1

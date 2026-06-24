@@ -1,0 +1,25 @@
+# validate.yml — the required status check on `dev` and `main`.
+# Runs `scripts/validate.sh` on PRs targeting either long-lived branch and on
+# pushes to them (ADR-0036: dev integrates, main is the stable channel).
+# Required by branch protection (see `agent/AGENTS.md` § Boundaries); admins
+# cannot bypass per `enforce_admins: true` (closed PR #50; RCA in issue #52).
+
+name: validate
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run repo validator
+        run: ./scripts/validate.sh
