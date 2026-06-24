@@ -196,6 +196,16 @@ All 21 skills are hidden from the parent system prompt and load on demand — ei
 
 ## Setup on a new machine
 
+**Sendable one-shot install** (recommended for recipients of the public mirror, per [ADR-0051](adrs/0051-sendable-one-shot-installer.md)) — save [`install.sh`](install.sh) and run it; it clones the public mirror [`psmfd/pi-config`](https://github.com/psmfd/pi-config), runs `setup.sh`, and installs the first-party extensions from their own public mirrors:
+
+```bash
+bash install.sh                 # or: bash install.sh --dir ~/pi-config --dry-run
+```
+
+The mirror ships **generic config only** — no maintainer personalizations. Pass `--owner/--repo/--gh-login` to also personalize the clone for your own fork.
+
+**Manual** (clone + setup directly):
+
 ```bash
 git clone <this-repo> ~/projects/pi_config
 cd ~/projects/pi_config && ./setup.sh
