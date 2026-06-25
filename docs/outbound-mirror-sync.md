@@ -66,12 +66,18 @@ the `psmfd/pi-*` mirrors.
    six mirror repos (`psmfd/pi-config` + the five `psmfd/pi-<extension>` repos),
    with these repository permissions:
    - **Contents: Read and write** — pushes the staged branch content.
-   - **Workflows: Read and write** — required because the `pi-config` mirror
-     ships `.github/workflows/*.yml`; without it GitHub refuses the push with
-     *"refusing to allow a Personal Access Token to create or update workflow …
-     without `workflow` scope"*. A fine-grained PAT applies permissions
-     uniformly to all selected repos, so this is granted across all six (the
-     other five carry no workflow files and are unaffected).
+   - **Workflows: Read and write** — required to add, update, *or delete* files
+     under a mirror's `.github/workflows/`; without it GitHub refuses the push
+     with *"refusing to allow a Personal Access Token to create or update
+     workflow … without `workflow` scope"*. As of
+     [ADR-0054](../adrs/0054-no-source-ci-on-distribution-mirror.md) the
+     `pi-config` mirror ships **no** workflow files (source-repo CI is not
+     mirrored), but the pruning push that *removes* the previously-shipped
+     workflows still needs this scope, and it is retained as margin. A
+     fine-grained PAT applies permissions uniformly to all selected repos, so it
+     is granted across all six (none of which carry workflow files). Narrowing to
+     Contents-only once the prune has settled is a separate least-privilege
+     follow-up.
    - **Metadata: Read-only** — auto-included; required for repo access.
 
    Because the resource owner is the `psmfd` org and you are the org owner, the
@@ -103,6 +109,11 @@ overwritten by the next sync. Keep mirrors on **default setup**: advanced setup'
 committed `.github/workflows/codeql.yml` would be erased by the `replace`-mode
 `rsync --delete`. Full rationale in
 [ADR-0052](../adrs/0052-mirror-code-scanning-followup.md).
+
+CodeQL default-setup is the mirror's **only** CI: no source-repo CI workflow is
+synced to the mirror, because a source-of-truth gate cannot pass against the
+derived subset (it was permanently red — [#411](https://github.com/psmfd/pi_config/issues/411)).
+See [ADR-0054](../adrs/0054-no-source-ci-on-distribution-mirror.md).
 
 ### Per-push follow-up checklist
 
