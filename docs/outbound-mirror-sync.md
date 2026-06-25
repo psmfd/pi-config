@@ -100,6 +100,40 @@ the `psmfd/pi-*` mirrors.
 4. Verify with `scripts/sync-mirror.sh --target <name> --dry-run`, then let the
    next push to `main` sync it (or dispatch it manually).
 
+## Releases (ADR-0055)
+
+Each mirror gets an **annotated tag + GitHub Release**, created idempotently by
+`sync-mirror.sh --release`. The version source differs by mirror type:
+
+- **Config mirror** (`pi-config`, `replace`) tracks the **source** version.
+  `scripts/release.sh` Phase 6 cuts it: after pushing the source `vX.Y.Z` tag it
+  runs `sync-mirror.sh --target pi-config --push --release --release-version
+  $VERSION`. Opt out with `--no-mirror-release` (independent of `--no-release`,
+  which only governs the private source's Release object).
+- **Extension mirrors** (`pi-<name>`, `overlay`) carry **independent SemVer** in
+  their own `package.json` `.version`. The CI `sync` job runs `--all --changed
+  --push --release` (with `GH_TOKEN=MIRROR_SYNC_TOKEN`), releasing each extension
+  from its `package.json` version when its content syncs.
+
+Properties:
+
+- **Idempotent.** Tag and Release existence are probed independently; an existing
+  pair is skipped, and a partial state (tag pushed, Release missing) self-heals on
+  re-run. A `replace` target with no `--release-version` is skipped, so an `--all
+  --release` run never mis-releases the config mirror.
+- **Annotated tags.** The engine creates `git tag -a` + pushes it, then `gh
+  release create --verify-tag` — `gh release create` alone would make a
+  lightweight tag.
+- **Token scope.** Tag push and Release creation need **Contents: write** only
+  (already held; see [#412](https://github.com/psmfd/pi_config/issues/412)).
+- **Known gap.** Because `--changed` skips unchanged targets and the extension
+  version is mirror-local (overlay-owned, not synced), a version bump alone does
+  not trigger a release — the extension automation is inert past the `v0.1.0`
+  backfill until a bump protocol exists ([#415](https://github.com/psmfd/pi_config/issues/415)).
+- **Dashboard.** `psmfd/pi-ecosystem` auto-discovers each repo's latest release on
+  a 6-hourly cron; `gh workflow run dashboard --repo psmfd/pi-ecosystem` refreshes
+  it immediately.
+
 ## Code-scanning follow-up (ADR-0052)
 
 The public mirrors run GitHub CodeQL **default setup** (free for public repos);

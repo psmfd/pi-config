@@ -56,6 +56,8 @@ ADRs live in [`adrs/`](adrs/). Currently:
 - [ADR-0051](adrs/0051-sendable-one-shot-installer.md) — a sendable one-shot installer (`install.sh`) on top of the verified public mirror
 - [ADR-0052](adrs/0052-mirror-code-scanning-followup.md) — code-scanning follow-up process for the mirrors: free mirror-side CodeQL as the baseline, fix-at-source loop, dismissal log (`security/scanning-decisions.md`), and a HIGH/CRITICAL promotion gate (`scripts/check-mirror-alerts.sh`)
 - [ADR-0053](adrs/0053-pin-github-actions-to-sha.md) — pin third-party GitHub Actions to full-length commit SHAs (with a `# vX.Y.Z` comment); vendored binaries stay content-pinned via `CHECKSUMS`
+- [ADR-0054](adrs/0054-no-source-ci-on-distribution-mirror.md) — the distribution mirror ships no source-repo CI workflows; its only CI is server-side CodeQL default-setup
+- [ADR-0055](adrs/0055-automated-mirror-releases.md) — automated annotated-tag + GitHub Release creation for the mirrors (`sync-mirror.sh --release`): config mirror tracks the source version via `release.sh`, extensions release independently from their `package.json`
 
 Tracked configuration for the [pi coding agent](https://github.com/earendil-works/pi-coding-agent).
 
