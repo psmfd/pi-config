@@ -45,6 +45,17 @@ ADRs live in [`adrs/`](adrs/). Currently:
 - [ADR-0039](adrs/0039-mirror-sync-cadence-and-provenance.md) — `psmfd/pi` mirror sync: upstream-release-driven cadence with security fast path, local maintainer-run execution, main+tags namespace-isolated import, `--no-ff` merge with mechanical overlay conflict resolution, and a per-sync evidence block (policy: `docs/psmfd-pi-mirror-sync.md`)
 - [ADR-0040](adrs/0040-consume-psmfd-attested-pi-releases.md) — the vendored pi runtime pins PSMFD-attested `psmfd/pi` releases (`vX.Y.Z-psmfd.N`; digest source is the attestation-verified `SHA256SUMS`); plain upstream pins remain the emergency-rollback path; amends ADR-0009's release surface, keeps its pin-and-fetch mechanism
 - [ADR-0042](adrs/0042-standalone-extension-distribution.md) — first-party extensions are distributed via standalone public mirror repos (`psmfd/pi-<name>`, installed with `pi install git:...`); pi_config remains the source of truth with manual runbook sync; fresh-start mirror history with provenance notes; leaf extensions first, `shared/`-coupled extensions deferred pending an inlining pass
+- [ADR-0043](adrs/0043-upstream-reporting-gate.md) — upstream documentation as the security-reporting gate: a vulnerability is reported upstream only when first-party docs establish the affected behavior is intended
+- [ADR-0044](adrs/0044-security-overrides-for-vulnerable-transitive-deps.md) — security overrides for vulnerable transitive dependencies in the `psmfd/pi` mirror (pin-forward via overlay, tracked against upstream)
+- [ADR-0045](adrs/0045-automate-mirror-sync-runbook.md) — automate the `psmfd/pi` inbound mirror-sync runbook with overlay tooling (`.psmfd/sync-upstream.sh`); divergence-sensitive judgement stays human-gated (policy: `docs/psmfd-pi-mirror-sync.md`)
+- [ADR-0046](adrs/0046-psmfd-pi-main-ruleset-migration.md) — migrate `psmfd/pi` `main` to a ruleset with an Admin bypass plus a detective guard
+- [ADR-0047](adrs/0047-release-automation-script.md) — script the `dev`→`main` release promotion (`scripts/release.sh`) with a manual merge gate
+- [ADR-0048](adrs/0048-repo-agnostic-secret-scanner.md) — make `scan-secrets` repo-agnostic and shareable across repos (each supplies its own `.gitleaks.toml`)
+- [ADR-0049](adrs/0049-genericize-runtime-config-via-templates.md) — ship runtime config as `*.example.json` templates; gitignore the live `settings.json`/`models.json` and seed them on install
+- [ADR-0050](adrs/0050-outbound-distribution-mirror-sync.md) — a generic, manifest-driven outbound mirror-sync engine (`scripts/sync-mirror.sh` + `mirror/targets.yml`) for the config + extension distribution mirrors (runbook: `docs/outbound-mirror-sync.md`)
+- [ADR-0051](adrs/0051-sendable-one-shot-installer.md) — a sendable one-shot installer (`install.sh`) on top of the verified public mirror
+- [ADR-0052](adrs/0052-mirror-code-scanning-followup.md) — code-scanning follow-up process for the mirrors: free mirror-side CodeQL as the baseline, fix-at-source loop, dismissal log (`security/scanning-decisions.md`), and a HIGH/CRITICAL promotion gate (`scripts/check-mirror-alerts.sh`)
+- [ADR-0053](adrs/0053-pin-github-actions-to-sha.md) — pin third-party GitHub Actions to full-length commit SHAs (with a `# vX.Y.Z` comment); vendored binaries stay content-pinned via `CHECKSUMS`
 
 Tracked configuration for the [pi coding agent](https://github.com/earendil-works/pi-coding-agent).
 
@@ -101,6 +112,8 @@ mirror/                  # Outbound distribution-mirror sync config (ADR-0050)
 ├── sync-mirrors.yml          # Outbound mirror sync: PR dry-run gate + push-on-main (ADR-0050)
 └── artifact-review-guard.yml # Fails any PR carrying the `artifact-review` label (required status check)
 CODEOWNERS               # Owns `.review/**` only; belt-and-suspenders for the artifact-review guard
+setup.sh                 # Idempotent installer: node + toolchain + pi, then symlinks ~/.pi (ADR-0010/0011)
+install.sh               # Sendable one-shot bootstrap: clones psmfd/pi-config + installs extension mirrors (ADR-0051)
 ```
 
 ## Agents and workflows
@@ -163,8 +176,7 @@ Run before opening a PR (per [post-implementation-review](agent/rules/post-imple
 
 ## Skills
 
-21 skills adopted from
-[agent-framework](https://github.com/) with frontmatter normalized for the
+21 skills with frontmatter normalized for the
 [Agent Skills](https://agentskills.io/specification) standard (Copilot-specific
 `paths:` blocks removed). **All 21 skills carry `disable-model-invocation: true`** — they are removed from the parent session's `<available_skills>` system-prompt auto-trigger block and only run via `/skill:<name>` (manual) or via the matching agent wrapper through the `subagent` tool. This enforces agent-first routing structurally and reclaims ~7–11 KB of parent context per session. See [ADR-0001](adrs/0001-subagent-orchestration-substrate.md) for the original subagent-substrate decision; the three review specialists remain *additionally* gated by opus pinning and a read-only tool allowlist.
 

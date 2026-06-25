@@ -57,7 +57,7 @@ jobs:
       PI_ALLOW_SUDO_APT: '1'
       PI_ALLOW_SUDO_DNF: '1'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: ensure ~/.local/bin on PATH
         # setup.sh §1b symlinks vendored gh/yq/shellcheck into ~/.local/bin
@@ -141,7 +141,7 @@ jobs:
       PI_USE_VENDORED: '0'
       PI_ALLOW_SUDO_APT: '1'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: ensure ~/.local/bin on PATH
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"

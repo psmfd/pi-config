@@ -6,6 +6,11 @@
 
 name: validate
 
+# Least-privilege default token: the validator only reads the checkout
+# (resolves CodeQL actions/missing-workflow-permissions; ADR-0052).
+permissions:
+  contents: read
+
 on:
   pull_request:
     branches: [dev, main]
@@ -20,6 +25,6 @@ jobs:
   validate:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Run repo validator
         run: ./scripts/validate.sh

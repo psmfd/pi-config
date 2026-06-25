@@ -59,13 +59,28 @@ tree for inspection.
 
 ## One-time setup: the `MIRROR_SYNC_TOKEN` secret
 
-The `sync` job needs a token with **content-write** to the `psmfd/pi-*` mirrors.
+The `sync` job needs a token that can write content **and workflow files** to
+the `psmfd/pi-*` mirrors.
 
-1. Create a fine-grained PAT (or install a GitHub App) scoped to the
-   `psmfd/pi-config` and `psmfd/pi-<extension>` repositories, with
-   **Contents: Read and write**.
+1. Create a fine-grained PAT (or install a GitHub App) scoped to **exactly** the
+   six mirror repos (`psmfd/pi-config` + the five `psmfd/pi-<extension>` repos),
+   with these repository permissions:
+   - **Contents: Read and write** — pushes the staged branch content.
+   - **Workflows: Read and write** — required because the `pi-config` mirror
+     ships `.github/workflows/*.yml`; without it GitHub refuses the push with
+     *"refusing to allow a Personal Access Token to create or update workflow …
+     without `workflow` scope"*. A fine-grained PAT applies permissions
+     uniformly to all selected repos, so this is granted across all six (the
+     other five carry no workflow files and are unaffected).
+   - **Metadata: Read-only** — auto-included; required for repo access.
+
+   Because the resource owner is the `psmfd` org and you are the org owner, the
+   token is auto-approved (no pending-approval gate). Set a finite expiration
+   (90 days recommended) — never a no-expiry token that can write to public repos.
 2. Add it as an Actions secret named `MIRROR_SYNC_TOKEN` on `psmfd/pi_config`
-   (`Settings → Secrets and variables → Actions`).
+   (`gh secret set MIRROR_SYNC_TOKEN --repo psmfd/pi_config`, or
+   `Settings → Secrets and variables → Actions`). It is a **repo** secret, not an
+   org secret — the narrowest scope that works.
 3. The workflow rewrites `https://github.com/` to use the token only inside the
    `sync` job. It fails closed if the secret is absent.
 
@@ -78,6 +93,61 @@ The `sync` job needs a token with **content-write** to the `psmfd/pi-*` mirrors.
 3. Grant `MIRROR_SYNC_TOKEN` write access to the new repo.
 4. Verify with `scripts/sync-mirror.sh --target <name> --dry-run`, then let the
    next push to `main` sync it (or dispatch it manually).
+
+## Code-scanning follow-up (ADR-0052)
+
+The public mirrors run GitHub CodeQL **default setup** (free for public repos);
+the private source has no scanning (it would need paid GHAS). So findings surface
+on the *derived* mirror but must be fixed in the *source* — patching a mirror is
+overwritten by the next sync. Keep mirrors on **default setup**: advanced setup's
+committed `.github/workflows/codeql.yml` would be erased by the `replace`-mode
+`rsync --delete`. Full rationale in
+[ADR-0052](../adrs/0052-mirror-code-scanning-followup.md).
+
+### Per-push follow-up checklist
+
+After a sync that changed a mirror, for each open alert on that mirror:
+
+1. **Locate the source.** Map the alert's `path:line` to the `pi_config` file
+   (the mirror path mirrors the source path). If the file is not in any target's
+   `sources`, it is mirror-only and can only be triaged on the mirror.
+2. **Decide: fix or dismiss.**
+   - **Fix at source** — correct it in `pi_config` (branch → `dev` → promote);
+     the next sync re-pushes and CodeQL re-runs; confirm the alert flips to
+     *Fixed* in the mirror's Security tab. The fix commit is the record.
+   - **Dismiss** (false positive / won't fix) — dismiss on the mirror and record
+     the rationale in [`security/scanning-decisions.md`](../security/scanning-decisions.md).
+     Dismissals are server-side and survive re-syncs while the location is stable.
+
+```sh
+# Dismiss one alert (false positive) on a mirror:
+gh api --method PATCH repos/psmfd/pi-config/code-scanning/alerts/<N> \
+  -f state=dismissed -f dismissed_reason="false positive" \
+  -f dismissed_comment="see security/scanning-decisions.md"
+
+# Bulk-dismiss every open alert of one rule across a mirror:
+gh api "repos/psmfd/pi-config/code-scanning/alerts?state=open&per_page=100" \
+  --paginate --slurp --jq '.[][] | select(.rule.id=="<rule>") | .number' \
+| while read -r n; do
+    gh api --method PATCH "repos/psmfd/pi-config/code-scanning/alerts/$n" \
+      -f state=dismissed -f dismissed_reason="false positive" \
+      -f dismissed_comment="see security/scanning-decisions.md"
+  done
+```
+
+### Release gate (before a dev→main promotion)
+
+```sh
+scripts/check-mirror-alerts.sh               # fails on any open HIGH/CRITICAL
+scripts/check-mirror-alerts.sh --verbose
+scripts/check-mirror-alerts.sh --threshold medium   # stricter pre-release sweep
+```
+
+Run it as a preflight in the promotion runbook: an open **HIGH/CRITICAL** mapping
+to a source file blocks the release (fix-at-source then re-sync, or dismiss with
+rationale). MEDIUM requires *triage recorded*, not necessarily a fix. The gate is
+runbook-manual today; wiring it in as a required status check is a tracked
+follow-up.
 
 ## Limitations
 

@@ -429,7 +429,7 @@ function renderToolActivity(messages: AgentMessage[]): string[] {
 	for (const a of acts) {
 		const suffix =
 			a.lastBashCommand !== undefined
-				? ` (last: \`${a.lastBashCommand.replace(/`/g, "\\`")}\`)`
+				? ` (last: \`${a.lastBashCommand.replace(/\\/g, "\\\\").replace(/`/g, "\\`")}\`)`
 				: "";
 		lines.push(`- \`${a.name}\`: ${a.count} invocation${a.count === 1 ? "" : "s"}${suffix}`);
 	}
