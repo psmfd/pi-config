@@ -7,6 +7,7 @@ date: 2026-06-24
 
 **Status:** Accepted
 **Date:** 2026-06-24
+**Amended by:** [ADR-0060](0060-source-scanning-strategy.md) (resolves the "pre-promotion source gap" consequence and the option-1 future option: paid source-side scanning is declined; the material part of the gap is closed with free CI gates)
 **Related:** [ADR-0050](0050-outbound-distribution-mirror-sync.md) (the outbound mirror sync this process gates), [ADR-0042](0042-standalone-extension-distribution.md) (the extension mirrors), [ADR-0036](0036-dev-integration-main-stable-branch-model.md) (the dev→main promotion this gate attaches to), [ADR-0019](0019-compaction-optimizer-extension.md) (the extension whose code the first findings live in)
 
 ## Context and Problem Statement

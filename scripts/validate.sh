@@ -462,6 +462,19 @@ for lib in scripts/lib/platform-detect.sh scripts/lib/install-helpers.sh; do
   fi
 done
 
+# --- 6f. sync-mirror version-bump self-test (ADR-0058) ---------------------
+# Network-free check of the Conventional-Commits bump helpers that compute an
+# extension mirror's next version (#415). Catches a regression in the
+# classify/bump/compare logic without touching any mirror.
+info "Running scripts/sync-mirror.sh --self-test (ADR-0058)"
+if [ ! -x scripts/sync-mirror.sh ]; then
+  err "sync-mirror: scripts/sync-mirror.sh is missing or not executable"
+elif scripts/sync-mirror.sh --self-test >/dev/null 2>&1; then
+  ok "sync-mirror: version-bump self-test passed"
+else
+  err "sync-mirror: version-bump self-test failed (run: scripts/sync-mirror.sh --self-test)"
+fi
+
 # --- 7. ADRs ---------------------------------------------------------------
 info "Validating adrs/*.md"
 # bash 3.2 (the macOS system bash, used by the setup-smoke workflow) lacks
@@ -537,6 +550,7 @@ done < <(find . -name '*.md' \
             -not -path './docs/archive/*' \
             -not -path './.review/*' \
             -not -path './drafts/*' \
+            -not -path './mirror/readme/*' \
             -not -path './agent/extensions/compaction-optimizer/archive/*')
 # Excluded paths:
 #  - node_modules, .git:           dependency / VCS internals
@@ -549,6 +563,9 @@ done < <(find . -name '*.md' \
 #                                  merged, may contain speculative or stale cross-references during planning
 #  - drafts:                       working-artifact area per ADR-0006; gitignored, never merged,
 #                                  may contain speculative or stale cross-references during drafting
+#  - mirror/readme:                curated mirror READMEs (ADR-0059) whose links are authored
+#                                  relative to the MIRROR root (where they ship as README.md),
+#                                  not to this source location — validated on the mirror, not here
 #  - agent/extensions/compaction-optimizer/archive: runtime session archives per ADR-0019; gitignored,
 #                                  never merged; relative paths inside reflect the original session
 #                                  capture location and are intentionally not validated here
