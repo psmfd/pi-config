@@ -35,16 +35,18 @@ EXTENSION_DEPS_TYPESCRIPT_VERSION="${EXTENSION_DEPS_TYPESCRIPT_VERSION:-5.6.3}"
 EXTENSION_DEPS_TYPES_NODE_VERSION="${EXTENSION_DEPS_TYPES_NODE_VERSION:-22.10.5}"
 EXTENSION_DEPS_ESLINT_VERSION="${EXTENSION_DEPS_ESLINT_VERSION:-9.17.0}"
 EXTENSION_DEPS_TSESLINT_VERSION="${EXTENSION_DEPS_TSESLINT_VERSION:-8.19.1}"
+EXTENSION_DEPS_ESLINT_SECURITY_VERSION="${EXTENSION_DEPS_ESLINT_SECURITY_VERSION:-4.0.1}"
 EXTENSION_DEPS_PI_AGENT_VERSION="${EXTENSION_DEPS_PI_AGENT_VERSION:-0.75.5}"
 EXTENSION_DEPS_TYPEBOX_VERSION="${EXTENSION_DEPS_TYPEBOX_VERSION:-1.1.38}"
 
 # Manifest string used for cache-key hashing. Order matters for hash stability.
 __extension_deps_manifest() {
-	printf 'typescript@%s\n@types/node@%s\neslint@%s\ntypescript-eslint@%s\n@earendil-works/pi-coding-agent@%s\n@earendil-works/pi-agent-core@%s\n@earendil-works/pi-ai@%s\n@earendil-works/pi-tui@%s\ntypebox@%s\n' \
+	printf 'typescript@%s\n@types/node@%s\neslint@%s\ntypescript-eslint@%s\neslint-plugin-security@%s\n@earendil-works/pi-coding-agent@%s\n@earendil-works/pi-agent-core@%s\n@earendil-works/pi-ai@%s\n@earendil-works/pi-tui@%s\ntypebox@%s\n' \
 		"$EXTENSION_DEPS_TYPESCRIPT_VERSION" \
 		"$EXTENSION_DEPS_TYPES_NODE_VERSION" \
 		"$EXTENSION_DEPS_ESLINT_VERSION" \
 		"$EXTENSION_DEPS_TSESLINT_VERSION" \
+		"$EXTENSION_DEPS_ESLINT_SECURITY_VERSION" \
 		"$EXTENSION_DEPS_PI_AGENT_VERSION" \
 		"$EXTENSION_DEPS_PI_AGENT_VERSION" \
 		"$EXTENSION_DEPS_PI_AGENT_VERSION" \
@@ -96,6 +98,7 @@ ensure_extension_deps() {
 		"@types/node": "$EXTENSION_DEPS_TYPES_NODE_VERSION",
 		"eslint": "$EXTENSION_DEPS_ESLINT_VERSION",
 		"typescript-eslint": "$EXTENSION_DEPS_TSESLINT_VERSION",
+		"eslint-plugin-security": "$EXTENSION_DEPS_ESLINT_SECURITY_VERSION",
 		"@earendil-works/pi-coding-agent": "$EXTENSION_DEPS_PI_AGENT_VERSION",
 		"@earendil-works/pi-agent-core": "$EXTENSION_DEPS_PI_AGENT_VERSION",
 		"@earendil-works/pi-ai": "$EXTENSION_DEPS_PI_AGENT_VERSION",

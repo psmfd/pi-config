@@ -7,7 +7,7 @@ date: 2026-06-07
 
 **Status:** Accepted
 **Date:** 2026-06-07
-**Tracking issue:** [#294](https://github.com/TheSemicolon/pi_config/issues/294)
+**Tracking issue:** #294
 **Related:** [ADR-0022](0022-gh-identity-guard-extension.md) (the guard's design; §Q1 source-of-truth, §Q4 fail-closed, §Q5 overrides — this ADR supersedes §Q1 item 3 in part), [ADR-0023](0023-gh-identity-guard-remote-scoping.md) (host-scoping), [ADR-0024](0024-gh-identity-guard-inline-skip.md) (inline skip; bypass-DENY-net framing reused here)
 
 ## Context and Problem Statement
@@ -26,7 +26,7 @@ Two structural hazards shaped the decision (both surfaced by the #294 security r
 - **A. Decline the feature; keep pure fail-closed-with-guidance.** Rejected: #294's friction is real and recurring on fresh clones; the guard already prints exhaustive guidance that operators must still act on manually.
 - **B. Interactive create, file becomes authoritative for the current operation.** Rejected: lets the bootstrap *complete the very push that triggered it* without the trust anchor being committed or the active identity re-verified — collapses "PR-reviewed artifact" to "one `y` at a TTY."
 - **C. Interactive create, but the current operation still fails closed (chosen, decision A1).** The bootstrap writes the file, then **blocks/fails the triggering operation** and instructs the operator to commit and re-run. The re-run exercises the real identity probe against the now-present file. On-disk read semantics are unchanged.
-- **D. Additionally gate all per-repo reads on git-tracked status (decision A2).** Deferred to [#306](https://github.com/TheSemicolon/pi_config/issues/306) — it changes existing read behavior and could break setups that intentionally keep an uncommitted local pin; it warrants its own decision.
+- **D. Additionally gate all per-repo reads on git-tracked status (decision A2).** Deferred to #306 — it changes existing read behavior and could break setups that intentionally keep an uncommitted local pin; it warrants its own decision.
 
 For the suggested default:
 
@@ -48,7 +48,7 @@ The bootstrap **never completes the operation that triggered it.** After a succe
 - **Hook half:** writes the file (atomically), prints the commit instructions, and `exit 1` (fail). The file is not yet committed and the active-identity probe has not run; the operator commits and re-pushes, which exercises the real drift check.
 - **Extension half:** writes the file and returns `{ block: true, reason }`. The block reason explicitly states a *human action* completed (file created) and a re-run is required — distinct from the `noExpectedReason()` text so the model does not loop re-issuing the same call.
 
-On-disk read semantics are unchanged; the stronger git-tracked read-gate is [#306](https://github.com/TheSemicolon/pi_config/issues/306).
+On-disk read semantics are unchanged; the stronger git-tracked read-gate is #306.
 
 ### Confused-deputy mitigation (decision B1)
 
@@ -98,8 +98,8 @@ Three read-only specialists ran in parallel against the proposed design before i
 
 ## More Information
 
-- [#294](https://github.com/TheSemicolon/pi_config/issues/294) — feature request and acceptance criteria.
-- [#306](https://github.com/TheSemicolon/pi_config/issues/306) — deferred A2 git-tracked read-gate.
+- #294 — feature request and acceptance criteria.
+- #306 — deferred A2 git-tracked read-gate.
 - [ADR-0022](0022-gh-identity-guard-extension.md) §Q1 item 3 (superseded in part here), §Threat Model, §Q5 overrides.
 - `hooks/gh-identity-guard.sh`, `agent/extensions/gh-identity-guard/` — the two guard halves.
 - `scripts/lib/gh-verify-user.sh` — authoritative active-account probe.

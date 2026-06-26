@@ -395,7 +395,7 @@ test("git push to a github.com remote gates and blocks on drift", async () => {
     const { executor } = makeExecutor({
       login: "intruder",
       revParse: { exitCode: 0, stdout: "origin/main\n" },
-      getUrl: { exitCode: 0, stdout: "https://github.com/TheSemicolon/pi_config.git\n" },
+      getUrl: { exitCode: 0, stdout: "https://github.com/psmfd/pi-config.git\n" },
     });
     const handler = getToolCallHandler(executor);
     const { ctx } = makeCtx(cwd);
@@ -448,7 +448,7 @@ test("SSH alias resolving to github.com gates (closes the alias bypass)", async 
     const { executor } = makeExecutor({
       login: "intruder",
       revParse: { exitCode: 0, stdout: "origin/main\n" },
-      getUrl: { exitCode: 0, stdout: "git@gh-personal:TheSemicolon/pi_config.git\n" },
+      getUrl: { exitCode: 0, stdout: "git@gh-personal:psmfd/pi-config.git\n" },
       ssh: { exitCode: 0, stdout: "hostname github.com\n" },
     });
     const handler = getToolCallHandler(executor);
@@ -481,7 +481,7 @@ test("explicit github.com URL arg gates without a remote lookup", async () => {
     const handler = getToolCallHandler(executor);
     const { ctx } = makeCtx(cwd);
     const result = (await handler(
-      bashEvent("git push https://github.com/TheSemicolon/pi_config.git HEAD"),
+      bashEvent("git push https://github.com/psmfd/pi-config.git HEAD"),
       ctx,
     )) as { block?: boolean } | undefined;
     assert.equal(result?.block, true, "explicit github URL gates");
@@ -600,7 +600,7 @@ test("partial compound: skip exempts the first push, the second still gates", as
     // even though the first push was skip-exempted.
     const { executor } = makeExecutor({
       login: "intruder",
-      getUrl: { exitCode: 0, stdout: "https://github.com/TheSemicolon/pi_config.git\n" },
+      getUrl: { exitCode: 0, stdout: "https://github.com/psmfd/pi-config.git\n" },
     });
     const handler = getToolCallHandler(executor);
     const { ctx, calls } = makeCtx(cwd);
@@ -696,7 +696,7 @@ test("compound push: github.com segment gates even when another is ADO", async (
     const { executor } = makeExecutor({
       login: "intruder",
       revParse: { exitCode: 0, stdout: "origin/main\n" },
-      getUrl: { exitCode: 0, stdout: "https://github.com/TheSemicolon/pi_config.git\n" },
+      getUrl: { exitCode: 0, stdout: "https://github.com/psmfd/pi-config.git\n" },
     });
     const handler = getToolCallHandler(executor);
     const { ctx } = makeCtx(cwd);

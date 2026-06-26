@@ -7,7 +7,7 @@ date: 2026-05-22
 
 **Status:** Accepted
 **Date:** 2026-05-22
-**Tracking issue:** [#151](https://github.com/TheSemicolon/pi_config/issues/151)
+**Tracking issue:** #151
 **Related:** [ADR-0001](0001-subagent-orchestration-substrate.md) (substrate for `agent/extensions/`), [`agent/rules/no-mcp-servers.md`](../agent/rules/no-mcp-servers.md)
 
 ## Contents
@@ -21,7 +21,7 @@ date: 2026-05-22
 
 ## Context and Problem Statement
 
-Research-specialist subagents (`security-review-expert`, `code-review-expert`, `shell-expert`, the cloud and infrastructure specialists, language specialists, container/orchestration specialists, `docs-expert`) advertise in their descriptions that they corroborate findings against first-party documentation. Prior to this ADR, they could not: pi 0.75.4 ships only `read`, `bash`, `edit`, `write` built-ins, and the bare `web` tool listed in those wrappers' `tools:` frontmatter was a silent no-op (the subagent extension's `--tools` plumbing drops unknown tool names without warning — root cause tracked in [#152](https://github.com/TheSemicolon/pi_config/issues/152)). The result was opus-pinned reviewers citing from cached model knowledge and flagging claims as "not corroborated" when challenged.
+Research-specialist subagents (`security-review-expert`, `code-review-expert`, `shell-expert`, the cloud and infrastructure specialists, language specialists, container/orchestration specialists, `docs-expert`) advertise in their descriptions that they corroborate findings against first-party documentation. Prior to this ADR, they could not: pi 0.75.4 ships only `read`, `bash`, `edit`, `write` built-ins, and the bare `web` tool listed in those wrappers' `tools:` frontmatter was a silent no-op (the subagent extension's `--tools` plumbing drops unknown tool names without warning — root cause tracked in #152). The result was opus-pinned reviewers citing from cached model knowledge and flagging claims as "not corroborated" when challenged.
 
 The fix requires a pi extension that registers an HTTPS-capable tool. This is the first network-egress extension in `agent/extensions/` — every prior extension (`subagent/`, `secrets-guard/`, `bash-destructive-guard/`, `artifact-handoff/`) is local-only. The decision therefore is not just "ship `web_fetch`" but "what security boundary governs network egress from our extensions, and is that boundary policy-shaped enough to warrant an ADR rather than pattern-following?"
 
@@ -35,7 +35,7 @@ The decision is policy-shaped: the boundary chosen here will be the precedent ev
 4. **Allowlist + URL signing.** Operator signs URL templates ahead of time; extension only fetches signed URLs. Strongest but operationally heavyweight for a docs-citation use case.
 5. **Vendor an MCP-style web-fetch server.** Rejected pre-discussion under [`agent/rules/no-mcp-servers.md`](../agent/rules/no-mcp-servers.md).
 
-The orchestrator's design-implications fan-out for [#151](https://github.com/TheSemicolon/pi_config/issues/151) (3 parallel subagents: `pi-agent-expert`, `security-review-expert`, `docs-expert`) converged on tight-allowlist as the load-bearing security control. The agents independently identified prompt-injection-driven URL synthesis as the dominant threat and operator-curated allowlist-at-edit-time as the only defense that bounds it without relying on continuous reasoning-side discipline.
+The orchestrator's design-implications fan-out for #151 (3 parallel subagents: `pi-agent-expert`, `security-review-expert`, `docs-expert`) converged on tight-allowlist as the load-bearing security control. The agents independently identified prompt-injection-driven URL synthesis as the dominant threat and operator-curated allowlist-at-edit-time as the only defense that bounds it without relying on continuous reasoning-side discipline.
 
 ## Decision Outcome
 
@@ -46,7 +46,7 @@ The implementation:
 - `ALLOWED_HOSTS` is a `Set<string>` in the extension source. Adding a host requires a PR; the PR is the review surface.
 - `https:` scheme is enforced as a hard refusal; `http:`, `file:`, `data:` and others refused with a clear error.
 - 3xx redirects are followed manually (`fetch(..., { redirect: "manual" })`). Each hop's host is re-validated against `ALLOWED_HOSTS` before following. This defeats open-redirect bypass on hosts that allowlist a redirector parameter (e.g. `learn.microsoft.com/redirect?url=...`).
-- Response bodies are read in full and truncated to 256 KB per the [#151](https://github.com/TheSemicolon/pi_config/issues/151) acceptance criteria. Truncation is reported in the tool result `details`.
+- Response bodies are read in full and truncated to 256 KB per the #151 acceptance criteria. Truncation is reported in the tool result `details`.
 - No override mechanism. No `SKIP_WEB_FETCH_ALLOWLIST=1`. The allowlist is the policy surface and the only way to expand it is a reviewed PR.
 
 The allowlist starts with ~20 hosts covering the documented domains of the 17 research specialists that will be granted the tool (see `agent/extensions/web-fetch/README.md` § Allowlist).
@@ -99,7 +99,7 @@ The agent fan-out outputs are summarized in this ADR's tracking issue. If `web_s
 
 ## More Information
 
-- Tracking issue: [#151](https://github.com/TheSemicolon/pi_config/issues/151)
+- Tracking issue: #151
 - Implementation: [`agent/extensions/web-fetch/`](../agent/extensions/web-fetch/)
-- Related follow-ups: [#152](https://github.com/TheSemicolon/pi_config/issues/152) (subagent unknown-tool diagnosability — the defect that masked the bare-`web` no-op for the lifetime of this repo), [#153](https://github.com/TheSemicolon/pi_config/issues/153) (research-subagent issue-body access)
+- Related follow-ups: #152 (subagent unknown-tool diagnosability — the defect that masked the bare-`web` no-op for the lifetime of this repo), #153 (research-subagent issue-body access)
 - Policy rule referenced: [`agent/rules/no-mcp-servers.md`](../agent/rules/no-mcp-servers.md)

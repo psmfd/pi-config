@@ -7,8 +7,8 @@ date: 2026-06-11
 
 **Status:** Accepted
 **Date:** 2026-06-11
-**Tracking issue:** [#358](https://github.com/psmfd/pi_config/issues/358)
-**Related:** [#357](https://github.com/psmfd/pi_config/issues/357) (public-flip readiness), [ADR-0010](0010-setup-install-trust-posture.md) (setup install trust posture), [ADR-0011](0011-toolchain-install-strategy.md) (developer toolchain install strategy), [`agent/rules/secrets-guard.md`](../agent/rules/secrets-guard.md), [`hooks/secrets-guard.sh`](../hooks/secrets-guard.sh)
+**Tracking issue:** #358
+**Related:** #357 (public-flip readiness), [ADR-0010](0010-setup-install-trust-posture.md) (setup install trust posture), [ADR-0011](0011-toolchain-install-strategy.md) (developer toolchain install strategy), [`agent/rules/secrets-guard.md`](../agent/rules/secrets-guard.md), [`hooks/secrets-guard.sh`](../hooks/secrets-guard.sh)
 
 ## Context and Problem Statement
 
@@ -73,4 +73,4 @@ Those layers are intentionally fast and local, but they are not a full repositor
 - `scripts/lib/install-helpers.sh` (`ih_ensure_gitleaks`)
 - `scripts/validate-gitleaks-vendor.sh`
 - `scripts/scan-secrets.sh`
-- Public-flip readiness evidence: [#357](https://github.com/psmfd/pi_config/issues/357)
+- Public-flip readiness evidence: #357

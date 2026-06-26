@@ -7,7 +7,7 @@ date: 2026-05-25
 
 **Status:** Accepted
 **Date:** 2026-05-25
-**Tracking issue:** [#208](https://github.com/TheSemicolon/pi_config/issues/208)
+**Tracking issue:** #208
 **Related:** [ADR-0001](0001-subagent-orchestration-substrate.md) (substrate for `agent/extensions/`), [ADR-0004](0004-consensus-by-replication.md) (fan-out shape used for pre-verification), [ADR-0015](0015-network-capable-extensions-and-the-first-party-docs-allowlist.md) (precedent for ADR-eligible new extension)
 
 ## Contents
@@ -83,7 +83,7 @@ Hybrid fall-through heuristics (all configurable, defaults shown):
 | Tool-call-to-message ratio < `minToolCallRatio` | `0.3` | Heavily conversational sessions have insufficient structured content for the deterministic builder |
 | Any single orphan assistant text > `maxOrphanAssistantTokens` | `2000` | Long explanatory prose without a follow-up tool call is unsummarizable structurally |
 
-Settings namespace: `extensionSettings.compactionOptimizer.*` in `~/.pi/agent/settings.json` (user) and `<cwd>/.pi/settings.json` (project; project overrides user). The original draft used `extensions.compactionOptimizer.*`; pre-implementation verification (see [Pre-implementation Verification](#pre-implementation-verification-agent-efficacy)) surfaced that `extensions` is already a documented core settings key holding `string[]` of extension paths (`docs/settings.md:188-197`), so a `extensions.<name>` object map would type-collide. `extensionSettings.*` is currently vacant in `settings.json` and mirrors the naming used in the upstream proposal tracked at [#210](https://github.com/TheSemicolon/pi_config/issues/210).
+Settings namespace: `extensionSettings.compactionOptimizer.*` in `~/.pi/agent/settings.json` (user) and `<cwd>/.pi/settings.json` (project; project overrides user). The original draft used `extensions.compactionOptimizer.*`; pre-implementation verification (see [Pre-implementation Verification](#pre-implementation-verification-agent-efficacy)) surfaced that `extensions` is already a documented core settings key holding `string[]` of extension paths (`docs/settings.md:188-197`), so a `extensions.<name>` object map would type-collide. `extensionSettings.*` is currently vacant in `settings.json` and mirrors the naming used in the upstream proposal tracked at #210.
 
 Archive path: default `~/.pi/agent/extensions/compaction-optimizer/archive/<session-id>/<timestamp>.md`. The default may be overridden via `extensionSettings.compactionOptimizer.archive.path` from `~/.pi/agent/settings.json` (user-layer; supports `~` and absolute paths). From `<cwd>/.pi/settings.json` (project-layer; **untrusted** — see [Threat Model and Security Posture](#threat-model-and-security-posture)) the value MUST be relative and MUST resolve under `<cwd>/.pi/compaction-archive/`; project-layer values that fail this check are rejected with a `ctx.ui.notify` warning naming the rejected key. Ephemeral sessions (`ctx.sessionManager.isPersisted() === false`) default to `extensionSettings.compactionOptimizer.archive.ephemeralBehavior: "skip"`; alternative is `"tmp"` — a randomly-named directory under `$TMPDIR` created via `mkdtemp` with `mode: 0o700` (the original draft's `pi-compaction-archive/ephemeral-<pid>-<timestamp>/` form is superseded by [Threat Model § File-system posture](#file-system-posture); the PID-based name is unsafe).
 
@@ -103,7 +103,7 @@ The following are first-party-verified against pi v0.75.5 (the version pinned in
 |---|---|---|
 | 1 | `customInstructions` is a field on `SessionBeforeCompactEvent` (the event), **not** on `CompactionPreparation`. The `examples/extensions/custom-compaction.ts` example silently omits it. | `docs/compaction.md:278-279`, `docs/extensions.md:413-414` |
 | 2 | `CompactionPreparation` fields: `messagesToSummarize`, `turnPrefixMessages`, `previousSummary`, `fileOps`, `tokensBefore`, `firstKeptEntryId`, `settings`. Event-level fields: `preparation`, `branchEntries`, `customInstructions`, `signal`. | `docs/compaction.md:280-289` |
-| 3 | Return contract: `{ cancel: true }` skips; `{ compaction: { summary, firstKeptEntryId, tokensBefore, details? } }` writes a `CompactionEntry`. `undefined` is the canonical fall-through-to-default-LLM trigger — **inferred** from the handler API shape; no contradicting documentation exists in v0.75.5, but `undefined` is not explicitly named as a fall-through path in `docs/compaction.md`. Empty-string summary is similarly undocumented and SHOULD NOT be used. Upstream documentation request tracked at [#211](https://github.com/TheSemicolon/pi_config/issues/211); Contract #3 is updated to cite the documented surface once the upstream lands. | `docs/compaction.md:295-308` |
+| 3 | Return contract: `{ cancel: true }` skips; `{ compaction: { summary, firstKeptEntryId, tokensBefore, details? } }` writes a `CompactionEntry`. `undefined` is the canonical fall-through-to-default-LLM trigger — **inferred** from the handler API shape; no contradicting documentation exists in v0.75.5, but `undefined` is not explicitly named as a fall-through path in `docs/compaction.md`. Empty-string summary is similarly undocumented and SHOULD NOT be used. Upstream documentation request tracked at #211; Contract #3 is updated to cite the documented surface once the upstream lands. | `docs/compaction.md:295-308` |
 | 4 | `details` is opaque generic `T = unknown`, not shape-validated. Restrict our payload to pure JSON-serializable values (no Dates, Maps, BigInts, `undefined`). | `docs/compaction.md:148-168` |
 | 5 | `firstKeptEntryId` is trusted-not-validated at write time. Safe pattern: always echo `preparation.firstKeptEntryId` unchanged. | `docs/compaction.md:158-167` |
 | 6 | `event.signal: AbortSignal` MUST be forwarded to any LLM/IO. v0.75.5 (per `CHANGELOG.md:65`) made the handler await block turn settlement — ignoring the signal leaves `/compact` cancellation (Esc) unresponsive. | `docs/compaction.md:286`, `CHANGELOG.md:65` |
@@ -115,7 +115,7 @@ The following are first-party-verified against pi v0.75.5 (the version pinned in
 
 ## Threat Model and Security Posture
 
-This section is asserted by this ADR rather than verified against pi v0.75.5. It enumerates trust boundaries and obligations the implementation MUST honor. Pre-implementation `/full-review` (security-review-expert verdict NEEDS_CHANGES, code-review-expert NEEDS_CHANGES) surfaced the design defects motivating these requirements; all are PR1 acceptance criteria, also enumerated at the [#208 acceptance-criteria comment](https://github.com/TheSemicolon/pi_config/issues/208#issuecomment-4535172589).
+This section is asserted by this ADR rather than verified against pi v0.75.5. It enumerates trust boundaries and obligations the implementation MUST honor. Pre-implementation `/full-review` (security-review-expert verdict NEEDS_CHANGES, code-review-expert NEEDS_CHANGES) surfaced the design defects motivating these requirements; all are PR1 acceptance criteria, also enumerated at the #208 acceptance-criteria comment.
 
 ### Trust boundary — project-layer settings are untrusted input
 
@@ -185,7 +185,7 @@ Archives are plain markdown with no signing, hashing, or append-only filesystem 
 
 - **Two handlers to keep in sync.** A future pi change to either event signature requires touching both.
 - **Deterministic summary loses orphan assistant prose.** The hybrid heuristic mitigates by falling through, but on edge cases (assistant text just under the orphan threshold, ratio just above the cutoff) the deterministic summary may elide content. Mitigation: the archive always captures the raw turns; users can re-read on demand.
-- **Settings namespace not validated by pi.** `extensionSettings.compactionOptimizer.*` is convention, not contract. A future pi top-level `extensionSettings` key with conflicting semantics would silently collide. Mitigation: the `extensionSettings.*` parent key is currently vacant in `settings.json` (verified against `docs/settings.md` at pi v0.75.5), and the upstream proposal tracked at [#210](https://github.com/TheSemicolon/pi_config/issues/210) would, if accepted, formalize this key as the registration namespace and add collision detection at the API level.
+- **Settings namespace not validated by pi.** `extensionSettings.compactionOptimizer.*` is convention, not contract. A future pi top-level `extensionSettings` key with conflicting semantics would silently collide. Mitigation: the `extensionSettings.*` parent key is currently vacant in `settings.json` (verified against `docs/settings.md` at pi v0.75.5), and the upstream proposal tracked at #210 would, if accepted, formalize this key as the registration namespace and add collision detection at the API level.
 - **Archive directory growth is unbounded over time.** No rotation/eviction policy in v1. Documented in the extension's README; rotation tracked as a follow-up if it becomes painful.
 - **First extension to invent a per-extension data directory convention.** If pi later documents a different convention, we will need to migrate. The migration is mechanical (move directory + update default path) but is non-zero work.
 - **`isSplitTurn` field name is docs-only.** Verified semantically present (driven by non-empty `turnPrefixMessages`) but the literal field name was not cross-checked against `pi-mono` types at ADR-write time. The PR1 implementation step explicitly cross-checks against `packages/coding-agent/src/core/extensions/types.ts` at tag `v0.75.5`.
@@ -209,7 +209,7 @@ Archives are plain markdown with no signing, hashing, or append-only filesystem 
 - All requirements from [Threat Model and Security Posture](#threat-model-and-security-posture) are PR1 acceptance criteria: project-layer settings allowlist, file/dir mode bits, symlink-refusal, atomic-write semantics, `mkdtemp`-based ephemeral paths, append-only `failure.log`, and `archive.redactPatterns` hook (empty default).
 - Test fixtures asserting (a) project-layer rejection of out-of-prefix `archive.path`, (b) refusal-on-symlink behavior, (c) refusal-on-pre-existing-target, (d) mode-bit assertions on created directories/files.
 - README, AGENTS.md repo-layout update, settings.schema.json. README MUST state: archive content sensitivity, `secrets-guard` non-coverage with rationale, integrity non-claim, interim default mode, and the rollback procedure.
-- Full PR1 acceptance criteria checklist at [#208 comment](https://github.com/TheSemicolon/pi_config/issues/208#issuecomment-4535172589).
+- Full PR1 acceptance criteria checklist at #208 comment.
 
 **PR2 — deterministic and hybrid modes.**
 
@@ -348,8 +348,8 @@ Unanimous verdict: **PASS_WITH_WARNINGS** with ~85% finding overlap and three un
 
 ### Follow-ups filed pre-ADR
 
-- [#208](https://github.com/TheSemicolon/pi_config/issues/208) — tracking issue for this ADR's implementation.
-- [#209](https://github.com/TheSemicolon/pi_config/issues/209) — `agent/vendor/pi/README.md` doc drift (surfaced by Agent 3; doc-only fix, separate PR).
+- #208 — tracking issue for this ADR's implementation.
+- #209 — `agent/vendor/pi/README.md` doc drift (surfaced by Agent 3; doc-only fix, separate PR).
 
 ### Held for further discussion
 
@@ -357,8 +357,8 @@ Unanimous verdict: **PASS_WITH_WARNINGS** with ~85% finding overlap and three un
 
 ### Filed during ADR-0019 self-review (not held)
 
-- Upstream proposal for schema-registered extension settings API — tracked locally at [#210](https://github.com/TheSemicolon/pi_config/issues/210), filed upstream as [`earendil-works/pi#4981`](https://github.com/earendil-works/pi/issues/4981) (auto-closed by new-contributor bot per repo convention; awaiting maintainer reopen).
-- Contribution request to document `undefined`-return fall-through in `docs/compaction.md` — tracked at [#211](https://github.com/TheSemicolon/pi_config/issues/211); upstream filing pending re-review of `earendil-works/pi` contribution docs (procedure documented in #211).
+- Upstream proposal for schema-registered extension settings API — tracked locally at #210, filed upstream as [`earendil-works/pi#4981`](https://github.com/earendil-works/pi/issues/4981) (auto-closed by new-contributor bot per repo convention; awaiting maintainer reopen).
+- Contribution request to document `undefined`-return fall-through in `docs/compaction.md` — tracked at #211; upstream filing pending re-review of `earendil-works/pi` contribution docs (procedure documented in #211).
 
 ### Self-review (Agent Efficacy)
 

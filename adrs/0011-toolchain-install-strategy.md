@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-05-20
-- **Related:** [ADR-0009](0009-pi-runtime-acquisition-strategy.md) (pi runtime vendor pattern), [ADR-0010](0010-setup-install-trust-posture.md) (setup.sh active-install posture), [#102](https://github.com/TheSemicolon/pi_config/issues/102), [#107](https://github.com/TheSemicolon/pi_config/issues/107) (pi npm-path deprecation), [#110](https://github.com/TheSemicolon/pi_config/issues/110)
+- **Related:** [ADR-0009](0009-pi-runtime-acquisition-strategy.md) (pi runtime vendor pattern), [ADR-0010](0010-setup-install-trust-posture.md) (setup.sh active-install posture), #102, #107 (pi npm-path deprecation), #110
 
 ## Context
 

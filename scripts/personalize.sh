@@ -24,7 +24,7 @@
 #
 # Why a hardcoded R2 list rather than `git ls-files | sed`:
 #   docs/distribution-provenance.md contains BOTH R2 (cosign regex) and R3
-#   (issue cross-refs) `TheSemicolon/pi_config` references. A blind sweep
+#   (issue cross-refs) `psmfd/pi-config` references. A blind sweep
 #   would rewrite both. Per-file line-anchored sed programs are correct.
 #   The maintenance liability (new R2 sites silently skipped) is caught
 #   by --verify (#144 / sub-issue #129c).

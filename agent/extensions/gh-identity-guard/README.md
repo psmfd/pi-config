@@ -11,8 +11,8 @@ Source ADRs: [`adrs/0022-gh-identity-guard-extension.md`](../../../adrs/0022-gh-
 `gh auth status` reads a config-file flag (`active`) that can disagree with
 the token actually used by `gh api` after a `gh auth switch` + refresh. The
 only authoritative answer to "who am I as?" is `gh api /user --jq .login`.
-Defect filed as [#217](https://github.com/TheSemicolon/pi_config/issues/217),
-procedurally patched in [#251](https://github.com/TheSemicolon/pi_config/pull/251)
+Defect filed as #217,
+procedurally patched in #251
 (skill text + sourceable helper); this extension is the structural fix.
 
 ## What it blocks
@@ -234,8 +234,8 @@ confusion in multi-repo workflows.
   a token-integrity guard).
 - Raw shell outside pi — **partially addressed** by the companion git
   pre-push hook ([`hooks/gh-identity-guard.sh`](../../../hooks/gh-identity-guard.sh),
-  landed via [#260](https://github.com/TheSemicolon/pi_config/pull/260) and
-  [#257](https://github.com/TheSemicolon/pi_config/issues/257)). The hook
+  landed via #260 and
+  #257). The hook
   fires on `git push` from any shell (pi, plain terminal, IDE) for GitHub
   remotes only; ADO/GitLab/Bitbucket/self-hosted pushes pass through. Both
   layers share the same expected-identity resolution chain and the
@@ -306,7 +306,7 @@ so operators can identify which one fired.
   Belt-and-suspenders documentation of *why* the guard exists, surviving
   the extension as a fallback for sessions where the extension is disabled.
 - **Helper script** `scripts/lib/gh-verify-user.sh` for non-pi consumers.
-- **Companion git pre-push hook** ([#257](https://github.com/TheSemicolon/pi_config/issues/257),
+- **Companion git pre-push hook** (#257,
   deferred) closes the raw-shell-outside-pi gap.
 
 ## References

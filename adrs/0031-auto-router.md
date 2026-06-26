@@ -7,14 +7,14 @@ date: 2026-06-09
 
 **Status:** Accepted
 **Date:** 2026-06-09
-**Tracking issue:** [#330](https://github.com/psmfd/pi_config/issues/330)
-**Related:** [#327](https://github.com/psmfd/pi_config/issues/327) (suite), [#328](https://github.com/psmfd/pi_config/issues/328) (Phase 0 verification), [ADR-0030](0030-shared-foundation.md) (`shared/` foundation it consumes), [ADR-0021](0021-extension-type-checking-and-linting.md) (no per-extension `package.json`)
+**Tracking issue:** #330
+**Related:** #327 (suite), #328 (Phase 0 verification), [ADR-0030](0030-shared-foundation.md) (`shared/` foundation it consumes), [ADR-0021](0021-extension-type-checking-and-linting.md) (no per-extension `package.json`)
 
 ## Context and Problem Statement
 
-The Pi Extension Suite ([#327](https://github.com/psmfd/pi_config/issues/327)) optimizes session cost on three axes; auto-router owns "cost per token" by choosing a per-prompt model instead of pinning one. No maintained extension does classifier-routed selection, so this workstream is a build (the suite's only unconditional build besides `shared/`).
+The Pi Extension Suite (#327) optimizes session cost on three axes; auto-router owns "cost per token" by choosing a per-prompt model instead of pinning one. No maintained extension does classifier-routed selection, so this workstream is a build (the suite's only unconditional build besides `shared/`).
 
-Phase 0 ([#328](https://github.com/psmfd/pi_config/issues/328)) verified the runtime surface against the shipped **pi v0.79.0** distribution. Two plan assumptions were wrong and are corrected here.
+Phase 0 (#328) verified the runtime surface against the shipped **pi v0.79.0** distribution. Two plan assumptions were wrong and are corrected here.
 
 ## Considered Options
 
@@ -51,5 +51,5 @@ Phase 0 ([#328](https://github.com/psmfd/pi_config/issues/328)) verified the run
 
 ## More Information
 
-- Phase 0 record + citations: issue [#328](https://github.com/psmfd/pi_config/issues/328).
+- Phase 0 record + citations: issue #328.
 - Plan of record: [`notes/pi-extension-suite-plan.md`](../notes/pi-extension-suite-plan.md) (rev 2) § "Workstream A — auto-router".

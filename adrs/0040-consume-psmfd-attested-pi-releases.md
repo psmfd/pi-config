@@ -7,7 +7,7 @@ date: 2026-06-12
 
 **Status:** Accepted
 **Date:** 2026-06-12
-**Tracking issue:** [#374](https://github.com/psmfd/pi_config/issues/374)
+**Tracking issue:** #374
 **Related:** [ADR-0009](0009-pi-runtime-acquisition-strategy.md) (pin-and-fetch mechanism — amended, not superseded), [ADR-0038](0038-psmfd-pi-build-and-attest-trust-boundary.md) (build-and-attest boundary), [ADR-0039](0039-mirror-sync-cadence-and-provenance.md) (mirror sync), [`docs/psmfd-pi-release-runbook.md`](../docs/psmfd-pi-release-runbook.md)
 
 ## Context and Problem Statement

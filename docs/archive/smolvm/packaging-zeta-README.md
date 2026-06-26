@@ -13,7 +13,7 @@ them as decision-history pointers, not navigable links.
 
 # Substrate ζ — `pi-config-pack` Dockerfile + entrypoint shim
 
-This directory holds the bake source for substrate ζ (smolvm pack), per [ADR-0016](../../adrs/0016-smolvm-pack-substrate-details.md) and parent [#131](https://github.com/TheSemicolon/pi_config/issues/131). One-pager for contributors; recipient-facing UX docs live in [#163](https://github.com/TheSemicolon/pi_config/issues/163).
+This directory holds the bake source for substrate ζ (smolvm pack), per [ADR-0016](../../adrs/0016-smolvm-pack-substrate-details.md) and parent #131. One-pager for contributors; recipient-facing UX docs live in #163.
 
 ## Layout
 
@@ -21,7 +21,7 @@ This directory holds the bake source for substrate ζ (smolvm pack), per [ADR-00
 |---|---|
 | `Dockerfile` | Two-stage build: BUILDPLATFORM-native fetcher (downloads + verifies the per-`TARGETARCH` pi binary against `agent/vendor/pi/CHECKSUMS`) → TARGETPLATFORM runtime (pinned `debian@sha256:0104b…` base, tini PID-1, USER 1000:1000, ENV `PI_OFFLINE=1`/`PI_SKIP_VERSION_CHECK=1`/`PI_CODING_AGENT_DIR=/persistent`). |
 | `entrypoint.sh` | R1 seeding shim per ADR-0016 D1+D6: idempotent symlink seeding of read-only sub-paths, `install -m 0600` for `auth.json`, `install -m 0644` for `settings.json`, writable-dir creation for `sessions/`+`npm/`+`git/`, `.pack-meta.json` sentinel reconciliation (same/upgrade/refuse-on-downgrade). |
-| `seed/auth.json` | Headless-auth template per ADR-0016 D5: env-var-name indirection entries for all 26 API-key providers pi recognizes (per pi-agent-expert's v0.75.4 `docs/providers.md:36-118` walk on [#160](https://github.com/TheSemicolon/pi_config/issues/160)). OAuth providers (Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot) deliberately excluded — they require interactive `/login`. |
+| `seed/auth.json` | Headless-auth template per ADR-0016 D5: env-var-name indirection entries for all 26 API-key providers pi recognizes (per pi-agent-expert's v0.75.4 `docs/providers.md:36-118` walk on #160). OAuth providers (Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot) deliberately excluded — they require interactive `/login`. |
 | `seed/settings.json` | Minimal pi default settings; pi merges unknown fields forward-compatibly. |
 
 `seed/.pack-meta.json` is **generated at build time** from the `PACK_VERSION`, `PI_VERSION`, and `SCHEMA_VERSION` build args (see `Dockerfile` final RUN stage), not stored as a static file.
@@ -132,8 +132,8 @@ produced blob digest. The OCI image portion is partially reproducible
 
 ## Out of scope
 
-- CI release workflow → [#161](https://github.com/TheSemicolon/pi_config/issues/161) (in this PR)
-- cosign-keyless signing → [#162](https://github.com/TheSemicolon/pi_config/issues/162)
-- Recipient UX docs → [#163](https://github.com/TheSemicolon/pi_config/issues/163)
-- smolvm vendor pin → [#164](https://github.com/TheSemicolon/pi_config/issues/164) (closed; smolvm v0.7.2 vendored)
-- Sidecar reproducibility → [#170](https://github.com/TheSemicolon/pi_config/issues/170) (smolvm upstream)
+- CI release workflow → #161 (in this PR)
+- cosign-keyless signing → #162
+- Recipient UX docs → #163
+- smolvm vendor pin → #164 (closed; smolvm v0.7.2 vendored)
+- Sidecar reproducibility → #170 (smolvm upstream)

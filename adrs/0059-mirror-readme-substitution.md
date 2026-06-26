@@ -7,7 +7,7 @@ date: 2026-06-25
 
 **Status:** Accepted
 **Date:** 2026-06-25
-**Closes:** [#404](https://github.com/psmfd/pi_config/issues/404) (curated end-user README for the pi-config mirror)
+**Closes:** #404 (curated end-user README for the pi-config mirror)
 **Related:** [ADR-0050](0050-outbound-distribution-mirror-sync.md) (the replace-mode sync this extends), [ADR-0042](0042-standalone-extension-distribution.md) (extension mirrors keep their own overlay README — the precedent for a mirror-specific README), [ADR-0051](0051-sendable-one-shot-installer.md) (`install.sh`, the end-user entry point the README leads with), [ADR-0049](0049-genericize-runtime-config-via-templates.md) (config genericization — the README states the mirror ships generic config only).
 
 ## Context and Problem Statement

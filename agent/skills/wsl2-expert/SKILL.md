@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Read-only reference for **Windows Subsystem for Linux 2** — the `wsl.exe` command surface, the per-distro `/etc/wsl.conf` and the host-side `.wslconfig` configuration files, distro lifecycle including the `wsl --export` / `wsl --import` packaging path, systemd-in-WSL2, networking modes (NAT vs mirrored), Windows ↔ Linux interop, and runtime diagnostics. Primary data source is `learn.microsoft.com/en-us/windows/wsl/`. **All version-dependent defaults must be sourced from the live MS Learn page for the user's Windows build — do not assert them from this reference.**
 
-This skill is the **guest-side / CLI-side counterpart** to `hyperv-expert`. The Hyper-V root-partition mechanics, nested-virtualization toggles, the `VirtualMachinePlatform` optional feature, the WHPX API, and the VBS / HVCI / Credential Guard interaction with L2 hypervisors all live in `hyperv-expert`; cross-link rather than duplicate. The skill exists to support distribution-substrate questions (TheSemicolon/pi_config#99 — particularly option η, distributing pi_config as a pre-populated rootfs imported via `wsl --import`).
+This skill is the **guest-side / CLI-side counterpart** to `hyperv-expert`. The Hyper-V root-partition mechanics, nested-virtualization toggles, the `VirtualMachinePlatform` optional feature, the WHPX API, and the VBS / HVCI / Credential Guard interaction with L2 hypervisors all live in `hyperv-expert`; cross-link rather than duplicate. The skill exists to support distribution-substrate questions (psmfd/pi-config#99 — particularly option η, distributing pi_config as a pre-populated rootfs imported via `wsl --import`).
 
 ---
 

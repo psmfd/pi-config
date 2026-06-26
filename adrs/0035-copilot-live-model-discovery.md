@@ -7,8 +7,8 @@ date: 2026-06-11
 
 **Status:** Accepted
 **Date:** 2026-06-11
-**Tracking issue:** [#343](https://github.com/psmfd/pi_config/issues/343)
-**Related:** [#330](https://github.com/psmfd/pi_config/issues/330) / [ADR-0031](0031-auto-router.md) (auto-router), [#327](https://github.com/psmfd/pi_config/issues/327) (suite), [ADR-0015](0015-network-capable-extensions-and-the-first-party-docs-allowlist.md) (network-capable extensions + the `web_fetch` allowlist), [ADR-0026](0026-copilot-models-forward-fix-via-models-json.md) (Copilot models + tier gating), [`agent/rules/no-mcp-servers.md`](../agent/rules/no-mcp-servers.md) (no-MCP / injection policy)
+**Tracking issue:** #343
+**Related:** #330 / [ADR-0031](0031-auto-router.md) (auto-router), #327 (suite), [ADR-0015](0015-network-capable-extensions-and-the-first-party-docs-allowlist.md) (network-capable extensions + the `web_fetch` allowlist), [ADR-0026](0026-copilot-models-forward-fix-via-models-json.md) (Copilot models + tier gating), [`agent/rules/no-mcp-servers.md`](../agent/rules/no-mcp-servers.md) (no-MCP / injection policy)
 
 ## Context and Problem Statement
 

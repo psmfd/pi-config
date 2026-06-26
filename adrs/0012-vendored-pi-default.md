@@ -4,7 +4,7 @@
 **Date:** 2026-05-20
 **Supersedes (in part):** [ADR-0010](0010-setup-install-trust-posture.md) § "Pi acquisition" — the dual-path opt-in posture (npm default, vendored opt-in) is replaced by the inverse (vendored default, npm opt-out).
 **Builds on:** [ADR-0009](0009-pi-runtime-acquisition-strategy.md) (the `fetch_pi_binary()` mechanism this ADR makes the default consumer of).
-**Tracking issue:** [#107](https://github.com/TheSemicolon/pi_config/issues/107).
+**Tracking issue:** #107.
 
 ## Context and Problem Statement
 
@@ -20,7 +20,7 @@ ADR-0010 deferred the flip ("the deprecation target tracked in #107") on the bas
 
 Three evidence channels have accumulated since ADR-0010 landed:
 
-1. **Per-PR CI smoke** ([#111](https://github.com/TheSemicolon/pi_config/issues/111) → `.github/workflows/setup-smoke.yml`) exercises `PI_USE_VENDORED=1 ./setup.sh` on `ubuntu-latest` + `macos-latest` on every PR that touches install surfaces. The current `macos-latest` runner image is Apple Silicon (since `macos-14`), so this covers `linux/x64` and `darwin/arm64`. The `darwin/x64` triple would require pinning a `macos-13` runner; the `linux/arm64` triple has no hosted-runner option on the free tier. Triggers on every install-surface PR plus weekly cron (Monday 12:00 UTC).
+1. **Per-PR CI smoke** (#111 → `.github/workflows/setup-smoke.yml`) exercises `PI_USE_VENDORED=1 ./setup.sh` on `ubuntu-latest` + `macos-latest` on every PR that touches install surfaces. The current `macos-latest` runner image is Apple Silicon (since `macos-14`), so this covers `linux/x64` and `darwin/arm64`. The `darwin/x64` triple would require pinning a `macos-13` runner; the `linux/arm64` triple has no hosted-runner option on the free tier. Triggers on every install-surface PR plus weekly cron (Monday 12:00 UTC).
 2. **Weekly cron** of the same workflow surfaces drift from upstream GitHub release-asset availability changes independently of PR activity.
 3. **The summary-line CI assertion** added in #112 / PR #117 (`^(PASS|FAIL) — [0-9]+ errors, [0-9]+ warnings$`) provides a stronger end-to-end-completion signal than the previous "phase marker matched" greps — it caught a latent §4 abort the day it was added.
 
@@ -95,7 +95,7 @@ Chosen option: **C — flip default to vendored; keep npm path indefinitely as `
 
 ## More Information
 
-- Tracking issue: [#107](https://github.com/TheSemicolon/pi_config/issues/107) (auto-closes on merge).
+- Tracking issue: #107 (auto-closes on merge).
 - Evidence channel #1: PR #115 (smoke harness), `.github/workflows/setup-smoke.yml`.
 - Evidence channel #2: weekly cron, same workflow.
 - Evidence channel #3: PR #117 / #112 (summary-line CI assertion).

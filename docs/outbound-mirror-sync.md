@@ -1,6 +1,6 @@
 # Outbound distribution-mirror sync
 
-Operational runbook for pushing curated subsets of the private `psmfd/pi_config`
+Operational runbook for pushing curated subsets of the private `psmfd/pi-config`
 monorepo out to its public distribution mirrors. Decision record:
 [ADR-0050](../adrs/0050-outbound-distribution-mirror-sync.md).
 
@@ -27,6 +27,26 @@ Safety properties (see ADR-0050 for the full rationale):
 - **Sanitize then fail-closed verify** — `mirror/sanitize/*.sed` rewrites example
   strings (the EMU/enterprise login examples → placeholders); a denylist grep
   then aborts the target if anything survived. Only the staged copy is touched.
+- **README portability for extension mirrors** ([ADR-0062](../adrs/0062-mirror-readme-portability.md)) —
+  an extension's `README.md` ships verbatim into a standalone public repo where
+  monorepo-relative links (`](../../../adrs/…)`, `.review/`, sibling extensions)
+  404 and private-repo refs (`psmfd/pi-config`, `psmfd/pi-config`) leak.
+  Each extension target carries a per-extension `mirror/sanitize/<target>.sed` that
+  rewrites ADR/rule/hook links to `psmfd/pi-config` blob URLs, de-links private
+  issue/PR URLs to plain `#NNN`, and rewrites cross-extension links to the sibling
+  mirror; an extension whose README is dominated by monorepo-infra cross-links uses
+  a curated `readme_substitute` instead (e.g. `pi-artifact-handoff`). A fail-closed
+  **`verify_portable`** gate then runs over every **overlay** staged tree and
+  **hard-fails** the sync if any `](../` link or `(TheSemicolon|psmfd)/pi_config`
+  slug survives.
+- **Private-slug enforcement for the config mirror** ([ADR-0063](../adrs/0063-config-mirror-portability.md)) —
+  the config mirror ships the ADR/doc/rule corpus, which references the private
+  source repo (`psmfd/pi-config`, formerly `psmfd/pi-config`) ~1,700 times.
+  `mirror/sanitize/pi-config.sed` de-links private issue/PR URLs to their link text
+  and rewrites any surviving private slug to `psmfd/pi-config`; it does **not** touch
+  relative links (which resolve on the config mirror, since it ships `adrs/`). The
+  private slug is now in the global `DENYLIST_REGEX`, so `verify_clean` fail-closes
+  on it for **every** target — extensions and config alike.
 - **Secret-scan backstop** — `scripts/scan-secrets.sh` over the staged tree;
   best-effort in dry-run, mandatory before any push.
 - **Curated README** (ADR-0059) — the `pi-config` target declares
@@ -53,7 +73,7 @@ tree for inspection.
 - **`verify` job** — on every PR to `dev`/`main`, runs `--all --dry-run`; a
   surviving denylisted string fails the job. It is a **required status check** on
   `dev` ([ADR-0056](../adrs/0056-branch-protection-model.md), closing
-  [#398](https://github.com/psmfd/pi_config/issues/398)). It triggers on every
+  #398). It triggers on every
   protected-branch PR (scoped by `branches:`, not `paths:`) so the required check
   never stalls in a perpetual "expected" state. The `sync` job's own pre-push
   verify remains the authoritative fail-closed gate.
@@ -87,7 +107,7 @@ long-lived `MIRROR_SYNC_TOKEN` PAT). One-time setup:
    repositories**) on exactly the six mirrors: `pi-config`, `pi-secrets-guard`,
    `pi-bash-destructive-guard`, `pi-artifact-handoff`, `pi-web-fetch`,
    `pi-cache-meter`.
-4. **Create the `mirror-production` environment** on `psmfd/pi_config`
+4. **Create the `mirror-production` environment** on `psmfd/pi-config`
    (`Settings → Environments → New environment`) and add to it:
    - Variable **`APP_CLIENT_ID`** = the `Iv23.…` Client ID (non-secret).
    - Secret **`APP_PRIVATE_KEY`** = the full `.pem` contents (`-----BEGIN…`).
@@ -105,6 +125,10 @@ long-lived `MIRROR_SYNC_TOKEN` PAT). One-time setup:
    [ADR-0042](../adrs/0042-standalone-extension-distribution.md)).
 2. Add a `targets:` entry to `mirror/targets.yml` (`repo`, `mode`,
    `strip_prefix` for extensions, `sources`, `exclude`, `sanitize`).
+   For an **extension** target, author a `mirror/sanitize/<target>.sed` (or a
+   curated `readme_substitute`) so the README is portable — the `verify_portable`
+   gate hard-fails the dry-run until every `](../` link and private-repo slug is
+   handled ([ADR-0062](../adrs/0062-mirror-readme-portability.md)).
 3. Install the mirror-sync GitHub App on the new repo (App → *Install App* →
    *Configure* → add the repo to the selected-repositories list) and add it to the
    workflow's `repositories:` list in `sync-mirrors.yml` (ADR-0061).
@@ -138,7 +162,7 @@ Properties:
   release create --verify-tag` — `gh release create` alone would make a
   lightweight tag.
 - **Token scope.** Tag push and Release creation need **Contents: write** only
-  (already held; see [#412](https://github.com/psmfd/pi_config/issues/412)).
+  (already held; see #412).
 - **Dashboard.** `psmfd/pi-ecosystem` auto-discovers each repo's latest release on
   a 6-hourly cron; `gh workflow run dashboard --repo psmfd/pi-ecosystem` refreshes
   it immediately.
@@ -186,7 +210,7 @@ committed `.github/workflows/codeql.yml` would be erased by the `replace`-mode
 
 CodeQL default-setup is the mirror's **only** CI: no source-repo CI workflow is
 synced to the mirror, because a source-of-truth gate cannot pass against the
-derived subset (it was permanently red — [#411](https://github.com/psmfd/pi_config/issues/411)).
+derived subset (it was permanently red — #411).
 See [ADR-0054](../adrs/0054-no-source-ci-on-distribution-mirror.md).
 
 ### Source-side scanning: declined, with free gates ([ADR-0060](../adrs/0060-source-scanning-strategy.md))
@@ -198,9 +222,9 @@ and Checkmarx One adds no shell coverage and a paid tenant. ADR-0060 declines th
 purchase at current scale and instead closes the *material* part of the gap — the
 surfaces mirror CodeQL structurally cannot reach — with two free, PR-blocking CI
 gates: a **shellcheck** pass over `scripts/`/`hooks/`
-([#425](https://github.com/psmfd/pi_config/issues/425); shell is outside CodeQL's
+(#425; shell is outside CodeQL's
 JS/TS analysis) and **`eslint-plugin-security`** over the six unmirrored
-extensions ([#426](https://github.com/psmfd/pi_config/issues/426)). A 30-day
+extensions (#426). A 30-day
 enterprise Code Security trial is recorded as an available future measure if the
 source's risk profile changes.
 
@@ -212,7 +236,7 @@ present. The `replace`-mode config mirror (`pi-config`) ships **no** workflows
 (ADR-0054), so after the first sync that removed them the `Analyze (actions)`
 job has nothing to scan and fails on every push with
 `CodeQL detected code written in GitHub Actions but could not process any of it`
-(no-source-code-seen, exit 32) — a red check on the public repo ([#418](https://github.com/psmfd/pi_config/issues/418)).
+(no-source-code-seen, exit 32) — a red check on the public repo (#418).
 The five extension mirrors keep their own `ci.yml` overlay (ADR-0042), so their
 `actions` scan has code and is unaffected.
 

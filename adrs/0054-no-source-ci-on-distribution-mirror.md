@@ -7,7 +7,7 @@ date: 2026-06-25
 
 **Status:** Accepted
 **Date:** 2026-06-25
-**Closes:** [#411](https://github.com/psmfd/pi_config/issues/411) (the `pi-config` mirror's `validate` check was permanently red)
+**Closes:** #411 (the `pi-config` mirror's `validate` check was permanently red)
 **Related:** [ADR-0050](0050-outbound-distribution-mirror-sync.md) (the outbound mirror sync this refines — what the config mirror ships), [ADR-0052](0052-mirror-code-scanning-followup.md) (the mirror's CodeQL default-setup scanning posture, which this leaves as the mirror's only CI), [ADR-0053](0053-pin-github-actions-to-sha.md) (the Actions-hardening these same workflows received), [ADR-0036](0036-dev-integration-main-stable-branch-model.md) (the dev/main gate model `validate.yml` enforces on the source)
 
 ## Context and Problem Statement
@@ -31,14 +31,14 @@ Inspecting the other two confirms neither belongs on the derived artifact either
 
 - `setup-smoke.yml`'s final step *also* runs `scripts/validate.sh` (the same
   failure), and its weekly `cron` fires on the mirror independent of any push
-  (plus the unrelated macOS breakage in [#388](https://github.com/psmfd/pi_config/issues/388)).
+  (plus the unrelated macOS breakage in #388).
 - `artifact-review-guard.yml` enforces the source-internal Tier-3 `.review`
   never-merge contract (ADR-0006/ADR-0007), gated on a PR label. The mirror has
   no pull requests and excludes `.review` — it is inert and meaningless there.
 
 The root cause is categorical: a **source-of-truth / source-internal CI gate
 should not run on a wholly-derived distribution artifact**. The source's gates
-belong on the source (`psmfd/pi_config`).
+belong on the source (`psmfd/pi-config`).
 
 ## Considered Options
 
@@ -65,7 +65,7 @@ Convention going forward:
 
 - **Source-repo CI gates are not mirrored.** A workflow whose job validates the
   source of truth, the full dev toolchain, or a source-internal contract
-  (PR labels, `.review/`, branch protection) runs on `psmfd/pi_config` only. It
+  (PR labels, `.review/`, branch protection) runs on `psmfd/pi-config` only. It
   is never added to a mirror target's `sources`.
 - **The mirror's only CI is CodeQL default-setup** — server-side configuration,
   not a synced file, so it survives `rsync --delete` and is unaffected by this
@@ -85,7 +85,7 @@ Convention going forward:
 - Neutral: `MIRROR_SYNC_TOKEN`'s **Workflows: write** scope is still exercised by
   the one-time pruning push that deletes the mirror's workflow files, and is
   retained as margin; narrowing it to Contents-only afterward is a separate
-  least-privilege follow-up ([#412](https://github.com/psmfd/pi_config/issues/412)).
+  least-privilege follow-up (#412).
 - Bad / accepted: the mirror no longer runs `setup.sh` smoke validation on the
   exact shipped artifact. This was already failing on the mirror and is covered
   on the source via `setup-smoke.yml`; the marginal coverage loss is the artifact

@@ -4,7 +4,7 @@
 **Date:** 2026-05-18
 **Superseded:** 2026-05-19
 **Companion to:** [ADR-0001](0001-subagent-orchestration-substrate.md)
-**Tracking issue:** [#69](https://github.com/TheSemicolon/pi_config/issues/69)
+**Tracking issue:** #69
 
 ## Supersession rationale (2026-05-19)
 
@@ -19,7 +19,7 @@ A 3-replica `pi-agent-expert` consensus (per [ADR-0004](0004-consensus-by-replic
 5. **`pi.sendMessage(deliverAs:"followUp")` remains in-process only in pi 0.75.3** (verified against `docs/extensions.md` and `docs/sdk.md`). Context item 5 below is unchanged; the architectural premise still holds, but the *need* for a custom transport no longer does.
 6. **Permanent maintenance tax.** Every wrapper change would have required `coms: true` consideration; every snapshot bump would have required re-verifying the env-injection touch in `subagent/index.ts`; every capability change would have rippled through the intersection cache. ADR-0002's own "Bad" list captured this; on re-evaluation it was decisive.
 
-Option (c) supersede was chosen over (d) withdraw to leave an affirmative decision record: future contributors see that the intra-session inter-agent channel question is *answered* (Tier 3), not *open*. Inter-orchestrator (peer-session) coordination — a separate, larger design space — is tracked under [issue #96](https://github.com/TheSemicolon/pi_config/issues/96) and is out of scope for both this ADR and ADR-0008.
+Option (c) supersede was chosen over (d) withdraw to leave an affirmative decision record: future contributors see that the intra-session inter-agent channel question is *answered* (Tier 3), not *open*. Inter-orchestrator (peer-session) coordination — a separate, larger design space — is tracked under issue #96 and is out of scope for both this ADR and ADR-0008.
 
 The Decision Outcome, Considered Options, and More Information sections below are **preserved unedited** as a design archive per MADR immutability discipline.
 
@@ -110,11 +110,11 @@ These are non-negotiable and derived from the `security-review-expert` threat mo
 
 ### Cross-references
 
-* Tracking issue: [pi_config #69](https://github.com/TheSemicolon/pi_config/issues/69) — extension triage; this ADR is the deliverable for Phase B.
+* Tracking issue: pi_config #69 — extension triage; this ADR is the deliverable for Phase B.
 * Upstream source: [`disler/pi-vs-claude-code/extensions/coms.ts`](https://github.com/disler/pi-vs-claude-code/blob/main/extensions/coms.ts) — design reference, not adopted directly.
 * Upstream auth-model reference: [`disler/pi-vs-claude-code/extensions/coms-net.ts`](https://github.com/disler/pi-vs-claude-code/blob/main/extensions/coms-net.ts) — `--auth-token` flag is the only auth primitive in upstream; we go beyond it with spawn-lineage tokens and signed registry entries.
 * Adjacent ADR (proposed): `adrs/0005-tool-call-journal-and-restore.md` — file-journaling and `restore` tool for real rollback. Independent of this ADR but uses similar journal patterns; should align on filesystem layout conventions if both land.
-* Adjacent issue: [#23](https://github.com/TheSemicolon/pi_config/issues/23) — Stop-hook spike. The `tool_result` middleware surface relevant to ADR-0005 also affects any future evolution of the coms channel.
+* Adjacent issue: #23 — Stop-hook spike. The `tool_result` middleware surface relevant to ADR-0005 also affects any future evolution of the coms channel.
 
 ### Open questions deferred to Phase 2
 

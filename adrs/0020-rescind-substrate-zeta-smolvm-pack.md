@@ -5,15 +5,15 @@
 - **Supersedes:** [ADR-0016](0016-smolvm-pack-substrate-details.md), [ADR-0017](0017-substrate-zeta-path-b-framing.md)
 - **Amends:** [ADR-0013](0013-distribution-substrate-strategy.md) (removes ζ from the substrate matrix), [ADR-0014](0014-oci-substrate-amendment-to-0013.md) (κ becomes the sole non-host-process substrate; the "ζ is the sandbox substrate" reframing is retired with ζ; cross-substrate amendments are retained)
 - **Related:** [ADR-0004](0004-consensus-by-replication.md) (decision provenance — this ADR was authored via 3-replica `docs-expert` consensus), [ADR-0011](0011-toolchain-install-strategy.md) (vendor-pin pattern — unaffected; the smolvm entry is removed but the pattern stands), [ADR-0015](0015-network-capable-extensions-and-the-first-party-docs-allowlist.md) (web-fetch allowlist — the `smolmachines.com` entry is removed under existing allowlist policy, not a new ADR-0015 amendment)
-- **Tracking issue:** [#219](https://github.com/TheSemicolon/pi_config/issues/219) (umbrella — full disposition matrix for closed/re-scoped child issues)
+- **Tracking issue:** #219 (umbrella — full disposition matrix for closed/re-scoped child issues)
 
 ## Context and problem statement
 
-[ADR-0017](0017-substrate-zeta-path-b-framing.md) reframed substrate ζ's audience contract as Path B (ship-as-portable-binary, macOS + Debian first-class, Windows deferred), rescinded the "smolvm-installed-locally as a recipient prerequisite" assumption that underpinned [ADR-0016 §D2](0016-smolvm-pack-substrate-details.md#decision-outcome), and **deferred the implementation-shape question to a then-unwritten ADR-0018**. Two work tracks were spawned to fill that deferred slot: [#204](https://github.com/TheSemicolon/pi_config/issues/204) (Path-B replacement umbrella) and [#207](https://github.com/TheSemicolon/pi_config/issues/207) (Phase-2 substrate-verification fan-out: libkrun-direct vs per-OS-slice composition).
+[ADR-0017](0017-substrate-zeta-path-b-framing.md) reframed substrate ζ's audience contract as Path B (ship-as-portable-binary, macOS + Debian first-class, Windows deferred), rescinded the "smolvm-installed-locally as a recipient prerequisite" assumption that underpinned [ADR-0016 §D2](0016-smolvm-pack-substrate-details.md#decision-outcome), and **deferred the implementation-shape question to a then-unwritten ADR-0018**. Two work tracks were spawned to fill that deferred slot: #204 (Path-B replacement umbrella) and #207 (Phase-2 substrate-verification fan-out: libkrun-direct vs per-OS-slice composition).
 
 Three load-bearing facts have accumulated since ADR-0017 that, taken together, change the cost/benefit of *filling* the deferred slot vs *closing* it:
 
-1. **The empirical wall is structural, not contingent.** [#178](https://github.com/TheSemicolon/pi_config/issues/178) (closed) demonstrated that `smolvm v0.7.2 pack create` reproducibly fails fetching the first layer of debian-based GHCR images inside libkrun on GHA `ubuntu-24.04`. [#196](https://github.com/TheSemicolon/pi_config/issues/196) disambiguated the failure to GHA-nested-KVM specifics (not all-Linux). [#200](https://github.com/TheSemicolon/pi_config/issues/200) validated that a self-hosted Linux x86_64 runner produces sidecars correctly — at the cost of standing up and maintaining a dedicated host indefinitely. The mac-side path is independently dead: `smolvm-darwin-arm64` ships a host-arch-coupled `agent-rootfs.tar` (aarch64 busybox) with no `--oci-platform` override, so cross-arch sidecar production from macOS is structurally infeasible (documented in [#178](https://github.com/TheSemicolon/pi_config/issues/178)/[#196](https://github.com/TheSemicolon/pi_config/issues/196)).
+1. **The empirical wall is structural, not contingent.** #178 (closed) demonstrated that `smolvm v0.7.2 pack create` reproducibly fails fetching the first layer of debian-based GHCR images inside libkrun on GHA `ubuntu-24.04`. #196 disambiguated the failure to GHA-nested-KVM specifics (not all-Linux). #200 validated that a self-hosted Linux x86_64 runner produces sidecars correctly — at the cost of standing up and maintaining a dedicated host indefinitely. The mac-side path is independently dead: `smolvm-darwin-arm64` ships a host-arch-coupled `agent-rootfs.tar` (aarch64 busybox) with no `--oci-platform` override, so cross-arch sidecar production from macOS is structurally infeasible (documented in #178/#196).
 
 2. **The upstream platform-coverage gap is unresolved.** smolvm v0.7.2 publishes only `darwin-arm64` and `linux-x86_64` assets. No `linux-arm64` binary exists upstream, so [`ubuntu-24.04-arm`](https://github.com/actions/runner-images) (AWS Graviton) is structurally unavailable as a build platform regardless of GHA's KVM exposure. `agent/vendor/smolvm/README.md` § "Platform coverage" already documents `fetch_smolvm_binary()` refusing these triples with `upstream-coverage-gap` errors.
 
@@ -35,7 +35,7 @@ Remove the smolvm pin, the packaging tree, the `pack-release.yml` workflow, the 
 
 Continue the Phase-2 substrate-verification work (#207), commit to one of libkrun-direct / per-OS-slice composition / Apple-Containerization-tracked, and ship an ADR-0018 + implementation.
 
-**Rejected.** The Phase-2 work has not produced a deliverable v1 candidate. The macOS-first-class options either require an unrealistic OS floor (Apple Containerization) or reintroduce the daemon-on-host prerequisite (krunkit-via-Homebrew) that ADR-0017's audience contract forbids. Continuing imposes indefinite maintenance load on a substrate whose distinct audience (the sandbox audience) is small and whose distribution audience is already covered by κ. Rescission is reversible by a future ADR if user demand materializes — [#194](https://github.com/TheSemicolon/pi_config/issues/194) (CelestoAI/SmolVM — a separate project, name-collision-only with `smol-machines/smolvm`) is the natural starting point for any future re-evaluation.
+**Rejected.** The Phase-2 work has not produced a deliverable v1 candidate. The macOS-first-class options either require an unrealistic OS floor (Apple Containerization) or reintroduce the daemon-on-host prerequisite (krunkit-via-Homebrew) that ADR-0017's audience contract forbids. Continuing imposes indefinite maintenance load on a substrate whose distinct audience (the sandbox audience) is small and whose distribution audience is already covered by κ. Rescission is reversible by a future ADR if user demand materializes — #194 (CelestoAI/SmolVM — a separate project, name-collision-only with `smol-machines/smolvm`) is the natural starting point for any future re-evaluation.
 
 ### C — Continue with operational workarounds (self-hosted x86_64 runner per #200)
 
@@ -45,7 +45,7 @@ Stand up and maintain a dedicated self-hosted Linux x86_64 runner for sidecar pr
 
 ## Decision outcome
 
-**Adopt option A.** Rescind substrate ζ. Reduce the substrate matrix to **α (GitHub Template)** + **η (WSL2 rootfs)** + **κ (OCI/GHCR per ADR-0014)**. Remove all smolvm-coupled code surfaces in a single PR (umbrella [#219](https://github.com/TheSemicolon/pi_config/issues/219)); archive the two highest-value prose artifacts (`agent/skills/smolvm-expert/SKILL.md`, `packaging/zeta/README.md`) under `docs/archive/smolvm/` per the user's archive preference; preserve ADR-0016/0017 in `adrs/` with frontmatter flipped to `superseded by ADR-0020`, per MADR convention and `agent/rules/adr-required.md` (supersession by addition, not edit).
+**Adopt option A.** Rescind substrate ζ. Reduce the substrate matrix to **α (GitHub Template)** + **η (WSL2 rootfs)** + **κ (OCI/GHCR per ADR-0014)**. Remove all smolvm-coupled code surfaces in a single PR (umbrella #219); archive the two highest-value prose artifacts (`agent/skills/smolvm-expert/SKILL.md`, `packaging/zeta/README.md`) under `docs/archive/smolvm/` per the user's archive preference; preserve ADR-0016/0017 in `adrs/` with frontmatter flipped to `superseded by ADR-0020`, per MADR convention and `agent/rules/adr-required.md` (supersession by addition, not edit).
 
 This ADR also explicitly closes **ADR-0017's "Phase 4 smolvm cleanup" deferral.** ADR-0017 left `agent/vendor/smolvm/`, `scripts/validate-smolvm-vendor.sh`, and `agent/skills/smolvm-expert/SKILL.md` in place pending a Phase-4 cleanup that was contingent on the new substrate's identity. With the substrate rescinded rather than replaced, Phase 4 is satisfied by this ADR's removal sequence — there is no successor substrate to migrate to, so the cleanup is unconditional rather than migration-gated.
 
@@ -61,9 +61,9 @@ With ζ removed, the supported substrate matrix is:
 
 κ structurally covers the audience ζ was *unable* to reach — Codespaces, container-in-container CI runners, MDM-managed corporate Linux laptops, cloud VMs without nested virt, WSL2 without nested-virt enablement, macOS-Intel, Windows-with-Docker — at the explicit cost of shared-kernel rather than per-workload-kernel isolation. **No substrate in the post-rescission matrix provides agent-grade microVM isolation.** This is the honest trade the empirical chain forced: ζ was the only such capability in the original matrix, and the Path-B replacement search did not converge on a deliverable substitute. Recipients with hard kernel-isolation requirements compose κ (or α) with host-side sandboxing of their own choosing (Apple Containerization on macOS 26+, Firecracker / Cloud Hypervisor / firejail / bubblewrap / systemd-nspawn on Linux) at their own discretion; the project does not ship a kernel-isolated channel in v1 post-rescission.
 
-This is an **accepted capability gap, not a tracked follow-up.** Re-opening sandbox-substrate coverage at the project level requires a successor ADR; [#194](https://github.com/TheSemicolon/pi_config/issues/194) (CelestoAI/SmolVM) is the natural starting point if and when such a successor is justified. Until then, no work is queued.
+This is an **accepted capability gap, not a tracked follow-up.** Re-opening sandbox-substrate coverage at the project level requires a successor ADR; #194 (CelestoAI/SmolVM) is the natural starting point if and when such a successor is justified. Until then, no work is queued.
 
-This section resolves [#220](https://github.com/TheSemicolon/pi_config/issues/220).
+This section resolves #220.
 
 ## Numbering note (ADR-0018 slot)
 
@@ -75,7 +75,7 @@ This section resolves [#220](https://github.com/TheSemicolon/pi_config/issues/22
 
 - Maintenance surface reduction: one vendor pin (`agent/vendor/smolvm/`), one validate script (`scripts/validate-smolvm-vendor.sh`), one fetch helper (`scripts/lib/fetch-smolvm-binary.sh`), one build driver (`scripts/pack-build.sh`), one packaging tree (`packaging/zeta/`), one release workflow (`.github/workflows/pack-release.yml`), one agent wrapper + skill (`agent/agents/smolvm-expert.md`, `agent/skills/smolvm-expert/`), one web-fetch allowlist entry (`smolmachines.com`), and adjacent cross-references in `agent/skills/{wsl2,hyperv}-expert/SKILL.md`. All removed.
 - The substrate matrix's audience contracts become honest. Each retained substrate has a real audience and a workable production path; no aspirational entries remain.
-- The Path-B replacement search ([#204](https://github.com/TheSemicolon/pi_config/issues/204), [#207](https://github.com/TheSemicolon/pi_config/issues/207)) closes with a documented resolution rather than indefinite Phase-2 work.
+- The Path-B replacement search (#204, #207) closes with a documented resolution rather than indefinite Phase-2 work.
 - One fewer upstream coupling (`smol-machines/smolvm`'s release cadence, platform-asset choices, and `pack create` correctness) is on the critical path for our release pipeline.
 
 ### Negative
@@ -96,17 +96,17 @@ This section resolves [#220](https://github.com/TheSemicolon/pi_config/issues/22
 
 | Issue | Disposition | Rationale |
 |---|---|---|
-| [#219](https://github.com/TheSemicolon/pi_config/issues/219) | umbrella (closes on merge) | This ADR is the work item. |
-| [#220](https://github.com/TheSemicolon/pi_config/issues/220) | resolved by § Post-rescission substrate coverage | Absorbed into this ADR. |
-| [#131](https://github.com/TheSemicolon/pi_config/issues/131) | close-as-superseded | Original ζ implementation umbrella; superseded by this ADR. |
-| [#204](https://github.com/TheSemicolon/pi_config/issues/204) | close-as-superseded | Path-B replacement umbrella; resolved by rescission rather than replacement. |
-| [#207](https://github.com/TheSemicolon/pi_config/issues/207) | close-as-not-planned | Phase-2 verification fan-out moot under rescission. |
-| [#196](https://github.com/TheSemicolon/pi_config/issues/196) | close-as-completed | Disambiguation findings folded into § Context above. |
-| [#200](https://github.com/TheSemicolon/pi_config/issues/200) | close-as-not-planned | Self-hosted-runner workaround moot. |
-| [#162](https://github.com/TheSemicolon/pi_config/issues/162), [#163](https://github.com/TheSemicolon/pi_config/issues/163), [#170](https://github.com/TheSemicolon/pi_config/issues/170), [#176](https://github.com/TheSemicolon/pi_config/issues/176) | close-as-not-planned | ζ subtasks under #131; bookkeeping closures (see #219 for the full table). |
-| [#166](https://github.com/TheSemicolon/pi_config/issues/166) | re-scope, leave open | Drop the `fetch-smolvm-binary.sh` half (file deleted by this ADR); the `fetch-pi-binary.sh` hardening remains in scope. |
-| [#139](https://github.com/TheSemicolon/pi_config/issues/139) | unaffected | κ OCI substrate; arguably becomes higher-priority post-rescission. |
-| [#194](https://github.com/TheSemicolon/pi_config/issues/194) | unaffected | Different project (CelestoAI/SmolVM); reserved as the entry point if sandbox-substrate coverage is ever reopened. |
+| #219 | umbrella (closes on merge) | This ADR is the work item. |
+| #220 | resolved by § Post-rescission substrate coverage | Absorbed into this ADR. |
+| #131 | close-as-superseded | Original ζ implementation umbrella; superseded by this ADR. |
+| #204 | close-as-superseded | Path-B replacement umbrella; resolved by rescission rather than replacement. |
+| #207 | close-as-not-planned | Phase-2 verification fan-out moot under rescission. |
+| #196 | close-as-completed | Disambiguation findings folded into § Context above. |
+| #200 | close-as-not-planned | Self-hosted-runner workaround moot. |
+| #162, #163, #170, #176 | close-as-not-planned | ζ subtasks under #131; bookkeeping closures (see #219 for the full table). |
+| #166 | re-scope, leave open | Drop the `fetch-smolvm-binary.sh` half (file deleted by this ADR); the `fetch-pi-binary.sh` hardening remains in scope. |
+| #139 | unaffected | κ OCI substrate; arguably becomes higher-priority post-rescission. |
+| #194 | unaffected | Different project (CelestoAI/SmolVM); reserved as the entry point if sandbox-substrate coverage is ever reopened. |
 
 ## Supersession map
 
@@ -136,5 +136,5 @@ Two of the three replicas verdicted `INFO`; the third also `INFO`. No replica ve
 - [ADR-0015](0015-network-capable-extensions-and-the-first-party-docs-allowlist.md) — web-fetch allowlist policy (`smolmachines.com` removal is under existing policy, not a new amendment)
 - [`agent/rules/adr-required.md`](../agent/rules/adr-required.md) — ADR conventions (supersession by addition, not edit; numbers not reused)
 - [`agent/rules/post-implementation-review.md`](../agent/rules/post-implementation-review.md) — doc-sync map for the AGENTS.md skill-count edit
-- Umbrella tracking issue [#219](https://github.com/TheSemicolon/pi_config/issues/219) — full child-issue disposition table
+- Umbrella tracking issue #219 — full child-issue disposition table
 - Working plan `.review/rescind-zeta-smolvm/PLAN.md` and issue mapping `.review/rescind-zeta-smolvm/ISSUE-MAPPING.md` — Tier 3 per ADR-0006/0007; non-durable, not linked from on-`main` text beyond this reference

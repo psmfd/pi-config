@@ -7,7 +7,7 @@ date: 2026-06-08
 
 **Status:** Accepted
 **Date:** 2026-06-08
-**Related:** [ADR-0028](0028-agent-expertise-api-client.md) (client design and tool-name contract), [#149](https://github.com/psmfd/pi_config/issues/149), [`agent-expertise-api`](https://github.com/psmfd/agent-expertise-api)
+**Related:** [ADR-0028](0028-agent-expertise-api-client.md) (client design and tool-name contract), #149, [`agent-expertise-api`](https://github.com/psmfd/agent-expertise-api)
 
 ## Context and Problem Statement
 

@@ -7,7 +7,7 @@ date: 2026-06-12
 
 **Status:** Accepted
 **Date:** 2026-06-12
-**Tracking issue:** [#376](https://github.com/psmfd/pi_config/issues/376)
+**Tracking issue:** #376
 **Related:** [ADR-0009](0009-pi-runtime-acquisition-strategy.md) (pin-and-fetch posture), [ADR-0021](0021-extension-type-checking-and-linting.md) (extension toolchain — unchanged in-repo), [ADR-0030](0030-shared-foundation.md) (in-repo `shared/` library — unchanged in-repo; distribution form addressed here), [ADR-0040](0040-consume-psmfd-attested-pi-releases.md) (psmfd release surface)
 
 ## Context and Problem Statement

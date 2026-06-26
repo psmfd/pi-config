@@ -7,7 +7,7 @@ date: 2026-06-26
 
 **Status:** Accepted
 **Date:** 2026-06-26
-**Closes:** [#407](https://github.com/psmfd/pi_config/issues/407) (evaluate source-side SAST to close the pre-promotion scanning gap)
+**Closes:** #407 (evaluate source-side SAST to close the pre-promotion scanning gap)
 **Amends:** [ADR-0052](0052-mirror-code-scanning-followup.md) — resolves its "Bad / accepted: the pre-promotion source gap" consequence and its option-1 "documented future option" (GHAS trial / self-hosted runner / scheduled Checkmarx). ADR-0052's core process (mirror CodeQL baseline, fix-at-source loop, dismissal log, promotion severity gate) stands unchanged.
 **Related:** [ADR-0050](0050-outbound-distribution-mirror-sync.md) (the sync engine whose `sources`-scoped staging creates part of the gap), [ADR-0053](0053-pin-github-actions-to-sha.md) (the shellcheck vendor pin a free gate would invoke), [ADR-0042](0042-standalone-extension-distribution.md) (the extension distribution; six extensions are unmirrored and thus unscanned).
 
@@ -32,7 +32,7 @@ facts the evaluation turns on:
   finding (ADR-0052, "First application").
 - **Source-side code scanning on a private repo requires paid GitHub Code
   Security** (the 2025 repackaging of GHAS code scanning; ~$30/active
-  committer/month). This was verified live: `GET repos/psmfd/pi_config/code-scanning/analyses`
+  committer/month). This was verified live: `GET repos/psmfd/pi-config/code-scanning/analyses`
   returns `403 — Code Security must be enabled`. The license gate is enforced at
   the SARIF **upload endpoint**, so a **self-hosted CodeQL runner does not avoid
   the cost** — it cannot upload results to a private repo without the license.
@@ -82,13 +82,13 @@ pre-promotion / unmirrored gap is narrowed — not via purchase — with two fre
 gates, each tracked as its own follow-up because each carries an unknown
 remediation tail:
 
-- **Shellcheck CI gate** ([#425](https://github.com/psmfd/pi_config/issues/425)) —
+- **Shellcheck CI gate** (#425) —
   `validate.sh` runs the vendored `shellcheck` over `scripts/**/*.sh` and
   `hooks/*.sh`. This is the highest-value item: shell is the source's largest
   scanner-blind surface (CodeQL is JS/TS-only) and includes the security-critical
   `secrets-guard.sh` / `gh-identity-guard.sh` hooks. It also corrects a latent
   assumption that this gate already existed.
-- **`eslint-plugin-security`** ([#426](https://github.com/psmfd/pi_config/issues/426)) —
+- **`eslint-plugin-security`** (#426) —
   added to the extension ESLint config, giving a security-lens pass over the six
   unmirrored extensions (including the `subagent` process-spawn surface) that
   mirror CodeQL never sees, inside the lint gate that already runs.

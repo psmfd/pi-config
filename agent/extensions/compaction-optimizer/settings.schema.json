@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/TheSemicolon/pi_config/agent/extensions/compaction-optimizer/settings.schema.json",
+  "$id": "https://github.com/psmfd/pi-config/agent/extensions/compaction-optimizer/settings.schema.json",
   "title": "compaction-optimizer settings",
   "description": "Schema for extensionSettings.compactionOptimizer.* in ~/.pi/agent/settings.json (user) and <cwd>/.pi/settings.json (project). Documentation-only — pi v0.75.5 does not run runtime schema validation. Numeric bounds below mirror the project-layer runtime clamps in lib/settings.ts (PROJECT_LAYER_CLAMPS); the user layer is not runtime-clamped but operators should treat these bounds as the recommended envelope. See ADR-0019 and #210.",
   "type": "object",

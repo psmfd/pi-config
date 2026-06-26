@@ -4,7 +4,7 @@
 - **Date:** 2026-05-20
 - **Amends:** [ADR-0013](0013-distribution-substrate-strategy.md) — extends the substrate matrix from α + η + ζ to α + η + ζ + κ, and reframes ζ's role from "second-place by adoption breadth" to "the sandbox substrate, defined by its agent-isolation posture rather than ranked by reach." ADR-0013 is not edited; this ADR records the change per [`agent/rules/adr-required.md`](../agent/rules/adr-required.md).
 - **Related:** [ADR-0001](0001-subagent-orchestration-substrate.md) (orchestration substrate — the substantive content being distributed), [ADR-0004](0004-consensus-by-replication.md) (consensus-by-replication; the decision provenance for this ADR), [ADR-0009](0009-pi-runtime-acquisition-strategy.md) / [ADR-0011](0011-toolchain-install-strategy.md) / [ADR-0012](0012-vendored-pi-default.md) (vendor-asset trust posture; constrains κ's base-image choice)
-- **Tracking issues:** [#99](https://github.com/TheSemicolon/pi_config/issues/99) (distribution umbrella), [#128](https://github.com/TheSemicolon/pi_config/issues/128) (cross-substrate provenance — κ consumes), [#129](https://github.com/TheSemicolon/pi_config/issues/129) (α content κ bakes), [#131](https://github.com/TheSemicolon/pi_config/issues/131) (ζ — sibling lane), [#139](https://github.com/TheSemicolon/pi_config/issues/139) (κ implementation)
+- **Tracking issues:** #99 (distribution umbrella), #128 (cross-substrate provenance — κ consumes), #129 (α content κ bakes), #131 (ζ — sibling lane), #139 (κ implementation)
 
 ## Context
 
@@ -54,8 +54,8 @@ Move sandboxing into a host-installed posture (firejail, bubblewrap, systemd-nsp
 
 This ADR also surfaces two changes that apply beyond κ:
 
-1. **`PI_OFFLINE=1` and `PI_SKIP_VERSION_CHECK=1` are baked into the default env of every sealed-substrate artifact** (κ image, ζ pack, η rootfs). Sealed artifacts must not beacon `pi.dev/api/latest-version` on launch; recipients verifying signed artifacts have already opted into a known-good version pin. Tracked retro-application to ζ as a comment on [#131](https://github.com/TheSemicolon/pi_config/issues/131); to η as a comment on [#130](https://github.com/TheSemicolon/pi_config/issues/130). κ adopts directly via [#139](https://github.com/TheSemicolon/pi_config/issues/139).
-2. **#128 cross-substrate provenance policy is refined**: cosign-keyless is now the *floor* for any OCI substrate (κ), not the target state. SHA256SUMS remains the floor for non-OCI substrates (η rootfs tarball, ζ `.smolmachine` pack). The OCI digest + Fulcio + Rekor + SLSA `provenance: true` shape is a single-step opt-in via `docker/build-push-action`; gating it behind a "target state" tier was an over-cautious reading of the policy. Surface to [#128](https://github.com/TheSemicolon/pi_config/issues/128) for inclusion in the policy authoring.
+1. **`PI_OFFLINE=1` and `PI_SKIP_VERSION_CHECK=1` are baked into the default env of every sealed-substrate artifact** (κ image, ζ pack, η rootfs). Sealed artifacts must not beacon `pi.dev/api/latest-version` on launch; recipients verifying signed artifacts have already opted into a known-good version pin. Tracked retro-application to ζ as a comment on #131; to η as a comment on #130. κ adopts directly via #139.
+2. **#128 cross-substrate provenance policy is refined**: cosign-keyless is now the *floor* for any OCI substrate (κ), not the target state. SHA256SUMS remains the floor for non-OCI substrates (η rootfs tarball, ζ `.smolmachine` pack). The OCI digest + Fulcio + Rekor + SLSA `provenance: true` shape is a single-step opt-in via `docker/build-push-action`; gating it behind a "target state" tier was an over-cautious reading of the policy. Surface to #128 for inclusion in the policy authoring.
 
 ### Sequencing
 

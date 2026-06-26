@@ -1,4 +1,4 @@
-> **First-party** pi extension. Local client for `agent-expertise-api`. See [ADR-0028](../../../adrs/0028-agent-expertise-api-client.md) and tracking issue [#149](https://github.com/psmfd/pi_config/issues/149).
+> **First-party** pi extension. Local client for `agent-expertise-api`. See [ADR-0028](../../../adrs/0028-agent-expertise-api-client.md) and tracking issue #149.
 
 # expertise-client
 

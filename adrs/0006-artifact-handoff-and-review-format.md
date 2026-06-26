@@ -8,7 +8,7 @@ date: 2026-05-19
 **Status:** Accepted
 **Date:** 2026-05-19
 **Companion to:** [ADR-0001](0001-subagent-orchestration-substrate.md)
-**Tracking issue:** [#67](https://github.com/TheSemicolon/pi_config/issues/67)
+**Tracking issue:** #67
 
 ## Contents
 
@@ -22,7 +22,7 @@ date: 2026-05-19
 
 ## Context and Problem Statement
 
-When the orchestrator prepares a long single-file artifact for user review — typically a PR body, an ADR draft, an upstream issue draft, or a synthesized review report in the 1–50 KB range — the current handoff is to paste the artifact inline in chat. This doubles the conversation token cost (once as tool output, once as the assistant's narrative), offers no per-block review affordance, makes the round-trip expensive (each iteration re-renders the full artifact), and degrades poorly for whitespace-sensitive content. The pattern most recently surfaced as friction while preparing the upstream pi-mono issue body for [#46](https://github.com/TheSemicolon/pi_config/issues/46) — a ~10 KB Markdown artifact with embedded code/diff blocks.
+When the orchestrator prepares a long single-file artifact for user review — typically a PR body, an ADR draft, an upstream issue draft, or a synthesized review report in the 1–50 KB range — the current handoff is to paste the artifact inline in chat. This doubles the conversation token cost (once as tool output, once as the assistant's narrative), offers no per-block review affordance, makes the round-trip expensive (each iteration re-renders the full artifact), and degrades poorly for whitespace-sensitive content. The pattern most recently surfaced as friction while preparing the upstream pi-mono issue body for #46 — a ~10 KB Markdown artifact with embedded code/diff blocks.
 
 The pain point is dominated by **token cost of re-pasting on revision**, not by absence of per-block accept/reject affordances. Evidence: in this repo's session history, artifact-review cycles have averaged ~3 revisions before convergence, with the inline paste consuming the largest single block of context per cycle.
 
@@ -106,9 +106,9 @@ The convention is the load-bearing deliverable because it is transport-independe
 
 ### Cross-references
 
-- Tracking issue: [#67](https://github.com/TheSemicolon/pi_config/issues/67)
+- Tracking issue: #67
 - Related ADRs: [ADR-0001](0001-subagent-orchestration-substrate.md) (orchestration substrate — this ADR adds a UX layer above), [ADR-0002](0002-agent-to-agent-channel.md) (agent-to-agent channel — independent), [ADR-0004](0004-consensus-by-replication.md) (consensus-by-replication — the aggregation rule that produced the unanimous Tier-2 default)
 - Related rules: [`agent/rules/subagent-parallel-handoff.md`](../agent/rules/subagent-parallel-handoff.md) (Form A `REPORT_FILE:` — closest existing file-handoff precedent; not retrofitted, see § Scope), [`agent/rules/github-flow.md`](../agent/rules/github-flow.md) (squash-merge-to-`main`; receives Tier 3 carve-out)
-- Adjacent issue: [#46](https://github.com/TheSemicolon/pi_config/issues/46) — motivating moment
+- Adjacent issue: #46 — motivating moment
 
 **Provenance.** Drafted from a 4-way subagent fan-out (`pi-agent-expert` + `gh-cli-expert` + `gitflow-expert` + `docs-expert`) issued in a single `subagent` `tasks:[...]` call. Convergence was unanimous on Option 6 as primary transport; the §1 convention is `docs-expert`'s contribution adopted verbatim; tiering is the orchestrator-side synthesis; Options 7 and 8 are credited singleton novel contributions per [`agent/rules/consensus-by-replication.md`](../agent/rules/consensus-by-replication.md) ladder.

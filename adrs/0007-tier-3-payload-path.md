@@ -8,7 +8,7 @@ date: 2026-05-19
 **Status:** Accepted
 **Date:** 2026-05-19
 **Resolves deferred sub-decision in:** [ADR-0006](0006-artifact-handoff-and-review-format.md) § Tiered transport ladder, Tier 3 row
-**Tracking issue:** [#88](https://github.com/TheSemicolon/pi_config/issues/88) (sub-task #88a)
+**Tracking issue:** #88 (sub-task #88a)
 **Supersedes:** *(none — resolves a deferred decision; does not modify ADR-0006)*
 
 ## Contents
@@ -106,7 +106,7 @@ Option 1 is the only candidate that satisfies all six constraints simultaneously
 
 - **Line-anchored review works natively.** No reviewer-side configuration; the PR opens in the "Files changed" tab with the artifact rendered as a diff.
 - **Secrets-guard inherits coverage automatically.** `pi-agent-expert` verified against `agent/extensions/secrets-guard/index.ts` that the extension's `tool_call` handler intercepts `Write` to any path (no path-prefix allowlist) and `.review/` does not appear in `SKIP_PATH_GLOBS`. No parallel guard registration is needed — pi's built-in `Write` tool is what the `artifact_review` registered tool will invoke.
-- **6-month-archaeology citation.** Even after `gh pr close --delete-branch`, GitHub's `refs/pull/N/head` preserves the commit; future ADRs can cite `github.com/TheSemicolon/pi_config/blob/<sha>/.review/<topic>.md` as a stable URL.
+- **6-month-archaeology citation.** Even after `gh pr close --delete-branch`, GitHub's `refs/pull/N/head` preserves the commit; future ADRs can cite `github.com/psmfd/pi-config/blob/<sha>/.review/<topic>.md` as a stable URL.
 - **Convention containment.** Artifact flows through the standard repo review surface, so no parallel vocabulary (gist comments, notes tooling, comment-only threads) can emerge to fragment the §1 grammar.
 
 ### Negative
@@ -168,6 +168,6 @@ This ADR records the Tier 3 payload-path decision only. It does **not** change:
 ### Cross-references
 
 - Parent ADR: [ADR-0006](0006-artifact-handoff-and-review-format.md) (this ADR resolves its Tier 3 deferred sub-decision; does not supersede)
-- Issue: [#88](https://github.com/TheSemicolon/pi_config/issues/88) — Phase 2 implementation umbrella; this ADR is sub-task #88a
+- Issue: #88 — Phase 2 implementation umbrella; this ADR is sub-task #88a
 - Related rules: [`agent/rules/github-flow.md`](../agent/rules/github-flow.md) (Tier 3 carve-out from squash-merge-to-`main`; #88b will add ADR-0007 cross-ref alongside the existing ADR-0006 cite)
 - Convention: [`agent/rules/adr-required.md`](../agent/rules/adr-required.md) — supersession-not-editing; this ADR resolves a deferred decision rather than amending ADR-0006 inline.

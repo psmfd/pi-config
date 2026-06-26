@@ -21,7 +21,7 @@ prove that PSMFD controlled the build that produced them.
 PSMFD release trust therefore depends on controlling the built artifact, not
 merely controlling a later attestation over bytes produced elsewhere.
 
-Tracking issue: [#361](https://github.com/psmfd/pi_config/issues/361).
+Tracking issue: #361.
 
 ## Decision drivers
 
@@ -159,7 +159,7 @@ implementation issue.
 
 ## More information
 
-- Tracking issue: [psmfd/pi_config#361](https://github.com/psmfd/pi_config/issues/361)
+- Tracking issue: psmfd/pi-config#361
 - Public mirror: <https://github.com/psmfd/pi>
 - Distribution provenance policy:
   [`docs/distribution-provenance.md`](../docs/distribution-provenance.md)

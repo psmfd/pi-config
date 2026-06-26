@@ -7,12 +7,12 @@ date: 2026-06-11
 
 **Status:** Accepted
 **Date:** 2026-06-11
-**Tracking issue:** [#338](https://github.com/psmfd/pi_config/issues/338)
-**Related:** [#327](https://github.com/psmfd/pi_config/issues/327) (suite), [#330](https://github.com/psmfd/pi_config/issues/330) (auto-router), [#334](https://github.com/psmfd/pi_config/issues/334) (context-manager), [#336](https://github.com/psmfd/pi_config/issues/336) (indexing), [ADR-0031](0031-auto-router.md), [ADR-0032](0032-context-manager.md) (the cached-prefix invariant this measures), [ADR-0033](0033-codebase-indexing.md), [ADR-0030](0030-shared-foundation.md)
+**Tracking issue:** #338
+**Related:** #327 (suite), #330 (auto-router), #334 (context-manager), #336 (indexing), [ADR-0031](0031-auto-router.md), [ADR-0032](0032-context-manager.md) (the cached-prefix invariant this measures), [ADR-0033](0033-codebase-indexing.md), [ADR-0030](0030-shared-foundation.md)
 
 ## Context and Problem Statement
 
-The Pi Extension Suite ([#327](https://github.com/psmfd/pi_config/issues/327)) carries one **binding** invariant ([`notes/pi-extension-suite-plan.md`](../notes/pi-extension-suite-plan.md) § "Do Not Churn the Prefix"):
+The Pi Extension Suite (#327) carries one **binding** invariant ([`notes/pi-extension-suite-plan.md`](../notes/pi-extension-suite-plan.md) § "Do Not Churn the Prefix"):
 
 > Provider prompt caching prices cached input tokens ~10× below fresh. Any feature that rewrites the message **prefix** on each call invalidates the cache from the change-point forward and can cost more than the tokens it removes. Prune append-side; batch prunes.
 

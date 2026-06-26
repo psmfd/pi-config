@@ -7,14 +7,14 @@ date: 2026-06-10
 
 **Status:** Accepted
 **Date:** 2026-06-10
-**Tracking issue:** [#336](https://github.com/psmfd/pi_config/issues/336)
-**Related:** [#327](https://github.com/psmfd/pi_config/issues/327) (suite), [#328](https://github.com/psmfd/pi_config/issues/328) (Phase 0 + amendment A), [#337](https://github.com/psmfd/pi_config/issues/337) (FTS5 fallback), [ADR-0030](0030-shared-foundation.md) (`shared/`), [ADR-0031](0031-auto-router.md) (build precedent), [ADR-0032](0032-context-manager.md) (reject-both-build-custom precedent), [ADR-0009](0009-pi-runtime-acquisition-strategy.md) (pin-not-copy), [ADR-0021](0021-extension-type-checking-and-linting.md) (no per-extension `package.json`), [`agent/rules/no-mcp-servers.md`](../agent/rules/no-mcp-servers.md) (no MCP)
+**Tracking issue:** #336
+**Related:** #327 (suite), #328 (Phase 0 + amendment A), #337 (FTS5 fallback), [ADR-0030](0030-shared-foundation.md) (`shared/`), [ADR-0031](0031-auto-router.md) (build precedent), [ADR-0032](0032-context-manager.md) (reject-both-build-custom precedent), [ADR-0009](0009-pi-runtime-acquisition-strategy.md) (pin-not-copy), [ADR-0021](0021-extension-type-checking-and-linting.md) (no per-extension `package.json`), [`agent/rules/no-mcp-servers.md`](../agent/rules/no-mcp-servers.md) (no MCP)
 
 ## Context and Problem Statement
 
-The Pi Extension Suite ([#327](https://github.com/psmfd/pi_config/issues/327)) owns "tokens per retrieval" through the indexing workstream: give the agent a semantic `search_codebase` tool returning `file:line` snippets, so it locates relevant code by meaning instead of reading whole files. The plan ([`notes/pi-extension-suite-plan.md`](../notes/pi-extension-suite-plan.md) § "Workstream C") is **adopt-first**: adopt `pi-cocoindex` + the `cocoindex-code` (`ccc`) engine, building custom only if adoption fails.
+The Pi Extension Suite (#327) owns "tokens per retrieval" through the indexing workstream: give the agent a semantic `search_codebase` tool returning `file:line` snippets, so it locates relevant code by meaning instead of reading whole files. The plan ([`notes/pi-extension-suite-plan.md`](../notes/pi-extension-suite-plan.md) § "Workstream C") is **adopt-first**: adopt `pi-cocoindex` + the `cocoindex-code` (`ccc`) engine, building custom only if adoption fails.
 
-Phase 0 ([#328](https://github.com/psmfd/pi_config/issues/328)) found the plan's `pi-cocoindex` (elpapi42) **stale** and recorded **amendment A**: evaluate the active **`@pi-unipi/cocoindex`** as the adopt target instead. This ADR records the adoption decision after inspecting both candidates against their **published artifacts** (npm packages) and the shipped pi v0.79.0 docs.
+Phase 0 (#328) found the plan's `pi-cocoindex` (elpapi42) **stale** and recorded **amendment A**: evaluate the active **`@pi-unipi/cocoindex`** as the adopt target instead. This ADR records the adoption decision after inspecting both candidates against their **published artifacts** (npm packages) and the shipped pi v0.79.0 docs.
 
 Binding suite invariants in scope: **no MCP** (`agent/rules/no-mcp-servers.md`), **CLI tool-call path only** (results enter context as untrusted tool output), **no hook collisions** with auto-router (`before_agent_start`), context-manager (`context`), or compaction-optimizer (`session_before_compact`).
 

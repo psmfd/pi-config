@@ -78,13 +78,13 @@ This ADR is reopened or superseded only if **≥3 concrete observed workflows** 
 
 ### Out of scope: inter-orchestrator (peer-session) coordination
 
-This ADR governs **intra-session** inter-agent exchange — multiple subagents inside a single pi parent. It explicitly does **not** address **inter-session** coordination — multiple pi parents running as peer orchestrators, sharing planning, dividing work, and coordinating commits/PRs. That is a separate design space tracked under [issue #96 "Multi-orchestrator coordination topology"](https://github.com/TheSemicolon/pi_config/issues/96) and any subsequent ADR.
+This ADR governs **intra-session** inter-agent exchange — multiple subagents inside a single pi parent. It explicitly does **not** address **inter-session** coordination — multiple pi parents running as peer orchestrators, sharing planning, dividing work, and coordinating commits/PRs. That is a separate design space tracked under issue #96 "Multi-orchestrator coordination topology" and any subsequent ADR.
 
 `.review/` artifacts on a shared filesystem happen to be readable across pi sessions running in the same worktree; this is a permitted side benefit and may serve as a fast-path signal mechanism for multi-orchestrator workflows. It is not a formal commitment, and any formal multi-orchestrator protocol requires its own ADR.
 
 ### Cross-references
 
-* Tracking issue: [pi_config #69](https://github.com/TheSemicolon/pi_config/issues/69) — extension triage. Phase B (which originally tracked ADR-0002) is closed in favor of this ADR.
+* Tracking issue: pi_config #69 — extension triage. Phase B (which originally tracked ADR-0002) is closed in favor of this ADR.
 * Superseded ADR: [ADR-0002](0002-agent-to-agent-channel.md) — full design archive preserved, status flipped to *Superseded*.
 * Preserved-as-appendix: [`agent/rules/agent-to-agent-channel.md`](../agent/rules/agent-to-agent-channel.md) — operational contract drafted for the coms substrate, retained as a *Withdrawn* design archive rather than deleted. The rule does not load and is not enforced.
 * Companion ADRs: [ADR-0006](0006-artifact-handoff-and-review-format.md) (tiered handoff format), [ADR-0007](0007-tier-3-payload-path.md) (`.review/` path choice).

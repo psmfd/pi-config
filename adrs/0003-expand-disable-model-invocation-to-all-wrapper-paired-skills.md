@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-05-19
 **Companion to:** [ADR-0001](0001-subagent-orchestration-substrate.md) — refines the Phase D scope decision
-**Implementing PR:** [#77](https://github.com/TheSemicolon/pi_config/pull/77)
+**Implementing PR:** #77
 
 ## Context and Problem Statement
 

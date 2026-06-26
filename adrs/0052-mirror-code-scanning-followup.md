@@ -15,7 +15,7 @@ date: 2026-06-24
 The six public distribution mirrors (`psmfd/pi-config` + five `psmfd/pi-*`
 extension repos, ADR-0050) have GitHub CodeQL **default setup** enabled — free
 for public repos — and are scanned on every push. The private source of truth,
-`psmfd/pi_config`, has code-scanning **disabled**: enabling it requires paid
+`psmfd/pi-config`, has code-scanning **disabled**: enabling it requires paid
 GitHub Advanced Security on a private repo.
 
 This inverts the usual arrangement. Findings surface on the *derived* mirror,

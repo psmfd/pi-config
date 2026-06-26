@@ -7,7 +7,7 @@ date: 2026-05-29
 
 **Status:** Accepted
 **Date:** 2026-05-29
-**Tracking issue:** [#276](https://github.com/TheSemicolon/pi_config/issues/276)
+**Tracking issue:** #276
 **Related:** [ADR-0022](0022-gh-identity-guard-extension.md) (the guard's design; §Q5 override surfaces), [ADR-0023](0023-gh-identity-guard-remote-scoping.md) (host-scoping)
 
 ## Context and Problem Statement

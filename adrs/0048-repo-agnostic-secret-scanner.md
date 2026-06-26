@@ -7,7 +7,7 @@ date: 2026-06-23
 
 **Status:** Accepted
 **Date:** 2026-06-23
-**Related:** [ADR-0037](0037-secret-scanner-tooling-strategy.md) (gitleaks vendor pin / scanner tooling), [ADR-0011](0011-toolchain-install-strategy.md) (vendor+distro toolchain, `~/.local/bin` install pattern), [`scripts/scan-secrets.sh`](../scripts/scan-secrets.sh), [`scripts/lib/install-helpers.sh`](../scripts/lib/install-helpers.sh) (`_ih_link_local_bin`), psmfd/pi_config#393, psmfd/pi#34
+**Related:** [ADR-0037](0037-secret-scanner-tooling-strategy.md) (gitleaks vendor pin / scanner tooling), [ADR-0011](0011-toolchain-install-strategy.md) (vendor+distro toolchain, `~/.local/bin` install pattern), [`scripts/scan-secrets.sh`](../scripts/scan-secrets.sh), [`scripts/lib/install-helpers.sh`](../scripts/lib/install-helpers.sh) (`_ih_link_local_bin`), psmfd/pi-config#393, psmfd/pi#34
 
 ## Context and Problem Statement
 

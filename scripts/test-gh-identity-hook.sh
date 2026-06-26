@@ -131,23 +131,23 @@ run_case() {
 
 # 1. GitHub HTTPS remote, identity matches → pass
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="TheSemicolon" \
-  run_case "github-https-match" 0 origin "https://github.com/TheSemicolon/pi_config.git"
+  run_case "github-https-match" 0 origin "https://github.com/psmfd/pi-config.git"
 
 # 2. GitHub SSH remote, identity matches → pass
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="TheSemicolon" \
-  run_case "github-ssh-match" 0 origin "git@github.com:TheSemicolon/pi_config.git"
+  run_case "github-ssh-match" 0 origin "git@github.com:psmfd/pi-config.git"
 
 # 3. GitHub ssh:// URL form, match → pass
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="TheSemicolon" \
-  run_case "github-ssh-url-match" 0 origin "ssh://git@github.com/TheSemicolon/pi_config.git"
+  run_case "github-ssh-url-match" 0 origin "ssh://git@github.com/psmfd/pi-config.git"
 
 # 4. GitHub HTTPS with token, match → pass
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="TheSemicolon" \
-  run_case "github-https-token-match" 0 origin "https://x-access-token:ghp_xxx@github.com/TheSemicolon/pi_config.git"
+  run_case "github-https-token-match" 0 origin "https://x-access-token:ghp_xxx@github.com/psmfd/pi-config.git"
 
 # 5. GitHub remote, identity drift → fail (exit 1)
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="some-bot" \
-  run_case "github-identity-drift" 1 origin "https://github.com/TheSemicolon/pi_config.git"
+  run_case "github-identity-drift" 1 origin "https://github.com/psmfd/pi-config.git"
 
 # 6. ADO HTTPS remote → pass-through (exit 0), no identity check fired
 EXPECTED_IDENTITY="" STUB_LOGIN="" OMIT_GH=1 \
@@ -179,11 +179,11 @@ EXPECTED_IDENTITY="" OMIT_GH=1 \
 
 # 13. GitHub remote, no expected identity configured → fail-closed (exit 1)
 EXPECTED_IDENTITY="" USER_LAYER_LOGIN="" STUB_LOGIN="TheSemicolon" \
-  run_case "no-expected-identity-fail-closed" 1 origin "https://github.com/TheSemicolon/pi_config.git"
+  run_case "no-expected-identity-fail-closed" 1 origin "https://github.com/psmfd/pi-config.git"
 
 # 14. GitHub remote, expected from user-layer settings.json → pass
 EXPECTED_IDENTITY="" USER_LAYER_LOGIN="TheSemicolon" STUB_LOGIN="TheSemicolon" \
-  run_case "user-layer-fallback-match" 0 origin "https://github.com/TheSemicolon/pi_config.git"
+  run_case "user-layer-fallback-match" 0 origin "https://github.com/psmfd/pi-config.git"
 
 # 14b. Per-repo pin EXISTS but is UNREADABLE → must fall through to the user
 # layer rather than being read (#268). The per-repo file names a *different*
@@ -195,45 +195,45 @@ EXPECTED_IDENTITY="" USER_LAYER_LOGIN="TheSemicolon" STUB_LOGIN="TheSemicolon" \
 if [ "$(id -u)" != "0" ]; then
   EXPECTED_IDENTITY="some-bot" CHMOD_PIN="000" \
   USER_LAYER_LOGIN="TheSemicolon" STUB_LOGIN="TheSemicolon" \
-    run_case "unreadable-pin-falls-through-to-user-layer" 0 origin "https://github.com/TheSemicolon/pi_config.git"
+    run_case "unreadable-pin-falls-through-to-user-layer" 0 origin "https://github.com/psmfd/pi-config.git"
 fi
 
 # 15. GitHub remote, SKIP_GH_IDENTITY_GUARD=1 → pass with WARN
 EXPECTED_IDENTITY="" OMIT_GH=1 \
-  run_case "skip-env-bypass" 0 origin "https://github.com/TheSemicolon/pi_config.git" \
+  run_case "skip-env-bypass" 0 origin "https://github.com/psmfd/pi-config.git" \
   SKIP_GH_IDENTITY_GUARD=1
 
 # 16. GitHub remote, valid GH_IDENTITY_OVERRIDE that matches stub → pass
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="bot-foo" \
-  run_case "override-valid-and-matches" 0 origin "https://github.com/TheSemicolon/pi_config.git" \
+  run_case "override-valid-and-matches" 0 origin "https://github.com/psmfd/pi-config.git" \
   GH_IDENTITY_OVERRIDE=bot-foo
 
 # 17. GitHub remote, GH_IDENTITY_OVERRIDE valid but stub-login differs → fail
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="some-other-bot" \
-  run_case "override-valid-but-mismatch" 1 origin "https://github.com/TheSemicolon/pi_config.git" \
+  run_case "override-valid-but-mismatch" 1 origin "https://github.com/psmfd/pi-config.git" \
   GH_IDENTITY_OVERRIDE=bot-foo
 
 # 18. GitHub remote, GH_IDENTITY_OVERRIDE with quoted value → unwrapped and applied
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="bot-foo" \
-  run_case "override-quoted-value" 0 origin "https://github.com/TheSemicolon/pi_config.git" \
+  run_case "override-quoted-value" 0 origin "https://github.com/psmfd/pi-config.git" \
   GH_IDENTITY_OVERRIDE='"bot-foo"'
 
 # 19. GitHub remote, invalid GH_IDENTITY_OVERRIDE → fail (exit 1)
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="TheSemicolon" \
-  run_case "override-invalid-login" 1 origin "https://github.com/TheSemicolon/pi_config.git" \
+  run_case "override-invalid-login" 1 origin "https://github.com/psmfd/pi-config.git" \
   GH_IDENTITY_OVERRIDE='not a valid login!'
 
 # 20. GitHub remote, gh missing from PATH → fail-closed (exit 2)
 EXPECTED_IDENTITY="TheSemicolon" OMIT_GH=1 \
-  run_case "gh-missing-fail-closed" 2 origin "https://github.com/TheSemicolon/pi_config.git"
+  run_case "gh-missing-fail-closed" 2 origin "https://github.com/psmfd/pi-config.git"
 
 # 21. GitHub remote, gh probe fails (exit 1 from stub) → fail-closed (exit 2)
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="" STUB_RC=1 \
-  run_case "gh-probe-error-fail-closed" 2 origin "https://github.com/TheSemicolon/pi_config.git"
+  run_case "gh-probe-error-fail-closed" 2 origin "https://github.com/psmfd/pi-config.git"
 
 # 22. Per-repo file with leading comment + blank lines → reads first valid line
 EXPECTED_IDENTITY="$(printf '# this repo pushes as TheSemicolon\n\nTheSemicolon\n')" STUB_LOGIN="TheSemicolon" \
-  run_case "per-repo-file-with-comments" 0 origin "https://github.com/TheSemicolon/pi_config.git"
+  run_case "per-repo-file-with-comments" 0 origin "https://github.com/psmfd/pi-config.git"
 
 # --- regression cases for /review round 1 (2026-05-26) --------------------
 
@@ -256,7 +256,7 @@ _symlink_case() {
       HOME="${tmp}/home" \
       PATH="${tmp}/bin:/usr/bin:/bin" \
       TERM=dumb \
-      bash .git/hooks/pre-push origin "https://github.com/TheSemicolon/pi_config.git" \
+      bash .git/hooks/pre-push origin "https://github.com/psmfd/pi-config.git" \
         </dev/null >"${tmp}/stdout" 2>"${tmp}/stderr"
     local rc=$?
     if [ "$rc" -eq 0 ]; then
@@ -277,15 +277,15 @@ _symlink_case
 
 # 24. Untracked per-repo pins are not authoritative (#306).
 EXPECTED_IDENTITY="TheSemicolon" EXPECTED_IDENTITY_UNTRACKED=1 STUB_LOGIN="TheSemicolon" \
-  run_case "untracked-per-repo-pin-ignored" 1 origin "https://github.com/TheSemicolon/pi_config.git"
+  run_case "untracked-per-repo-pin-ignored" 1 origin "https://github.com/psmfd/pi-config.git"
 
 EXPECTED_IDENTITY="some-bot" EXPECTED_IDENTITY_UNTRACKED=1 \
 USER_LAYER_LOGIN="TheSemicolon" STUB_LOGIN="TheSemicolon" \
-  run_case "untracked-per-repo-pin-falls-through-to-user-layer" 0 origin "https://github.com/TheSemicolon/pi_config.git"
+  run_case "untracked-per-repo-pin-falls-through-to-user-layer" 0 origin "https://github.com/psmfd/pi-config.git"
 
 EXPECTED_IDENTITY="TheSemicolon" EXPECTED_IDENTITY_UNTRACKED=1 \
 USER_LAYER_LOGIN="alice" STUB_LOGIN="TheSemicolon" \
-  run_case "untracked-per-repo-pin-does-not-shadow-user-layer" 1 origin "https://github.com/TheSemicolon/pi_config.git"
+  run_case "untracked-per-repo-pin-does-not-shadow-user-layer" 1 origin "https://github.com/psmfd/pi-config.git"
 
 # 25. Multi-login array in user-layer JSON → any allowed login matches.
 #     Tests parity with extension's array-membership semantics.
@@ -331,7 +331,7 @@ EXPECTED_IDENTITY="" OMIT_GH=1 \
 
 # 26. Case-insensitive remote host match — UPPERCASE github.com is GitHub.
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="TheSemicolon" \
-  run_case "github-uppercase-host-matches" 0 origin "https://GITHUB.COM/TheSemicolon/pi_config.git"
+  run_case "github-uppercase-host-matches" 0 origin "https://GITHUB.COM/psmfd/pi-config.git"
 
 # 27. jq absent but settings.json present → no expected identity, fails closed
 #     with a WARN about jq. Hard to simulate (jq is usually on PATH in test
@@ -342,7 +342,7 @@ EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="TheSemicolon" \
 # 28. Login length cap — 50-char string with dashes shaped like the regex
 #     would otherwise admit (bash group quirk) must be rejected.
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="TheSemicolon" \
-  run_case "override-too-long-rejected" 1 origin "https://github.com/TheSemicolon/pi_config.git" \
+  run_case "override-too-long-rejected" 1 origin "https://github.com/psmfd/pi-config.git" \
   GH_IDENTITY_OVERRIDE="a-b-c-d-e-f-g-h-i-j-k-l-m-n-o-p-q-r-s-t-u-v-w-x-y"
 
 # --- regression cases for /review round 2 (2026-05-26) --------------------
@@ -363,13 +363,13 @@ EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="TheSemicolon" \
 # 31. Probe rc=2 fail-closed pathway (gh missing) still works after the
 #     `probe_rc=$?` restructure. SSH-URL form for breadth.
 EXPECTED_IDENTITY="TheSemicolon" OMIT_GH=1 \
-  run_case "gh-missing-via-ssh-url" 2 origin "git@github.com:TheSemicolon/pi_config.git"
+  run_case "gh-missing-via-ssh-url" 2 origin "git@github.com:psmfd/pi-config.git"
 
 # 32. Trailing-dot FQDN (absolute-DNS form) — `github.com.` must still be
 #     classified as GitHub (RFC 3986 §3.2.2). Source: security-review
 #     2026-05-27 LOW.
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="TheSemicolon" \
-  run_case "github-trailing-dot-fqdn" 0 origin "https://github.com./TheSemicolon/pi_config.git"
+  run_case "github-trailing-dot-fqdn" 0 origin "https://github.com./psmfd/pi-config.git"
 
 # --- regression cases for EMU username support (#262) ---------------------
 
@@ -385,17 +385,17 @@ EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="mona-cat_octo" \
 
 # 35. EMU-shaped GH_IDENTITY_OVERRIDE with too-short shortcode — rejected.
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="TheSemicolon" \
-  run_case "emu-override-shortcode-too-short" 1 origin "https://github.com/TheSemicolon/pi_config.git" \
+  run_case "emu-override-shortcode-too-short" 1 origin "https://github.com/psmfd/pi-config.git" \
   GH_IDENTITY_OVERRIDE=name_xy
 
 # 36. EMU-shaped GH_IDENTITY_OVERRIDE with too-long shortcode — rejected.
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="TheSemicolon" \
-  run_case "emu-override-shortcode-too-long" 1 origin "https://github.com/TheSemicolon/pi_config.git" \
+  run_case "emu-override-shortcode-too-long" 1 origin "https://github.com/psmfd/pi-config.git" \
   GH_IDENTITY_OVERRIDE=name_123456789
 
 # 37. EMU-shaped GH_IDENTITY_OVERRIDE with second underscore — rejected.
 EXPECTED_IDENTITY="TheSemicolon" STUB_LOGIN="TheSemicolon" \
-  run_case "emu-override-multiple-underscores" 1 origin "https://github.com/TheSemicolon/pi_config.git" \
+  run_case "emu-override-multiple-underscores" 1 origin "https://github.com/psmfd/pi-config.git" \
   GH_IDENTITY_OVERRIDE=name_short_extra
 
 # --- Interactive (TTY) bootstrap cases (ADR-0025) -------------------------
@@ -546,43 +546,43 @@ if command -v python3 >/dev/null 2>&1; then
   #     STILL fails the push (ADR-0025 A1 commit-gate). File created.
   TTY_ACTIVE_LOGIN="TheSemicolon" TTY_FEED=$'y\nTheSemicolon\n' \
     TTY_EXPECT_FILE=1 TTY_EXPECT_CONTENT="TheSemicolon" TTY_EXPECT_SUBSTR="wrote" \
-    run_tty_case "tty-bootstrap-create-then-fail-closed" 1 "https://github.com/TheSemicolon/pi_config.git"
+    run_tty_case "tty-bootstrap-create-then-fail-closed" 1 "https://github.com/psmfd/pi-config.git"
 
   # 39. TTY present, decline -> fall through to fail-closed, NO file written.
   TTY_ACTIVE_LOGIN="TheSemicolon" TTY_FEED=$'n\n' \
     TTY_EXPECT_FILE=0 TTY_EXPECT_SUBSTR="no expected GitHub identity configured" \
-    run_tty_case "tty-bootstrap-decline" 1 "https://github.com/TheSemicolon/pi_config.git"
+    run_tty_case "tty-bootstrap-decline" 1 "https://github.com/psmfd/pi-config.git"
 
   # 40. TTY present, accept then enter an INVALID login -> rejected, no file,
   #     single attempt (no retry loop).
   TTY_ACTIVE_LOGIN="TheSemicolon" TTY_FEED=$'y\nnot a valid login!\n' \
     TTY_EXPECT_FILE=0 TTY_EXPECT_SUBSTR="invalid GitHub login" \
-    run_tty_case "tty-bootstrap-invalid-login-rejected" 1 "https://github.com/TheSemicolon/pi_config.git"
+    run_tty_case "tty-bootstrap-invalid-login-rejected" 1 "https://github.com/psmfd/pi-config.git"
 
   # 41. Suggestion shown when active login == remote owner and NOT a fork.
   TTY_ACTIVE_LOGIN="TheSemicolon" TTY_FEED=$'y\nTheSemicolon\n' \
     TTY_EXPECT_FILE=1 TTY_EXPECT_CONTENT="TheSemicolon" TTY_EXPECT_SUBSTR="suggestion" \
-    run_tty_case "tty-bootstrap-suggestion-shown" 1 "https://github.com/TheSemicolon/pi_config.git"
+    run_tty_case "tty-bootstrap-suggestion-shown" 1 "https://github.com/psmfd/pi-config.git"
 
   # 42. Suggestion SUPPRESSED on a personal fork (gh repo view parent non-null)
   #     even though active login == owner (confused-deputy mitigation, B1).
   TTY_ACTIVE_LOGIN="TheSemicolon" TTY_IS_FORK="1" TTY_FEED=$'y\nTheSemicolon\n' \
     TTY_EXPECT_FILE=1 TTY_EXPECT_NOSUBSTR="suggestion" \
-    run_tty_case "tty-bootstrap-fork-suppresses-suggestion" 1 "https://github.com/TheSemicolon/pi_config.git"
+    run_tty_case "tty-bootstrap-fork-suppresses-suggestion" 1 "https://github.com/psmfd/pi-config.git"
 
   # 43. Accept then EOF (operator hits Ctrl-D, no login entered) -> empty
   #     login rejected, no file. The \x04 (EOT) byte signals EOF to `read`
   #     on the pty in canonical mode (immediate, vs. waiting out read -t).
   TTY_ACTIVE_LOGIN="TheSemicolon" TTY_FEED=$'y\n\x04' \
     TTY_EXPECT_FILE=0 TTY_EXPECT_SUBSTR="invalid GitHub login" \
-    run_tty_case "tty-bootstrap-empty-login-eof" 1 "https://github.com/TheSemicolon/pi_config.git"
+    run_tty_case "tty-bootstrap-empty-login-eof" 1 "https://github.com/psmfd/pi-config.git"
 
   # 44. SKIP bypass short-circuits BEFORE any prompt even with a TTY attached:
   #     no file written, no "Create ...?" prompt, pass (exit 0).
   TTY_ACTIVE_LOGIN="TheSemicolon" TTY_FEED=$'y\nTheSemicolon\n' \
     TTY_EXTRA_ENV="SKIP_GH_IDENTITY_GUARD=1" \
     TTY_EXPECT_FILE=0 TTY_EXPECT_NOSUBSTR="Create" \
-    run_tty_case "tty-skip-short-circuits-before-prompt" 0 "https://github.com/TheSemicolon/pi_config.git"
+    run_tty_case "tty-skip-short-circuits-before-prompt" 0 "https://github.com/psmfd/pi-config.git"
 
   rm -f "$PTY_DRIVER"
 else

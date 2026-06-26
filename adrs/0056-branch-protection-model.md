@@ -7,8 +7,8 @@ date: 2026-06-25
 
 **Status:** Accepted
 **Date:** 2026-06-25
-**Closes:** [#398](https://github.com/psmfd/pi_config/issues/398) (register the sync-mirrors `verify` gate as a required check)
-**Related:** [ADR-0036](0036-dev-integration-main-stable-branch-model.md) (the dev/main branch model whose enforcement this records), [ADR-0050](0050-outbound-distribution-mirror-sync.md) (the sync engine whose `verify` job this gates on). **Follow-up:** [#420](https://github.com/psmfd/pi_config/issues/420) (evaluate migrating to repository rulesets).
+**Closes:** #398 (register the sync-mirrors `verify` gate as a required check)
+**Related:** [ADR-0036](0036-dev-integration-main-stable-branch-model.md) (the dev/main branch model whose enforcement this records), [ADR-0050](0050-outbound-distribution-mirror-sync.md) (the sync engine whose `verify` job this gates on). **Follow-up:** #420 (evaluate migrating to repository rulesets).
 
 ## Context and Problem Statement
 
@@ -20,7 +20,7 @@ loose ends motivated a recorded decision:
 1. **Undocumented mechanism.** `pi_config` enforces protection via **classic
    branch protection** on `dev` and `main` (`enforce_admins=true`, strict
    required status checks). It does **not** use repository rulesets
-   (`GET /repos/psmfd/pi_config/rules/branches/dev` returns no rules). The
+   (`GET /repos/psmfd/pi-config/rules/branches/dev` returns no rules). The
    agent-framework's global `github-flow.md` rule describes a *rulesets* model
    (`protect-dev`/`protect-main`, an inherited `enterprise-baseline`,
    framework-repo ADR-0056/0068) — but that is the **framework repo's** setup,

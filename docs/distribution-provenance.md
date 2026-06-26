@@ -48,7 +48,7 @@ The OCI floor is raised relative to non-OCI because cosign-keyless on OCI is a s
 # Install cosign once: https://docs.sigstore.dev/cosign/system_config/installation/
 cosign verify \
   ghcr.io/<owner>/pi_config:vX.Y.Z \
-  --certificate-identity-regexp 'https://github.com/TheSemicolon/pi_config/\.github/workflows/.+' \
+  --certificate-identity-regexp 'https://github.com/psmfd/pi-config/\.github/workflows/.+' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # Resolve to the manifest digest and pin (recommended for production / CI):
@@ -58,7 +58,7 @@ docker buildx imagetools inspect ghcr.io/<owner>/pi_config:vX.Y.Z --format '{{js
 docker run --rm ghcr.io/<owner>/pi_config@sha256:abc123…
 ```
 
-The certificate-identity-regexp pattern `https://github.com/TheSemicolon/pi_config/.github/workflows/.+` binds the signature to **any workflow in this repo**. Tighter forms are available if you want to bind to a specific workflow file (e.g. `.../.github/workflows/oci-publish\.yml@refs/tags/.+`); the loose form is the documented floor.
+The certificate-identity-regexp pattern `https://github.com/psmfd/pi-config/.github/workflows/.+` binds the signature to **any workflow in this repo**. Tighter forms are available if you want to bind to a specific workflow file (e.g. `.../.github/workflows/oci-publish\.yml@refs/tags/.+`); the loose form is the documented floor.
 
 ### η — `wsl --import` rootfs (SHA256SUMS floor; cosign-blob target)
 
@@ -75,7 +75,7 @@ if ($expected -ne $actual) { throw "checksum mismatch" }
 # Target — cosign-blob verification (any platform with cosign installed)
 cosign verify-blob \
   --bundle pi_config-wsl2-rootfs.tar.gz.cosign.bundle \
-  --certificate-identity-regexp 'https://github.com/TheSemicolon/pi_config/\.github/workflows/.+' \
+  --certificate-identity-regexp 'https://github.com/psmfd/pi-config/\.github/workflows/.+' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   pi_config-wsl2-rootfs.tar.gz
 ```
@@ -119,9 +119,9 @@ Each substrate's release pipeline is responsible for producing the floor (and, w
 
 | Substrate | Tracking issue | Release workflow (planned) | Floor artifact | Target artifact |
 |---|---|---|---|---|
-| **κ** | [#139](https://github.com/TheSemicolon/pi_config/issues/139) | `.github/workflows/oci-publish.yml` | OCI manifest digest + cosign-keyless signature | + SLSA provenance + SBOM |
-| **η** | [#130](https://github.com/TheSemicolon/pi_config/issues/130) | `.github/workflows/wsl2-rootfs-publish.yml` | `SHA256SUMS` | + cosign-blob `.cosign.bundle` |
-| **β α-tarball** | [#129](https://github.com/TheSemicolon/pi_config/issues/129) (if pursued) | (TBD; α primary path is the GitHub Template, not a release tarball) | `SHA256SUMS` | + cosign-blob |
+| **κ** | #139 | `.github/workflows/oci-publish.yml` | OCI manifest digest + cosign-keyless signature | + SLSA provenance + SBOM |
+| **η** | #130 | `.github/workflows/wsl2-rootfs-publish.yml` | `SHA256SUMS` | + cosign-blob `.cosign.bundle` |
+| **β α-tarball** | #129 (if pursued) | (TBD; α primary path is the GitHub Template, not a release tarball) | `SHA256SUMS` | + cosign-blob |
 
 Each substrate's PR must:
 
@@ -163,7 +163,7 @@ If either check fails, the release does not meet this policy and should be repor
 - [ADR-0009](../adrs/0009-pi-runtime-acquisition-strategy.md) / [ADR-0011](../adrs/0011-toolchain-install-strategy.md) / [ADR-0012](../adrs/0012-vendored-pi-default.md) — inbound vendor-asset trust posture mirrored by this outbound-artifact policy
 - [ADR-0040](../adrs/0040-consume-psmfd-attested-pi-releases.md) — the pi runtime inbound path now consumes PSMFD-attested `psmfd/pi` releases, closing the loop: the inbound vendor pin verifies the same keyless attestations this policy mandates for outbound artifacts
 - [ADR-0038](../adrs/0038-psmfd-pi-build-and-attest-trust-boundary.md) — `psmfd/pi` release artifacts rebuild from mirrored source and are not re-attestations of upstream-built artifacts
-- [#128](https://github.com/TheSemicolon/pi_config/issues/128) — tracking issue closed by this doc
+- #128 — tracking issue closed by this doc
 - Sigstore cosign documentation — <https://docs.sigstore.dev/cosign/>
 - SLSA provenance — <https://slsa.dev/spec/v1.0/provenance>
 - Docker `build-push-action` attestations — <https://docs.docker.com/build/metadata/attestations/>

@@ -7,7 +7,7 @@ date: 2026-06-07
 
 **Status:** Accepted
 **Date:** 2026-06-07
-**Related:** [#149](https://github.com/psmfd/pi_config/issues/149), [#150](https://github.com/psmfd/pi_config/issues/150), [`agent-expertise-api` hosting note](../notes/agent-expertise-api-hosting.md), [ADR-0015](0015-network-capable-extensions-and-the-first-party-docs-allowlist.md), [ADR-0021](0021-extension-type-checking-and-linting.md)
+**Related:** #149, #150, [`agent-expertise-api` hosting note](../notes/agent-expertise-api-hosting.md), [ADR-0015](0015-network-capable-extensions-and-the-first-party-docs-allowlist.md), [ADR-0021](0021-extension-type-checking-and-linting.md)
 
 ## Context and Problem Statement
 

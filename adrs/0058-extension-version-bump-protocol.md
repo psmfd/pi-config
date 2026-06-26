@@ -7,7 +7,7 @@ date: 2026-06-25
 
 **Status:** Accepted
 **Date:** 2026-06-25
-**Closes:** [#415](https://github.com/psmfd/pi_config/issues/415) (extension releases were stuck at v0.1.0)
+**Closes:** #415 (extension releases were stuck at v0.1.0)
 **Related:** [ADR-0055](0055-automated-mirror-releases.md) (the release automation this completes), [ADR-0042](0042-standalone-extension-distribution.md) (overlay-owns-packaging — this carves a narrow exception), [ADR-0050](0050-outbound-distribution-mirror-sync.md) (the sync engine), [ADR-0047](0047-release-automation-script.md) (`release.sh`, which derives the SOURCE version the same way — the logic kept in lockstep).
 
 ## Context and Problem Statement

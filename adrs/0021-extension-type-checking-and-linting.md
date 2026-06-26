@@ -7,8 +7,8 @@ date: 2026-05-26
 
 **Status:** Accepted
 **Date:** 2026-05-26
-**Tracking issue:** [#234](https://github.com/TheSemicolon/pi_config/issues/234)
-**Implementation tracker:** [#247](https://github.com/TheSemicolon/pi_config/issues/247)
+**Tracking issue:** #234
+**Implementation tracker:** #247
 **Related:** [ADR-0001](0001-subagent-orchestration-substrate.md) (substrate for `agent/extensions/`), [ADR-0011](0011-toolchain-install-strategy.md) (developer toolchain install strategy — precedent for npx-pinned tooling), [ADR-0015](0015-network-capable-extensions-and-the-first-party-docs-allowlist.md) (network-capable extension surface), [ADR-0019](0019-compaction-optimizer-extension.md) (compaction-optimizer extension — primary consumer of the new contract)
 
 ## Contents
@@ -46,7 +46,7 @@ The `linter` subagent flagged this gap during `/review` of PR #216 (compaction-o
 
 The async-heavy filesystem-mutating nature of `compaction-optimizer/lib/archive.ts` (chains of `fs.open`/`fs.writeFile`/`fs.link`/`fs.unlink`, `Promise.all` over user-supplied callbacks, `.catch(() => undefined)` patterns) is exactly the codebase where **floating-promise** and **misused-promise** bugs are most likely to slip past behavioral tests and surface only when a real compaction races a filesystem operation in production.
 
-This ADR decides whether and how to gate that surface in CI. The implementation is tracked separately in [#247](https://github.com/TheSemicolon/pi_config/issues/247).
+This ADR decides whether and how to gate that surface in CI. The implementation is tracked separately in #247.
 
 ## Considered Options
 
@@ -146,7 +146,7 @@ The vendored `subagent` extension under `agent/extensions/subagent/` is pinned t
 
 ## Implementation Plan
 
-Tracked in [#247](https://github.com/TheSemicolon/pi_config/issues/247). Summary:
+Tracked in #247. Summary:
 
 1. Add `tsconfig.json` to each of the six extension directories (`strict: true`, `noEmit: true`, ES2022, `NodeNext` resolution, per-extension `include`).
 2. Add `eslint.config.js` at repo root. Type-aware rules ON. `parserOptions.project` enumerates all six tsconfigs.
@@ -177,8 +177,8 @@ The "convince me" exchange that produced the B1 decision is preserved in the [Ax
 
 ## More Information
 
-- [pi_config issue #234](https://github.com/TheSemicolon/pi_config/issues/234) — original umbrella surfaced by `linter` during `/review` of #216
-- [pi_config issue #247](https://github.com/TheSemicolon/pi_config/issues/247) — implementation tracker
+- pi_config issue #234 — original umbrella surfaced by `linter` during `/review` of #216
+- pi_config issue #247 — implementation tracker
 - [ADR-0011](0011-toolchain-install-strategy.md) — precedent for hybrid vendor + distro toolchain (general repo-toolchain philosophy)
 - [ADR-0019](0019-compaction-optimizer-extension.md) — primary consumer; the async-heavy `archive.ts` is the load-bearing motivator
 - `scripts/test-compaction-optimizer.sh` — npx-pinned tooling precedent

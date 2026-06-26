@@ -24,7 +24,7 @@ pi's LLM summarizer is **skipped**. Otherwise it returns `undefined` and pi's
 default `compact()` runs, consuming the pruned `fileOps` via
 `computeFileLists()`. Pruning the upstream sets is the structurally correct
 attachment point; see
-[ADR-0019 implementation notes on #208](https://github.com/TheSemicolon/pi_config/issues/208#issuecomment-4545093413).
+ADR-0019 implementation notes on #208.
 
 ## Modes
 
@@ -149,7 +149,7 @@ arbitrary-file-write primitive. See
 
 Project-layer values for the rejected keys are dropped with a single
 `ctx.ui.notify` warning naming the rejected key. A follow-up
-([#226](https://github.com/TheSemicolon/pi_config/issues/226)) tracks
+(#226) tracks
 restoring a constrained-relative form of project-layer `archive.path`
 when a concrete use case appears.
 
@@ -272,7 +272,7 @@ presence does not affect operation if the extension is later re-enabled.
 ## Source rules and references
 
 - [ADR-0019](../../../adrs/0019-compaction-optimizer-extension.md) — full design
-- [#208](https://github.com/TheSemicolon/pi_config/issues/208) — PR1 tracking issue + acceptance criteria
-- [#216](https://github.com/TheSemicolon/pi_config/issues/216) — PR2 (deterministic + hybrid + default flip)
-- [#226](https://github.com/TheSemicolon/pi_config/issues/226) — constrained-relative project-layer `archive.path` (follow-up)
-- [#210](https://github.com/TheSemicolon/pi_config/issues/210), [#211](https://github.com/TheSemicolon/pi_config/issues/211) — upstream proposals (not blocking)
+- #208 — PR1 tracking issue + acceptance criteria
+- #216 — PR2 (deterministic + hybrid + default flip)
+- #226 — constrained-relative project-layer `archive.path` (follow-up)
+- #210, #211 — upstream proposals (not blocking)

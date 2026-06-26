@@ -7,12 +7,12 @@ date: 2026-06-24
 
 **Status:** Accepted
 **Date:** 2026-06-24
-**Closes:** [#376](https://github.com/psmfd/pi_config/issues/376) (the CI-automated mirroring deferred by ADR-0042)
+**Closes:** #376 (the CI-automated mirroring deferred by ADR-0042)
 **Related:** [ADR-0042](0042-standalone-extension-distribution.md) (extension mirrors — this generalizes their manual sync), [ADR-0013](0013-distribution-substrate-strategy.md) (distribution substrates — this stands up a config mirror so the GitHub-Template / installer paths have a public source), [ADR-0049](0049-genericize-runtime-config-via-templates.md) (config genericization — the precursor that makes the config surface shippable without per-sync scrubbing), [ADR-0039](0039-mirror-sync-cadence-and-provenance.md) / [ADR-0045](0045-automate-mirror-sync-runbook.md) (the INBOUND psmfd/pi sync — a different system, contrasted below)
 
 ## Context and Problem Statement
 
-The private monorepo `psmfd/pi_config` is the source of truth. Two kinds of
+The private monorepo `psmfd/pi-config` is the source of truth. Two kinds of
 public downstream exist, both populated by hand:
 
 - **Extension mirrors** (`psmfd/pi-<name>`, ADR-0042) — five leaf extensions
@@ -75,7 +75,7 @@ different trust model, different tooling.
 - **Trigger (`.github/workflows/sync-mirrors.yml`):** a `verify` job runs the
   engine in `--dry-run` on every PR that touches a published surface, surfacing a
   sanitization regression at PR time — advisory until it is registered as a
-  required status check on `dev` ([#398](https://github.com/psmfd/pi_config/issues/398);
+  required status check on `dev` (#398;
   the fail-closed gate that actually blocks a leak is the `sync` job's pre-push
   verify). A `sync`
   job runs `--all --changed --push` on push to `main` (a dev→main release

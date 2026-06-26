@@ -8,6 +8,7 @@
 // No package.json or lockfile is committed at the repo root.
 
 import tseslint from "typescript-eslint";
+import security from "eslint-plugin-security";
 
 export default tseslint.config(
 	{
@@ -19,6 +20,32 @@ export default tseslint.config(
 		],
 	},
 	...tseslint.configs.recommendedTypeChecked,
+	// eslint-plugin-security — the free defense-in-depth gate decided in ADR-0060
+	// (#426). The shell surface is covered by shellcheck (validate.sh §9e); this
+	// covers the extension TS that mirror-side CodeQL never scans. The recommended
+	// set is all `warn`; the override block below tiers it for signal-over-noise.
+	{ ...security.configs.recommended, files: ["agent/extensions/**/*.ts"] },
+	{
+		files: ["agent/extensions/**/*.ts"],
+		rules: {
+			// OFF — together these were 174 of 181 findings and are near-universal
+			// false positives for a TypeScript agent: TS already type-checks
+			// property access, and these extensions read/write computed paths by
+			// design (that is their job, not a vulnerability).
+			"security/detect-object-injection": "off",
+			"security/detect-non-literal-fs-filename": "off",
+			// ERROR — classic RCE / command-injection vectors that ~never false
+			// positive. Zero findings today, so this is a clean PR-blocking gate
+			// for future extension code (e.g. the subagent process-spawn surface).
+			"security/detect-eval-with-expression": "error",
+			"security/detect-child-process": "error",
+			"security/detect-non-literal-require": "error",
+			// Everything else stays at the recommended `warn` — notably
+			// detect-unsafe-regex and detect-non-literal-regexp, which currently
+			// surface 7 informative, non-blocking warnings on bounded/escaped
+			// regexes (reviewed: no real ReDoS or injection).
+		},
+	},
 	{
 		// Apply type-aware rules only to extension TypeScript.
 		files: ["agent/extensions/**/*.ts"],

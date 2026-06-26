@@ -7,14 +7,14 @@ date: 2026-06-09
 
 **Status:** Accepted
 **Date:** 2026-06-09
-**Tracking issue:** [#329](https://github.com/psmfd/pi_config/issues/329)
-**Related:** [#327](https://github.com/psmfd/pi_config/issues/327) (suite), [#328](https://github.com/psmfd/pi_config/issues/328) (Phase 0 verification), [ADR-0019](0019-compaction-optimizer-extension.md) (per-extension `~/.pi/agent/extensions/<name>/` data subtree + `extensionSettings.<name>.*` namespace), [ADR-0021](0021-extension-type-checking-and-linting.md) (per-extension `tsconfig.json` + lint/typecheck discovery)
+**Tracking issue:** #329
+**Related:** #327 (suite), #328 (Phase 0 verification), [ADR-0019](0019-compaction-optimizer-extension.md) (per-extension `~/.pi/agent/extensions/<name>/` data subtree + `extensionSettings.<name>.*` namespace), [ADR-0021](0021-extension-type-checking-and-linting.md) (per-extension `tsconfig.json` + lint/typecheck discovery)
 
 ## Context and Problem Statement
 
-The Pi Extension Suite ([#327](https://github.com/psmfd/pi_config/issues/327)) builds three extensions — auto-router, context-manager, indexing — that must read the **same** signals: how full the context is, which credentialed models are available, what each model costs, and how to persist their own state. Duplicating that logic across three extensions would drift (three different thresholds, three cost tables) and violate the suite's "one signal source" design.
+The Pi Extension Suite (#327) builds three extensions — auto-router, context-manager, indexing — that must read the **same** signals: how full the context is, which credentialed models are available, what each model costs, and how to persist their own state. Duplicating that logic across three extensions would drift (three different thresholds, three cost tables) and violate the suite's "one signal source" design.
 
-Phase 0 ([#328](https://github.com/psmfd/pi_config/issues/328)) verified against the shipped **pi v0.79.0** distribution that the runtime exposes the needed surfaces: `ctx.getContextUsage()`, `ctx.model.contextWindow`, `ctx.modelRegistry.getAvailable()` (credentialed-only), and per-model `cost { input, output, cacheRead, cacheWrite }`.
+Phase 0 (#328) verified against the shipped **pi v0.79.0** distribution that the runtime exposes the needed surfaces: `ctx.getContextUsage()`, `ctx.model.contextWindow`, `ctx.modelRegistry.getAvailable()` (credentialed-only), and per-model `cost { input, output, cacheRead, cacheWrite }`.
 
 Two questions need a recorded decision before the suite extensions consume the shared code:
 
@@ -60,5 +60,5 @@ Two questions need a recorded decision before the suite extensions consume the s
 
 ## More Information
 
-- Phase 0 verification record + citations: issue [#328](https://github.com/psmfd/pi_config/issues/328).
+- Phase 0 verification record + citations: issue #328.
 - Plan of record: [`notes/pi-extension-suite-plan.md`](../notes/pi-extension-suite-plan.md) (rev 2) § "Shared Foundation".

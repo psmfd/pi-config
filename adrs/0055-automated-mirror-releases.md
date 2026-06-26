@@ -7,8 +7,8 @@ date: 2026-06-25
 
 **Status:** Accepted
 **Date:** 2026-06-25
-**Closes:** [#414](https://github.com/psmfd/pi_config/issues/414) (mirrors had no release mechanism)
-**Related:** [ADR-0050](0050-outbound-distribution-mirror-sync.md) (the sync engine this extends), [ADR-0042](0042-standalone-extension-distribution.md) (extension mirrors own their packaging/version), [ADR-0054](0054-no-source-ci-on-distribution-mirror.md) (no source CI on the mirror), [ADR-0047](0047-release-automation-script.md) (`release.sh`, which gains the config-mirror hook). **Follow-up:** [#415](https://github.com/psmfd/pi_config/issues/415) (extension version-bump protocol).
+**Closes:** #414 (mirrors had no release mechanism)
+**Related:** [ADR-0050](0050-outbound-distribution-mirror-sync.md) (the sync engine this extends), [ADR-0042](0042-standalone-extension-distribution.md) (extension mirrors own their packaging/version), [ADR-0054](0054-no-source-ci-on-distribution-mirror.md) (no source CI on the mirror), [ADR-0047](0047-release-automation-script.md) (`release.sh`, which gains the config-mirror hook). **Follow-up:** #415 (extension version-bump protocol).
 
 ## Context and Problem Statement
 
@@ -81,7 +81,7 @@ the merge — so at sync time the new source tag may not yet exist.
   `package.json` version when its content syncs.
 - **Token scope:** both the tag push and `gh release create` need **Contents:
   write** only — already held by `MIRROR_SYNC_TOKEN`, and consistent with the
-  narrowing in [#412](https://github.com/psmfd/pi_config/issues/412).
+  narrowing in #412.
 - **`pi-ecosystem` dashboard** auto-discovers each cataloged repo's
   `latestRelease` on a 6-hourly cron, so new mirror releases surface there with
   no code change (a manual `gh workflow run dashboard` refreshes sooner).
@@ -97,7 +97,7 @@ the merge — so at sync time the new source tag may not yet exist.
   the mirror's `package.json` (overlay-owned, not synced) and `--changed` skips
   unchanged targets, a version bump alone does not trigger a release. After the
   `v0.1.0` backfill the extension automation is effectively inert until a
-  **version-bump protocol** exists — tracked as [#415](https://github.com/psmfd/pi_config/issues/415).
+  **version-bump protocol** exists — tracked as #415.
 - Accepted: a non-`--changed` `--push` rewrites `.mirror-provenance` and pushes a
   sync commit even when file content is unchanged (pre-existing engine behavior);
   the release phase is unaffected and remains idempotent.

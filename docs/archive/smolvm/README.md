@@ -16,8 +16,8 @@ This directory holds the two highest-value prose artifacts from the rescinded su
 
 ## Why ζ was rescinded
 
-See [ADR-0020](../../../adrs/0020-rescind-substrate-zeta-smolvm-pack.md). One-sentence summary: the empirical chain ([#178](https://github.com/TheSemicolon/pi_config/issues/178) → [#196](https://github.com/TheSemicolon/pi_config/issues/196) → [#200](https://github.com/TheSemicolon/pi_config/issues/200)) plus the upstream-platform-coverage gap (no `linux-arm64` smolvm binary; `smolvm-darwin-arm64` host-arch-coupled `agent-rootfs.tar`) plus a non-converging Path-B replacement search ([#204](https://github.com/TheSemicolon/pi_config/issues/204), [#207](https://github.com/TheSemicolon/pi_config/issues/207)) together made the maintenance cost of *filling* the deferred ADR-0018 implementation slot exceed the value of doing so. Substrate κ ([ADR-0014](../../../adrs/0014-oci-substrate-amendment-to-0013.md)) structurally covers the v1 distribution audience.
+See [ADR-0020](../../../adrs/0020-rescind-substrate-zeta-smolvm-pack.md). One-sentence summary: the empirical chain (#178 → #196 → #200) plus the upstream-platform-coverage gap (no `linux-arm64` smolvm binary; `smolvm-darwin-arm64` host-arch-coupled `agent-rootfs.tar`) plus a non-converging Path-B replacement search (#204, #207) together made the maintenance cost of *filling* the deferred ADR-0018 implementation slot exceed the value of doing so. Substrate κ ([ADR-0014](../../../adrs/0014-oci-substrate-amendment-to-0013.md)) structurally covers the v1 distribution audience.
 
 ## If sandbox-substrate coverage is ever reopened
 
-[#194](https://github.com/TheSemicolon/pi_config/issues/194) (CelestoAI/SmolVM — a different project, name-collision-only with `smol-machines/smolvm`) is the documented entry point. A successor ADR is required before any reopened work begins.
+#194 (CelestoAI/SmolVM — a different project, name-collision-only with `smol-machines/smolvm`) is the documented entry point. A successor ADR is required before any reopened work begins.

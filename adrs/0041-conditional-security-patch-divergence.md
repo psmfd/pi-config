@@ -8,7 +8,7 @@ date: 2026-06-12
 **Status:** Accepted
 **Date:** 2026-06-12
 **Tracking label:** `track:pi-mirror` (pi_config)
-**Related:** [ADR-0038](0038-psmfd-pi-build-and-attest-trust-boundary.md) (build-and-attest trust boundary), [ADR-0039](0039-mirror-sync-cadence-and-provenance.md) (sync cadence and provenance), [ADR-0040](0040-consume-psmfd-attested-pi-releases.md) (pi_config consumes psmfd attested releases), [#368](https://github.com/psmfd/pi_config/issues/368) (validate `--` ref fix, report upstream), [psmfd/pi#7](https://github.com/psmfd/pi/issues/7) (public tracking of the git-ref injection finding), [`docs/psmfd-pi-mirror-sync.md`](../docs/psmfd-pi-mirror-sync.md), [`docs/psmfd-pi-release-runbook.md`](../docs/psmfd-pi-release-runbook.md)
+**Related:** [ADR-0038](0038-psmfd-pi-build-and-attest-trust-boundary.md) (build-and-attest trust boundary), [ADR-0039](0039-mirror-sync-cadence-and-provenance.md) (sync cadence and provenance), [ADR-0040](0040-consume-psmfd-attested-pi-releases.md) (pi_config consumes psmfd attested releases), #368 (validate `--` ref fix, report upstream), [psmfd/pi#7](https://github.com/psmfd/pi/issues/7) (public tracking of the git-ref injection finding), [`docs/psmfd-pi-mirror-sync.md`](../docs/psmfd-pi-mirror-sync.md), [`docs/psmfd-pi-release-runbook.md`](../docs/psmfd-pi-release-runbook.md)
 
 ## Context and Problem Statement
 

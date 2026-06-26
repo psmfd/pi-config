@@ -6,7 +6,7 @@ description: When forming an implementation plan, enumerate documentation-impact
 
 When forming an implementation plan, **the plan must enumerate every documentation surface the change implies and classify each one** before any code or configuration changes are made. This rule is a sub-rule of `plan-before-code.md` governing the doc-sync analysis that becomes part of every plan; as a refinement of an existing rule rather than a new architectural decision, it is exempt from `adr-required.md` under the pattern-following-addition carve-out.
 
-Companion to [#122](https://github.com/TheSemicolon/pi_config/issues/122). Sibling to `file-issues-first.md` — the same plan-time, three-way-classification shape applied to the doc-sync axis instead of the issue-tracker axis.
+Companion to #122. Sibling to `file-issues-first.md` — the same plan-time, three-way-classification shape applied to the doc-sync axis instead of the issue-tracker axis.
 
 ## Problem
 
@@ -77,7 +77,7 @@ Mirroring `plan-before-code.md` and `file-issues-first.md`:
 
 ## Worked Example
 
-During the `wsl2-expert` work (PR [#124](https://github.com/TheSemicolon/pi_config/pull/124), merged 2026-05-20), the doc-impact analysis surfaced cleanly during planning:
+During the `wsl2-expert` work (PR #124, merged 2026-05-20), the doc-impact analysis surfaced cleanly during planning:
 
 | Surface | Classification | Reason |
 |---|---|---|
@@ -89,7 +89,7 @@ During the `wsl2-expert` work (PR [#124](https://github.com/TheSemicolon/pi_conf
 | ADR | not-a-thing | pattern-following addition (paired skill + wrapper, established by hyperv-expert and 19 prior agents) |
 | README | not-a-thing | README references `agent/rules/` and `agent/skills/` by directory only, no per-skill or per-agent rows |
 
-The plan-time enumeration would also have caught the earlier incident on PR [#123](https://github.com/TheSemicolon/pi_config/pull/123): a fixup commit on `feat/hyperv-expert` softened 5 forward references to `wsl2-expert` (then-unbuilt). The fixup was a single multi-edit `edit` call against `agent/skills/hyperv-expert/SKILL.md`. One of the five edits had a stale `oldText` and the call failed atomically — but the *commit message* asserted all five had been softened. Only 1 of 5 (the wrapper edit, which was a separate `edit` call) actually applied. The drift was discovered in PR #124 mid-flight when the doc-impact section in *its* plan tried to flip the soft refs and found 4 of them were already firm.
+The plan-time enumeration would also have caught the earlier incident on PR #123: a fixup commit on `feat/hyperv-expert` softened 5 forward references to `wsl2-expert` (then-unbuilt). The fixup was a single multi-edit `edit` call against `agent/skills/hyperv-expert/SKILL.md`. One of the five edits had a stale `oldText` and the call failed atomically — but the *commit message* asserted all five had been softened. Only 1 of 5 (the wrapper edit, which was a separate `edit` call) actually applied. The drift was discovered in PR #124 mid-flight when the doc-impact section in *its* plan tried to flip the soft refs and found 4 of them were already firm.
 
 What the new rule contributes there:
 

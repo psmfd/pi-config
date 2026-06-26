@@ -7,7 +7,7 @@ date: 2026-05-29
 
 **Status:** Accepted
 **Date:** 2026-05-29
-**Tracking issue:** [#265](https://github.com/TheSemicolon/pi_config/issues/265)
+**Tracking issue:** #265
 **Supersedes (in part):** [ADR-0022 § Q2.C](0022-gh-identity-guard-extension.md#considered-options) (`git push` blanket match) and the SSH-asymmetry note in its Threat Model.
 **Related:** [ADR-0022](0022-gh-identity-guard-extension.md) (the guard's design), [ADR-0019](0019-compaction-optimizer-extension.md) (project-layer-untrusted trust boundary)
 

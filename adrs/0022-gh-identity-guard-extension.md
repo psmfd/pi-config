@@ -7,8 +7,8 @@ date: 2026-05-26
 
 **Status:** Accepted
 **Date:** 2026-05-26
-**Tracking issue:** [#250](https://github.com/TheSemicolon/pi_config/issues/250)
-**Implementation tracker:** [#252](https://github.com/TheSemicolon/pi_config/issues/252)
+**Tracking issue:** #250
+**Implementation tracker:** #252
 **Related:** [ADR-0001](0001-subagent-orchestration-substrate.md) (substrate for `agent/extensions/`), [ADR-0019](0019-compaction-optimizer-extension.md) (precedent for ADR-eligible new extension, `extensionSettings.*` namespace, project-layer-untrusted trust boundary), [ADR-0021](0021-extension-type-checking-and-linting.md) (per-extension `tsconfig.json` + ESLint contract this extension inherits)
 
 ## Contents
@@ -33,7 +33,7 @@ date: 2026-05-26
 
 ## Context and Problem Statement
 
-`gh auth status` reads an `active` flag from `~/.config/gh/hosts.yml` that can disagree with the actual token used by `gh api` after a `gh auth switch` + refresh. The only authoritative probe of the active identity is `gh api /user --jq .login`. This defect — silent identity drift causing wrong-author writes to GitHub — was filed as [#217](https://github.com/TheSemicolon/pi_config/issues/217) and patched procedurally in [#251](https://github.com/TheSemicolon/pi_config/pull/251):
+`gh auth status` reads an `active` flag from `~/.config/gh/hosts.yml` that can disagree with the actual token used by `gh api` after a `gh auth switch` + refresh. The only authoritative probe of the active identity is `gh api /user --jq .login`. This defect — silent identity drift causing wrong-author writes to GitHub — was filed as #217 and patched procedurally in #251:
 
 - New sourceable helper `scripts/lib/gh-verify-user.sh` (`gh_verify_user <login>`) that calls the authoritative probe and exits 0/1/2 per `script-output-conventions.md`.
 - Skill-text + wrapper directives on `gh-cli-expert` and `work-item-management-expert` requiring the probe before mutations.
@@ -41,7 +41,7 @@ date: 2026-05-26
 
 The procedural fix has the known weakness of every procedural fix in this repo: it relies on subagents reading and following instructions. The repo has already established that **structural enforcement at the tool boundary is the stronger pattern** — `agent/extensions/secrets-guard/` and `agent/extensions/bash-destructive-guard/` are the precedents. Both hook the pi `tool_call` event on the `bash` tool and refuse calls that violate policy, returning an actionable `reason:` string the model can recover from.
 
-This ADR decides the design of a third such guard, `gh-identity-guard`, that intercepts mutating GitHub invocations and blocks on identity drift. Implementation is tracked separately in [#252](https://github.com/TheSemicolon/pi_config/issues/252) and is blocked on this ADR landing as Accepted.
+This ADR decides the design of a third such guard, `gh-identity-guard`, that intercepts mutating GitHub invocations and blocks on identity drift. Implementation is tracked separately in #252 and is blocked on this ADR landing as Accepted.
 
 Six design questions enumerated in the tracking issue need to be resolved before implementation. They are answered in [Considered Options](#considered-options) below.
 
@@ -364,12 +364,12 @@ and `scripts/test-gh-identity-hook.sh` enforce parity. No shared
 
 ## More Information
 
-- [#217](https://github.com/TheSemicolon/pi_config/issues/217) — original `gh auth status` drift defect (closed by #251).
-- [#251](https://github.com/TheSemicolon/pi_config/pull/251) — procedural bridging fix this ADR structurally supersedes.
-- [#250](https://github.com/TheSemicolon/pi_config/issues/250) — this ADR's tracking issue.
-- [#252](https://github.com/TheSemicolon/pi_config/issues/252) — implementation tracker (blocked on this ADR; unblocked on merge).
-- [#210](https://github.com/TheSemicolon/pi_config/issues/210) — upstream contribution tracker for schema-registered extension settings API (forward-compatibility target for `extensionSettings.*` namespace).
-- [#211](https://github.com/TheSemicolon/pi_config/issues/211) — upstream contribution tracker for `CompactionHandler` undefined-return fall-through documentation (precedent for filing the `tool_call` ordering documentation request, if needed).
+- #217 — original `gh auth status` drift defect (closed by #251).
+- #251 — procedural bridging fix this ADR structurally supersedes.
+- #250 — this ADR's tracking issue.
+- #252 — implementation tracker (blocked on this ADR; unblocked on merge).
+- #210 — upstream contribution tracker for schema-registered extension settings API (forward-compatibility target for `extensionSettings.*` namespace).
+- #211 — upstream contribution tracker for `CompactionHandler` undefined-return fall-through documentation (precedent for filing the `tool_call` ordering documentation request, if needed).
 - `agent/extensions/secrets-guard/` — fail-closed tool-boundary guard precedent.
 - `agent/extensions/bash-destructive-guard/` — bash-pattern interception precedent (hand-rolled tokenizer; bypass-DENY net).
 - `scripts/lib/gh-verify-user.sh` — sourceable helper that survives this extension; remains the right tool for non-pi consumers.

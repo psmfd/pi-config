@@ -3,7 +3,7 @@
 **Status:** Proposed
 **Date:** 2026-05-19
 **Companion to:** [ADR-0001](0001-subagent-orchestration-substrate.md), [ADR-0002](0002-agent-to-agent-channel.md)
-**Tracking issue:** [#69](https://github.com/TheSemicolon/pi_config/issues/69) (Phase C deferred-capability)
+**Tracking issue:** #69 (Phase C deferred-capability)
 
 > **Note on numbering.** The #69 issue body and prior comments reserved `adrs/0003-tool-call-journal-and-restore.md`. Slot 0003 was subsequently taken by [`0003-expand-disable-model-invocation-to-all-wrapper-paired-skills.md`](0003-expand-disable-model-invocation-to-all-wrapper-paired-skills.md). Per ADR immutability, this rollback-capability ADR is renumbered to **0005** (0004 is `consensus-by-replication`).
 
@@ -79,7 +79,7 @@ The most likely chosen option is **A** (the full journal + tool), based on the g
 
 ### Cross-references
 
-- Tracking issue: [pi_config #69](https://github.com/TheSemicolon/pi_config/issues/69) — extension triage; this ADR closes the "real rollback" net-new-capability gap surfaced in the triage report.
+- Tracking issue: pi_config #69 — extension triage; this ADR closes the "real rollback" net-new-capability gap surfaced in the triage report.
 - Sibling ADR: [`adrs/0002-agent-to-agent-channel.md`](0002-agent-to-agent-channel.md) — coms bus. Independent of this ADR but shares filesystem-layout and audit-log conventions; the two should align on naming if both land.
-- Adjacent issue: [#23](https://github.com/TheSemicolon/pi_config/issues/23) — Stop-hook spike. The `tool_result` middleware surface relevant here also affects the Stop-hook design.
+- Adjacent issue: #23 — Stop-hook spike. The `tool_result` middleware surface relevant here also affects the Stop-hook design.
 - Companion notes entry: [`notes/upstream-deferred.md`](../notes/upstream-deferred.md) § "File journal + `restore` tool".

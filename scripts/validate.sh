@@ -909,6 +909,30 @@ else
   err "lint-extensions: scripts/lint-extensions.sh missing or not executable; required check skipped"
 fi
 
+# --- 9e. shellcheck gate over the repo's own shell scripts (#425, ADR-0060) -
+# The shellcheck binary is vendored + sha256-pinned (ADR-0011) but was never run
+# against the repo's own scripts/ + hooks/ — only its pin was structurally
+# validated (see validate-shellcheck-vendor.sh). This closes the shell analysis
+# gap that mirror-side CodeQL (JavaScript/TypeScript only) cannot cover, the
+# free defense-in-depth gate decided in ADR-0060. Floor is `warning`: it gates
+# real bugs (SC2xxx) and ignores style/info noise. `--external-sources` follows
+# sourced lib/ files. The CI validate workflow installs the pinned shellcheck
+# (mirroring the gitleaks step); a local run without it is a required-check
+# error, consistent with the markdownlint/lint-extensions treatment below/above.
+info "Running shellcheck over scripts/, hooks/, install.sh, setup.sh"
+if ! command -v shellcheck >/dev/null 2>&1; then
+  err "shellcheck: binary not on PATH (vendored pin agent/vendor/shellcheck/, ADR-0011); shell lint gate cannot run"
+else
+  sc_targets="$(find scripts hooks -name '*.sh' -type f; ls install.sh setup.sh 2>/dev/null)"
+  sc_count="$(printf '%s\n' "$sc_targets" | grep -c .)"
+  if sc_output="$(printf '%s\n' "$sc_targets" | xargs shellcheck --external-sources --severity=warning 2>&1)"; then
+    ok "shellcheck: clean (severity>=warning) across $sc_count shell script(s)"
+  else
+    printf '%s\n' "$sc_output" >&2
+    err "shellcheck: findings at/above warning severity (see output above)"
+  fi
+fi
+
 # --- 10. markdownlint -------------------------------------------------------
 # Runs markdownlint-cli2 across all authored markdown using the repo's
 # .markdownlint-cli2.yaml configuration. Pinned to v0.22.1 for reproducibility

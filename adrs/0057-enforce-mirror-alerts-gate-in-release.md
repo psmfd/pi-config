@@ -7,8 +7,8 @@ date: 2026-06-25
 
 **Status:** Accepted
 **Date:** 2026-06-25
-**Closes:** [#408](https://github.com/psmfd/pi_config/issues/408) (promote the gate from runbook-manual to enforced)
-**Related:** [ADR-0052](0052-mirror-code-scanning-followup.md) (the gate and `check-mirror-alerts.sh`), [ADR-0047](0047-release-automation-script.md) (`release.sh`, the release ritual this hooks into), [ADR-0055](0055-automated-mirror-releases.md) (the mirror-release phase the same script gained). **Related follow-up:** [#403](https://github.com/psmfd/pi_config/issues/403) (auth posture for cross-repo queries from CI, if the gate ever moves there).
+**Closes:** #408 (promote the gate from runbook-manual to enforced)
+**Related:** [ADR-0052](0052-mirror-code-scanning-followup.md) (the gate and `check-mirror-alerts.sh`), [ADR-0047](0047-release-automation-script.md) (`release.sh`, the release ritual this hooks into), [ADR-0055](0055-automated-mirror-releases.md) (the mirror-release phase the same script gained). **Related follow-up:** #403 (auth posture for cross-repo queries from CI, if the gate ever moves there).
 
 ## Context and Problem Statement
 

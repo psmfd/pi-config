@@ -7,7 +7,7 @@ date: 2026-06-07
 
 **Status:** Accepted
 **Date:** 2026-06-07
-**Related:** [ADR-0022](0022-gh-identity-guard-extension.md) (original guard design), [ADR-0025](0025-gh-identity-guard-interactive-bootstrap.md) (bootstrap write path), [#306](https://github.com/TheSemicolon/pi_config/issues/306)
+**Related:** [ADR-0022](0022-gh-identity-guard-extension.md) (original guard design), [ADR-0025](0025-gh-identity-guard-interactive-bootstrap.md) (bootstrap write path), #306
 
 ## Context and Problem Statement
 

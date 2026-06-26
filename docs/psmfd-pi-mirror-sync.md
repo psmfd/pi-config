@@ -245,5 +245,5 @@ the gate must not be widened casually.
   build-and-attest trust boundary this policy feeds
 - `psmfd/pi` `PROVENANCE.md`, `.psmfd/security-baseline.md`,
   `.psmfd/overlay-allowlist.txt` — the mirror-side contracts
-- [pi_config#360](https://github.com/psmfd/pi_config/issues/360) — tracking
+- pi_config#360 — tracking
   issue closed by this doc

@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-05-19
 **Companion to:** [ADR-0001](0001-subagent-orchestration-substrate.md)
-**Tracking issue:** [#76](https://github.com/TheSemicolon/pi_config/issues/76)
+**Tracking issue:** #76
 
 ## Context and Problem Statement
 

@@ -6,7 +6,7 @@ description: When planning surfaces a work item that should exist as an issue, f
 
 When forming an implementation plan, if a work item is identified that should exist as an issue — in this repo or any other — **filing that issue is the first action executed in The Plan**, before any code or configuration changes. This rule is a sub-rule of `plan-before-code.md` governing how plans get formed when follow-up scope surfaces; as a refinement of an existing rule rather than a new architectural decision, it is exempt from `adr-required.md` under the pattern-following-addition carve-out.
 
-Companion to [#100](https://github.com/TheSemicolon/pi_config/issues/100).
+Companion to #100.
 
 ## Problem
 
@@ -58,7 +58,7 @@ The forcing function is the classification itself. Surfaced items that are silen
 
 ## Worked Example
 
-During work on the pi-binary-vendoring assessment (research round preceding [#103](https://github.com/TheSemicolon/pi_config/issues/103)), the orchestrator identified that upstream `earendil-works/pi-mono` releases ship per-platform binaries but no `SHA256SUMS` asset. The recommendation under this rule:
+During work on the pi-binary-vendoring assessment (research round preceding #103), the orchestrator identified that upstream `earendil-works/pi-mono` releases ship per-platform binaries but no `SHA256SUMS` asset. The recommendation under this rule:
 
 1. **Plan step 1:** File an upstream issue against `earendil-works/pi-mono` requesting a `SHA256SUMS` asset on releases. (Out-of-scope-but-tracked — we cannot land it ourselves; upstream owns it.)
 2. **Plan step 2:** Draft ADR-0009 capturing the binary-pin-and-fetch decision.

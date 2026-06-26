@@ -8,7 +8,7 @@
 
 `setup.sh` today is a **check-and-die** script: it verifies node + npm are present, errors out if not, then runs `npm install -g @earendil-works/pi-coding-agent` and symlinks `~/.pi → $REPO_DIR`. Fresh-machine bootstrap requires the operator to hand-install Node first; the script gives no help with that.
 
-Issue [#102](https://github.com/TheSemicolon/pi_config/issues/102) calls for `setup.sh` to actively install everything pi_config requires, in an idempotent way, so a fresh box only needs `git` + the script. The dependency surface (curated during planning) is:
+Issue #102 calls for `setup.sh` to actively install everything pi_config requires, in an idempotent way, so a fresh box only needs `git` + the script. The dependency surface (curated during planning) is:
 
 - `nvm` + Node.js 24.x (mandatory; no distro-package fallback)
 - `pi` (already handled; the [ADR-0009](0009-pi-runtime-acquisition-strategy.md) `PI_USE_VENDORED=1` opt-in path is now wired)
@@ -48,15 +48,15 @@ Chosen option: **D — active installer, nvm-mandatory node, with opt-out and dr
 
 ### Pi acquisition
 
-> **Superseded in part by [ADR-0012](0012-vendored-pi-default.md).** The dual-path opt-in posture described in this section was flipped once the smoke harness ([#111](https://github.com/TheSemicolon/pi_config/issues/111)) + weekly cron accumulated green signal. The vendored path is now the default; the npm path is preserved indefinitely as the explicit `PI_USE_VENDORED=0` opt-out. The original text below is retained for historical context.
+> **Superseded in part by [ADR-0012](0012-vendored-pi-default.md).** The dual-path opt-in posture described in this section was flipped once the smoke harness (#111) + weekly cron accumulated green signal. The vendored path is now the default; the npm path is preserved indefinitely as the explicit `PI_USE_VENDORED=0` opt-out. The original text below is retained for historical context.
 
-- Default branch preserves today's `npm install -g @earendil-works/pi-coding-agent`. This is the deprecation-target path tracked in [#107](https://github.com/TheSemicolon/pi_config/issues/107).
+- Default branch preserves today's `npm install -g @earendil-works/pi-coding-agent`. This is the deprecation-target path tracked in #107.
 - `PI_USE_VENDORED=1` branch sources `scripts/lib/fetch-pi-binary.sh` (ADR-0009), invokes `fetch_pi_binary()`, and symlinks the returned binary path into `~/.local/bin/pi`. Both branches honor `--dry-run`.
 - The flip — making `PI_USE_VENDORED=1` the default and deprecating the npm path — happens in #107 after ≥1 non-author validation on a fresh box.
 
 ### Toolchain dependencies
 
-- `gh`, `jq`, `yq`, `shellcheck`, `markdownlint-cli2`, `yamllint` are installed in a follow-up PR ([#110](https://github.com/TheSemicolon/pi_config/issues/110)) that reuses the framework landed under this ADR. Carving them out keeps the install-trust-path PR small and focused.
+- `gh`, `jq`, `yq`, `shellcheck`, `markdownlint-cli2`, `yamllint` are installed in a follow-up PR (#110) that reuses the framework landed under this ADR. Carving them out keeps the install-trust-path PR small and focused.
 
 ## Tradeoffs
 
@@ -91,6 +91,6 @@ Chosen option: **D — active installer, nvm-mandatory node, with opt-out and dr
 
 ## More Information
 
-- Tracking issue: [#102](https://github.com/TheSemicolon/pi_config/issues/102).
-- Follow-ups: [#110](https://github.com/TheSemicolon/pi_config/issues/110) (toolchain deps), [#111](https://github.com/TheSemicolon/pi_config/issues/111) (CI smoke), [#112](https://github.com/TheSemicolon/pi_config/issues/112) (output-conventions refactor).
+- Tracking issue: #102.
+- Follow-ups: #110 (toolchain deps), #111 (CI smoke), #112 (output-conventions refactor).
 - The pi deprecation path (flipping `PI_USE_VENDORED=1` to default) was completed in #107 / [ADR-0012](0012-vendored-pi-default.md). The npm path is preserved indefinitely as `PI_USE_VENDORED=0`.

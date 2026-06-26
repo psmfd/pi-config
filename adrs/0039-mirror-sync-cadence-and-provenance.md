@@ -7,8 +7,8 @@ date: 2026-06-12
 
 **Status:** Accepted
 **Date:** 2026-06-12
-**Tracking issue:** [#360](https://github.com/psmfd/pi_config/issues/360)
-**Related:** [ADR-0038](0038-psmfd-pi-build-and-attest-trust-boundary.md) (build-and-attest trust boundary), [#361](https://github.com/psmfd/pi_config/issues/361) (pipeline design), [`docs/psmfd-pi-mirror-sync.md`](../docs/psmfd-pi-mirror-sync.md) (operational policy this ADR governs)
+**Tracking issue:** #360
+**Related:** [ADR-0038](0038-psmfd-pi-build-and-attest-trust-boundary.md) (build-and-attest trust boundary), #361 (pipeline design), [`docs/psmfd-pi-mirror-sync.md`](../docs/psmfd-pi-mirror-sync.md) (operational policy this ADR governs)
 
 ## Context and Problem Statement
 

@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Read-only reference for **Microsoft Hyper-V** — the Type-1 hypervisor that underpins Windows Server / Windows Client virtualization, WSL2's lightweight utility VM, the Windows Hypervisor Platform (WHPX), and the VBS / HVCI / Credential Guard security stack. Primary data source is `learn.microsoft.com`. **All version-dependent defaults (e.g. `.wslconfig` keys) must be sourced from the live MS Learn page for the user's Windows build — do not assert them from this reference.**
 
-This skill exists to support distribution-substrate questions (TheSemicolon/pi_config#99, #119) where Hyper-V is the load-bearing layer beneath WSL2 and any KVM-on-Windows path. Paired with `wsl2-expert` for the guest-side surface.
+This skill exists to support distribution-substrate questions (psmfd/pi-config#99, #119) where Hyper-V is the load-bearing layer beneath WSL2 and any KVM-on-Windows path. Paired with `wsl2-expert` for the guest-side surface.
 
 ---
 

@@ -6,7 +6,7 @@ description: Codify consensus-by-replication as a first-class fan-out shape alon
 
 This rule names a second fan-out shape for subagent orchestration. Both shapes — replication and divergence — satisfy `research-parallelism.md`'s ≥3-subagent minimum. The choice between them, and the aggregation rule for replicated outputs, is what this rule covers.
 
-Full design rationale lives in [ADR-0004](../../adrs/0004-consensus-by-replication.md). The empirical basis is recorded in [issue #76](https://github.com/TheSemicolon/pi_config/issues/76).
+Full design rationale lives in [ADR-0004](../../adrs/0004-consensus-by-replication.md). The empirical basis is recorded in issue #76.
 
 ## When This Rule Applies
 

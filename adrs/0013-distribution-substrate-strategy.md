@@ -3,20 +3,20 @@
 - **Status:** Accepted
 - **Date:** 2026-05-20
 - **Related:** [ADR-0001](0001-subagent-orchestration-substrate.md) (orchestration substrate — the substantive content being distributed), [ADR-0004](0004-consensus-by-replication.md) (consensus-by-replication; the decision provenance for this ADR), [ADR-0009](0009-pi-runtime-acquisition-strategy.md) / [ADR-0011](0011-toolchain-install-strategy.md) / [ADR-0012](0012-vendored-pi-default.md) (vendor-asset trust posture mirrored by the cross-substrate provenance policy)
-- **Tracking issues:** [#99](https://github.com/TheSemicolon/pi_config/issues/99) (parent), [#126](https://github.com/TheSemicolon/pi_config/issues/126) (LICENSE — closed by [#132](https://github.com/TheSemicolon/pi_config/pull/132)), [#128](https://github.com/TheSemicolon/pi_config/issues/128) (cross-substrate provenance), [#129](https://github.com/TheSemicolon/pi_config/issues/129) (α impl), [#130](https://github.com/TheSemicolon/pi_config/issues/130) (η impl), [#131](https://github.com/TheSemicolon/pi_config/issues/131) (ζ impl), [#133](https://github.com/TheSemicolon/pi_config/issues/133) (skill-content fair-use disclosure)
+- **Tracking issues:** #99 (parent), #126 (LICENSE — closed by #132), #128 (cross-substrate provenance), #129 (α impl), #130 (η impl), #131 (ζ impl), #133 (skill-content fair-use disclosure)
 
 ## Context
 
-`pi_config` started as a single-author orchestration-config repo with `~/.pi` symlinked to a working tree. Issue [#99](https://github.com/TheSemicolon/pi_config/issues/99) is the long-running thread asking *how this repo gets redistributed*: forks, instantiations, sharable installs. The substantive content worth distributing is the agent catalog, the rules, the prompts, the vendored-extension snapshots, the ADRs, and the validate/setup scripts — in roughly that order of stickiness.
+`pi_config` started as a single-author orchestration-config repo with `~/.pi` symlinked to a working tree. Issue #99 is the long-running thread asking *how this repo gets redistributed*: forks, instantiations, sharable installs. The substantive content worth distributing is the agent catalog, the rules, the prompts, the vendored-extension snapshots, the ADRs, and the validate/setup scripts — in roughly that order of stickiness.
 
-Six options were sketched on #99 over its history: **α GitHub Template**, **β release tarball**, **γ Yeoman/Plop generator**, **δ pi-native bundle**, **ε one-shot installer script**, plus a later **ζ smolvm pack** added when smolvm packs became viable. A seventh option, **η `wsl --import` rootfs for Windows**, was added in a follow-up #99 comment during the substrate-decision research round itself, after the paired `hyperv-expert`/`wsl2-expert` work in [#123](https://github.com/TheSemicolon/pi_config/pull/123) and [#124](https://github.com/TheSemicolon/pi_config/pull/124) made the host-prerequisite analysis possible.
+Six options were sketched on #99 over its history: **α GitHub Template**, **β release tarball**, **γ Yeoman/Plop generator**, **δ pi-native bundle**, **ε one-shot installer script**, plus a later **ζ smolvm pack** added when smolvm packs became viable. A seventh option, **η `wsl --import` rootfs for Windows**, was added in a follow-up #99 comment during the substrate-decision research round itself, after the paired `hyperv-expert`/`wsl2-expert` work in #123 and #124 made the host-prerequisite analysis possible.
 
 Two structural facts shaped the analysis:
 
 1. The **content shape is markdown + shell + agent-config + ADRs**, not compiled code. There is no platform-specific binary in the repo; vendored binaries (`agent/vendor/{pi,nvm,gh,yq,shellcheck}/`) are pinned by sha256 per ADR-0009/0011/0012 and live in the repo as references, not as the substrate's primary payload.
 2. **`pi install` (pi 0.74.x) is first-class only for `extensions/`, `skills/`, `prompts/`, `themes/`.** It does not cover the residual surface this repo carries: `agent/rules/`, `agent/AGENTS.md`, `agent/settings.json`, `agent/agents/` wrappers. Any pi-native distribution mechanism would only reach part of the payload — the rest must travel by some other channel.
 
-A LICENSE was a precondition to substrate work — fork-and-redistribute is legally ambiguous without one. That precondition was resolved as MIT in [#126](https://github.com/TheSemicolon/pi_config/issues/126) / [#132](https://github.com/TheSemicolon/pi_config/pull/132) immediately before this ADR.
+A LICENSE was a precondition to substrate work — fork-and-redistribute is legally ambiguous without one. That precondition was resolved as MIT in #126 / #132 immediately before this ADR.
 
 ## Considered options
 
@@ -115,11 +115,11 @@ A separate δ-capability check (`pi-agent-expert`) confirmed the `pi install` fi
 
 **Aggregation.** Both rounds composable per ADR-0004's "divergent fan-out + consensus-by-replication composability" clause. Most-severe-wins does not apply (the question was strategic-recommendation, not severity-of-defect); unanimous-RATIFY was the agreed acceptance gate.
 
-The full recommendation comment (the substantive output that this ADR codifies) lives at [#99 comment](https://github.com/TheSemicolon/pi_config/issues/99#issuecomment-4501097254).
+The full recommendation comment (the substantive output that this ADR codifies) lives at #99 comment.
 
 ## References
 
-- [#99](https://github.com/TheSemicolon/pi_config/issues/99) — parent tracking issue, includes the recommendation comment and the sub-issue task list
+- #99 — parent tracking issue, includes the recommendation comment and the sub-issue task list
 - [ADR-0001](0001-subagent-orchestration-substrate.md) — the orchestration substrate this repo is the configuration of
 - [ADR-0004](0004-consensus-by-replication.md) — consensus-by-replication framework that governed this decision's provenance
 - [ADR-0009](0009-pi-runtime-acquisition-strategy.md), [ADR-0011](0011-toolchain-install-strategy.md), [ADR-0012](0012-vendored-pi-default.md) — vendor-asset trust posture mirrored by the cross-substrate provenance policy in #128

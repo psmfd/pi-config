@@ -6,7 +6,7 @@
 
 ## Context and Problem Statement
 
-`pi_config` currently bootstraps pi by installing the published npm package globally: `setup.sh` runs `npm install -g @earendil-works/pi-coding-agent`. This requires `node` and `npm` on the host (today gated by a hand-installed Node 20+ runtime; the dependency installer rework in [#102](https://github.com/TheSemicolon/pi_config/issues/102) tightens that to `nvm`-managed Node 24.x) and yields a globally-installed `pi` whose version is whatever was current at install time, with no pin and no checksum verification.
+`pi_config` currently bootstraps pi by installing the published npm package globally: `setup.sh` runs `npm install -g @earendil-works/pi-coding-agent`. This requires `node` and `npm` on the host (today gated by a hand-installed Node 20+ runtime; the dependency installer rework in #102 tightens that to `nvm`-managed Node 24.x) and yields a globally-installed `pi` whose version is whatever was current at install time, with no pin and no checksum verification.
 
 Three concerns motivate a different acquisition strategy:
 
@@ -16,7 +16,7 @@ Three concerns motivate a different acquisition strategy:
 
 A 3-replica `pi-agent-expert` consensus round (per [ADR-0004](0004-consensus-by-replication.md)) evaluated whether to vendor pi *source* (analogous to our vendored `subagent` extension under ADR-0001) or to vendor a release-binary pin. Unanimous outcome: source vendoring is **feasible-but-not-advised** (release cadence ≈ 3 patch releases per day, ~80 transitive deps including 18 prebuilt `koffi` platform triples and WASM blobs, ~150–300 MB on-disk if `node_modules/` were committed); binary-pin-and-fetch is **feasible-and-advised** and is the canonical "fully built" answer pi itself ships via `bun build --compile`.
 
-Full research transcript and aggregate findings recorded in [#103](https://github.com/TheSemicolon/pi_config/issues/103).
+Full research transcript and aggregate findings recorded in #103.
 
 ## Considered Options
 
@@ -52,7 +52,7 @@ scripts/validate-pi-vendor.sh    # validator wired into scripts/validate.sh
 5. Extracts to `~/.cache/pi_config/pi-<tag>/`.
 6. Emits the absolute path to the binary on stdout for the consumer to symlink.
 
-The consumer in this PR is the `--self-test` mode of the library script itself. The production consumer — `setup.sh`'s `fetch_pi_binary()` call gated on `PI_USE_VENDORED=1` — lands in [#102](https://github.com/TheSemicolon/pi_config/issues/102). The deprecation of the npm path once the vendored path is validated by ≥1 non-author install is tracked in [#107](https://github.com/TheSemicolon/pi_config/issues/107).
+The consumer in this PR is the `--self-test` mode of the library script itself. The production consumer — `setup.sh`'s `fetch_pi_binary()` call gated on `PI_USE_VENDORED=1` — lands in #102. The deprecation of the npm path once the vendored path is validated by ≥1 non-author install is tracked in #107.
 
 ### Relationship to prior decisions
 
@@ -105,4 +105,4 @@ The two pins should usually track each other (a subagent extension snapshot from
 
 ## More Information
 
-Research transcript and the live-API checksum verification that informed this decision are recorded in [#103](https://github.com/TheSemicolon/pi_config/issues/103). Empirical basis for the subagent-extension parallel decision is in [ADR-0001](0001-subagent-orchestration-substrate.md). Followups: [#102](https://github.com/TheSemicolon/pi_config/issues/102) (setup.sh integration) and [#107](https://github.com/TheSemicolon/pi_config/issues/107) (npm-path deprecation).
+Research transcript and the live-API checksum verification that informed this decision are recorded in #103. Empirical basis for the subagent-extension parallel decision is in [ADR-0001](0001-subagent-orchestration-substrate.md). Followups: #102 (setup.sh integration) and #107 (npm-path deprecation).
