@@ -17,8 +17,8 @@ mirror in sync:
 
 | Mirror | Mode | Source |
 |---|---|---|
-| `psmfd/pi-config` | replace | curated config surface (agent/, setup.sh, install.sh, adrs/, docs/, scripts/, hooks/, …) minus the five extension dirs and all dev-internal surfaces |
-| `psmfd/pi-secrets-guard` … `pi-cache-meter` | overlay | the matching `agent/extensions/<name>/` source (packaging overlay in the mirror is preserved) |
+| `psmfd/pi-config` | replace | curated config surface (agent/, setup.sh, install.sh, adrs/, docs/, scripts/, hooks/, …) minus the eleven extension dirs and all dev-internal surfaces |
+| `psmfd/pi-secrets-guard` … `pi-auto-router` | overlay | the matching `agent/extensions/<name>/` source (packaging overlay in the mirror is preserved; `pi-indexing`, `pi-context-manager`, `pi-auto-router` also inline their `shared/` closure per ADR-0065) |
 
 Safety properties (see ADR-0050 for the full rationale):
 
@@ -104,16 +104,17 @@ long-lived `MIRROR_SYNC_TOKEN` PAT). One-time setup:
 2. **Generate a private key** (App General settings → Private keys → *Generate*)
    — downloads a `.pem`. Note the **Client ID** (`Iv23.…`) in the About section.
 3. **Install** the App (left sidebar → *Install App* → `psmfd` → **Only select
-   repositories**) on exactly the six mirrors: `pi-config`, `pi-secrets-guard`,
+   repositories**) on exactly the twelve mirrors: `pi-config`, `pi-secrets-guard`,
    `pi-bash-destructive-guard`, `pi-artifact-handoff`, `pi-web-fetch`,
-   `pi-cache-meter`.
+   `pi-cache-meter`, `pi-gh-identity-guard`, `pi-compaction-optimizer`, `pi-expertise-client`,
+   `pi-indexing`, `pi-context-manager`, `pi-auto-router`.
 4. **Create the `mirror-production` environment** on `psmfd/pi-config`
    (`Settings → Environments → New environment`) and add to it:
    - Variable **`APP_CLIENT_ID`** = the `Iv23.…` Client ID (non-secret).
    - Secret **`APP_PRIVATE_KEY`** = the full `.pem` contents (`-----BEGIN…`).
 
    The `sync` job declares `environment: mirror-production`, so only that job can
-   read the key. The workflow's mint step scopes the token to exactly the six
+   read the key. The workflow's mint step scopes the token to exactly the twelve
    repos via an explicit `repositories:` list — with `owner:` alone it would reach
    every repo the App is installed on (the least-privilege footgun, ADR-0061).
    The token lives one hour and is auto-revoked at job end; the mint step fails
@@ -129,11 +130,64 @@ long-lived `MIRROR_SYNC_TOKEN` PAT). One-time setup:
    curated `readme_substitute`) so the README is portable — the `verify_portable`
    gate hard-fails the dry-run until every `](../` link and private-repo slug is
    handled ([ADR-0062](../adrs/0062-mirror-readme-portability.md)).
-3. Install the mirror-sync GitHub App on the new repo (App → *Install App* →
-   *Configure* → add the repo to the selected-repositories list) and add it to the
-   workflow's `repositories:` list in `sync-mirrors.yml` (ADR-0061).
+3. Add the repo to the mirror-sync App installation **and** the workflow's
+   `repositories:` list in `sync-mirrors.yml`. The installation add is automated
+   ([ADR-0064](../adrs/0064-installer-app-installation-automation.md)) — no manual
+   org-UI step:
+
+   ```bash
+   INSTALLER_APP_CLIENT_ID=Iv23... \
+   INSTALLER_APP_PRIVATE_KEY="$(cat installer.pem)" \
+     scripts/add-mirror-to-installation.sh pi-<name>
+   ```
+
+   (The installer App is enterprise-owned with only
+   `Enterprise organization installation repositories: read/write` — it cannot read
+   or write any repo's contents.)
 4. Verify with `scripts/sync-mirror.sh --target <name> --dry-run`, then let the
    next push to `main` sync it (or dispatch it manually).
+
+## Inlining `shared/` for coupled extension mirrors ([ADR-0065](../adrs/0065-inline-shared-modules-for-coupled-extension-mirrors.md))
+
+Three extensions — `auto-router`, `context-manager`, `indexing` — import the
+in-repo [`agent/extensions/shared/`](../agent/extensions/shared) library by
+relative path (`../shared/<mod>.ts`). `shared/` is deliberately **not published**
+([ADR-0030](../adrs/0030-shared-foundation.md)), so each mirror carries an
+**inlined copy** of just the modules it needs, produced at sync time.
+
+A coupled target declares its **direct** `../shared/` imports in the manifest's
+`inline:` field — the engine does the rest:
+
+```yaml
+  - name: pi-indexing
+    repo: psmfd/pi-indexing
+    mode: overlay
+    strip_prefix: agent/extensions/indexing
+    sources: [agent/extensions/indexing]
+    sanitize: [pi-indexing]
+    inline: [state]            # direct imports only; closure is resolved for you
+```
+
+At sync time `inline_stage` (between staging and sanitize):
+
+1. **Resolves the transitive closure** of the seeds by following intra-`shared/`
+   `./<mod>.ts` imports — e.g. `auto-router`'s `inline: [candidates, signals,
+   notify, state]` pulls in `cost.ts` because `candidates.ts` imports it.
+2. **Stages the closure tracked-only** under a `shared/` subdir of the mirror.
+3. **Rewrites the import specifiers** to the right relative prefix per file depth:
+   root files `../shared/` → `./shared/`, `test/` files `../../shared/` →
+   `../shared/`.
+4. **Fail-closed verify** — every `shared/` import must carry the expected prefix
+   and resolve to an inlined module; an incomplete `inline:` list or a missed
+   rewrite aborts the sync (a clean dry-run means the inline is complete).
+
+Because the inlined modules are not under the target's `sources`, the engine also
+folds the resolved closure into `--changed` detection, so an edit to canonical
+`shared/` re-syncs the coupled mirrors. `auto-router` additionally value-imports
+`@earendil-works/pi-ai` at runtime, so its overlay `package.json` declares that
+package as a real `dependencies` entry (not a peerDependency).
+
+Leaf extensions keep `inline: []` and are unaffected.
 
 ## Releases (ADR-0055)
 
@@ -223,8 +277,11 @@ purchase at current scale and instead closes the *material* part of the gap — 
 surfaces mirror CodeQL structurally cannot reach — with two free, PR-blocking CI
 gates: a **shellcheck** pass over `scripts/`/`hooks/`
 (#425; shell is outside CodeQL's
-JS/TS analysis) and **`eslint-plugin-security`** over the six unmirrored
-extensions (#426). A 30-day
+JS/TS analysis) and **`eslint-plugin-security`** over the extension TypeScript
+(#426) — now defense-in-depth
+over all extensions (every suite extension is mirrored + CodeQL-scanned), and the
+sole source-side scanner for the vendored `subagent` and the `shared/` library,
+which have no mirror. A 30-day
 enterprise Code Security trial is recorded as an available future measure if the
 source's risk profile changes.
 

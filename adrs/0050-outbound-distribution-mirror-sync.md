@@ -8,6 +8,7 @@ date: 2026-06-24
 **Status:** Accepted
 **Date:** 2026-06-24
 **Closes:** #376 (the CI-automated mirroring deferred by ADR-0042)
+**Superseded (in part) by:** [ADR-0061](0061-mirror-sync-github-app-auth.md) — replaces this ADR's fine-grained-PAT (`MIRROR_SYNC_TOKEN`) push-auth mechanism with a scoped GitHub App installation token. The sync engine, manifest, and modes here are unchanged.
 **Related:** [ADR-0042](0042-standalone-extension-distribution.md) (extension mirrors — this generalizes their manual sync), [ADR-0013](0013-distribution-substrate-strategy.md) (distribution substrates — this stands up a config mirror so the GitHub-Template / installer paths have a public source), [ADR-0049](0049-genericize-runtime-config-via-templates.md) (config genericization — the precursor that makes the config surface shippable without per-sync scrubbing), [ADR-0039](0039-mirror-sync-cadence-and-provenance.md) / [ADR-0045](0045-automate-mirror-sync-runbook.md) (the INBOUND psmfd/pi sync — a different system, contrasted below)
 
 ## Context and Problem Statement

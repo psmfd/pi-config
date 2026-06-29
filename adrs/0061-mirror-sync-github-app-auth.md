@@ -9,6 +9,7 @@ date: 2026-06-26
 **Date:** 2026-06-26
 **Closes:** #403 (migrate mirror-sync auth PAT → GitHub App), #412 (narrow `MIRROR_SYNC_TOKEN` to Contents-only — subsumed: the App is Contents-only), #402 (scrub `insteadOf` credential — obviated: the token is short-lived + auto-revoked)
 **Supersedes (in part):** [ADR-0050](0050-outbound-distribution-mirror-sync.md) — replaces its fine-grained-PAT (`MIRROR_SYNC_TOKEN`) push-auth mechanism. The sync engine, manifest, and modes are unchanged.
+**Amended by:** [ADR-0064](0064-installer-app-installation-automation.md) — the selected-repos decision stands; ADR-0064 adds how repos join the App installation's `repositories:` selection.
 **Related:** [ADR-0053](0053-pin-github-actions-to-sha.md) (the SHA-pin policy applied to `create-github-app-token`), [ADR-0054](0054-no-source-ci-on-distribution-mirror.md) (no workflow files ship to mirrors — why Contents-only suffices), [ADR-0055](0055-automated-mirror-releases.md) (the `gh` Release creation that also uses this token).
 
 ## Context and Problem Statement

@@ -126,7 +126,7 @@ Each substrate's release pipeline is responsible for producing the floor (and, w
 Each substrate's PR must:
 
 1. Produce the floor artifact in its release workflow.
-2. Reference this policy doc from the user-facing install instructions (README section, `Install.ps1` for η, wrapper script for κ/ζ).
+2. Reference this policy doc from the user-facing install instructions (README section, `Install.ps1` for η, wrapper script for κ).
 3. Document the recipient verification command for the substrate's artifact format.
 
 The "target" tier is opt-in per substrate. OCI substrates get target essentially for free via `docker/build-push-action` flags; non-OCI substrates require an additional `cosign sign-blob` step plus uploading the `.cosign.bundle` to the GitHub release.
@@ -149,7 +149,7 @@ A reader who wants to confirm a given release actually meets the floor:
 cosign verify ghcr.io/<owner>/pi_config:vX.Y.Z --certificate-identity-regexp '…' --certificate-oidc-issuer '…'
 # (returns 0 → floor met)
 
-# η, ζ, β α-tarball
+# η, β α-tarball
 gh release view vX.Y.Z --json assets --jq '.assets[].name' | grep -E '^SHA256SUMS$'
 # (matches → floor met)
 ```

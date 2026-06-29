@@ -52,7 +52,7 @@ MIRROR_OWNER="psmfd"
 MIRROR_REPO="${MIRROR_OWNER}/pi-config"
 MIRROR_URL="https://github.com/${MIRROR_REPO}.git"
 EXT_REF="v0.1.0"
-EXT_MIRRORS=(pi-secrets-guard pi-bash-destructive-guard pi-artifact-handoff pi-web-fetch pi-cache-meter)
+EXT_MIRRORS=(pi-secrets-guard pi-bash-destructive-guard pi-artifact-handoff pi-web-fetch pi-cache-meter pi-gh-identity-guard pi-compaction-optimizer pi-expertise-client pi-indexing pi-context-manager pi-auto-router)
 
 DIR="${HOME}/projects/pi-config"
 REF="main"

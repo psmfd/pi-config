@@ -72,7 +72,7 @@ npm-install opt-out, and more).
 
 ## First-party extensions
 
-Five pi extensions are distributed as standalone mirrors and installed by
+Eleven pi extensions are distributed as standalone mirrors and installed by
 `install.sh`:
 
 | Extension | What it does |
@@ -82,6 +82,12 @@ Five pi extensions are distributed as standalone mirrors and installed by
 | [`pi-artifact-handoff`](https://github.com/psmfd/pi-artifact-handoff) | Stages large outputs for line-anchored human review before merge |
 | [`pi-web-fetch`](https://github.com/psmfd/pi-web-fetch) | Allowlisted, auditable web fetch |
 | [`pi-cache-meter`](https://github.com/psmfd/pi-cache-meter) | Measures prompt-cache hit ratio to diagnose context efficiency |
+| [`pi-gh-identity-guard`](https://github.com/psmfd/pi-gh-identity-guard) | Blocks mutating `gh`/`git push` when the active GitHub identity is wrong for the repo |
+| [`pi-compaction-optimizer`](https://github.com/psmfd/pi-compaction-optimizer) | Deterministic context-compaction summaries with a local pre-compaction snapshot archive |
+| [`pi-expertise-client`](https://github.com/psmfd/pi-expertise-client) | Local loopback client for a developer's agent-expertise-api (search + create) |
+| [`pi-indexing`](https://github.com/psmfd/pi-indexing) | Semantic codebase search (cocoindex-code) with idle-gated background re-indexing |
+| [`pi-context-manager`](https://github.com/psmfd/pi-context-manager) | Cache-safe, zero-token context pruning of oversized tool results |
+| [`pi-auto-router`](https://github.com/psmfd/pi-auto-router) | Per-prompt model selection via a cheap classifier (`before_agent_start`) |
 
 ## Provenance and trust
 

@@ -475,6 +475,15 @@ else
   err "sync-mirror: version-bump self-test failed (run: scripts/sync-mirror.sh --self-test)"
 fi
 
+info "Running scripts/add-mirror-to-installation.sh --self-test (ADR-0064)"
+if [ ! -x scripts/add-mirror-to-installation.sh ]; then
+  err "add-mirror-to-installation: scripts/add-mirror-to-installation.sh is missing or not executable"
+elif scripts/add-mirror-to-installation.sh --self-test >/dev/null 2>&1; then
+  ok "add-mirror-to-installation: JWT self-test passed"
+else
+  err "add-mirror-to-installation: JWT self-test failed (run: scripts/add-mirror-to-installation.sh --self-test)"
+fi
+
 # --- 7. ADRs ---------------------------------------------------------------
 info "Validating adrs/*.md"
 # bash 3.2 (the macOS system bash, used by the setup-smoke workflow) lacks
