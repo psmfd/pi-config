@@ -199,9 +199,11 @@ Each mirror gets an **annotated tag + GitHub Release**, created idempotently by
   dev→main promotion merge, `.github/workflows/release.yml` (triggered by
   `workflow_run` after the `sync` job completes) derives `vX.Y.Z` via
   `release.sh --print-version`, tags + releases the source, then runs
-  `sync-mirror.sh --target pi-config --push --changed --release --release-version
-  $VERSION` to cut the matching mirror Release. The local
-  `scripts/release.sh --tag-only` fallback does the same if CI cannot finish.
+  `sync-mirror.sh --target pi-config --push --release --release-version $VERSION`
+  to cut the matching mirror Release (no `--changed`: the content is already
+  pushed by the `sync` job so the push self-skips, but `--changed` would skip the
+  whole target including the release). The local `scripts/release.sh --tag-only`
+  fallback does the same if CI cannot finish.
 - **Extension mirrors** (`pi-<name>`, `overlay`) carry **independent SemVer**. The
   next version is **computed from Conventional-Commits history** over the
   extension's source subtree, not stored on the mirror (ADR-0058, below). The CI

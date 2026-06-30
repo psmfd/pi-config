@@ -35,7 +35,7 @@ Facts a three-way expert fan-out (Actions implementation / release-workflow mode
 2. **Version:** a new **`release.sh --print-version`** mode (Phase-1 logic only; prints `vX.Y.Z` or `NONE`, no preflight/PR/tag) — single source of truth, no duplicated derivation. `NONE` ⇒ the workflow skips cleanly.
 3. **Source tag:** annotated `git tag -a` under `GITHUB_TOKEN` (`contents: write`, **job-scoped**), tagger `github-actions[bot]`; idempotent (skip if the tag exists).
 4. **Source Release:** `gh release create --verify-tag --generate-notes`; idempotent.
-5. **Config-mirror release:** mint the App token (`environment: mirror-production`, scoped to `pi-config` only — ADR-0061) and run `sync-mirror.sh --target pi-config --push --changed --release --release-version` (content is a no-op via `--changed`; just the tag + Release).
+5. **Config-mirror release:** mint the App token (`environment: mirror-production`, scoped to `pi-config` only — ADR-0061) and run `sync-mirror.sh --target pi-config --push --release --release-version` (no `--changed`: sync-mirrors.yml already pushed the content so the push self-skips as "already up to date", but `--changed` would skip the whole target — including the release; without it the tag + Release are still cut).
 6. **`release.sh`** keeps Phases 0–2 (preflight + code-scanning **gate** + version + open PR) as the PR-opener and **retires Phase 3 (the poll)** — it now exits after opening the PR. A new **`--tag-only`** mode is the emergency local fallback when CI did not tag (it re-runs the gate, then tags main + cuts the Release + mirror release).
 
 ### The code-scanning gate (kept local; the CI-enforcement gap is deferred)
