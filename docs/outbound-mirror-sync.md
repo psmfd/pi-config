@@ -194,11 +194,14 @@ Leaf extensions keep `inline: []` and are unaffected.
 Each mirror gets an **annotated tag + GitHub Release**, created idempotently by
 `sync-mirror.sh --release`. The version source differs by mirror type:
 
-- **Config mirror** (`pi-config`, `replace`) tracks the **source** version.
-  `scripts/release.sh` Phase 6 cuts it: after pushing the source `vX.Y.Z` tag it
-  runs `sync-mirror.sh --target pi-config --push --release --release-version
-  $VERSION`. Opt out with `--no-mirror-release` (independent of `--no-release`,
-  which only governs the private source's Release object).
+- **Config mirror** (`pi-config`, `replace`) tracks the **source** version. Since
+  [ADR-0066](../adrs/0066-ci-release-automation.md) this is cut by **CI**: on the
+  dev→main promotion merge, `.github/workflows/release.yml` (triggered by
+  `workflow_run` after the `sync` job completes) derives `vX.Y.Z` via
+  `release.sh --print-version`, tags + releases the source, then runs
+  `sync-mirror.sh --target pi-config --push --changed --release --release-version
+  $VERSION` to cut the matching mirror Release. The local
+  `scripts/release.sh --tag-only` fallback does the same if CI cannot finish.
 - **Extension mirrors** (`pi-<name>`, `overlay`) carry **independent SemVer**. The
   next version is **computed from Conventional-Commits history** over the
   extension's source subtree, not stored on the mirror (ADR-0058, below). The CI
@@ -218,8 +221,14 @@ Properties:
 - **Token scope.** Tag push and Release creation need **Contents: write** only
   (already held; see #412).
 - **Dashboard.** `psmfd/pi-ecosystem` auto-discovers each repo's latest release on
-  a 6-hourly cron; `gh workflow run dashboard --repo psmfd/pi-ecosystem` refreshes
-  it immediately.
+  an hourly cron (safety net). On a release, `release.yml` can fire a
+  `repository_dispatch` (`release-published`) to refresh it **immediately** —
+  enabled by adding pi-ecosystem to the mirror-sync App installation
+  (`scripts/add-mirror-to-installation.sh pi-ecosystem`) and setting the repo
+  variable `ECO_DASHBOARD_DISPATCH=true`. `gh workflow run dashboard --repo
+  psmfd/pi-ecosystem` always refreshes it manually. Private repos
+  (`pi_config`, `agent-expertise-api-infra`) render without a version — the
+  dashboard's read token cannot see private releases (by design).
 
 ### How an extension version advances (ADR-0058)
 
@@ -369,6 +378,14 @@ for a known-accepted state. Running the commands above by hand is still a useful
 ad-hoc sweep (e.g. `--threshold medium`). See
 [ADR-0057](../adrs/0057-enforce-mirror-alerts-gate-in-release.md)
 (enforcement) and [ADR-0052](../adrs/0052-mirror-code-scanning-followup.md) (the gate).
+
+Since [ADR-0066](../adrs/0066-ci-release-automation.md), `release.sh` **opens the
+promotion PR and exits** — the tag + Release are cut by `release.yml` on the merge,
+not by a local poller. The gate stays in `release.sh` Phase 0, so it still runs
+locally before the PR is opened (it cannot run in CI — the workflow tokens lack
+`security_events` on the mirror repos). Enforcing it as a required CI check on the
+PR is deferred to #473; until then,
+**always open the promotion PR via `release.sh`** so the gate is not skipped.
 
 ## Limitations
 

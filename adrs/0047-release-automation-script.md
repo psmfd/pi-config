@@ -1,12 +1,13 @@
 ---
-status: Accepted
+status: Superseded
 date: 2026-06-23
 ---
 
 # ADR-0047: script the dev→main release promotion, with a manual merge gate
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0066](0066-ci-release-automation.md)
 **Date:** 2026-06-23
+**Superseded by:** [ADR-0066](0066-ci-release-automation.md) — CI (`release.yml`) now owns the post-merge tag + Release + config-mirror release; `release.sh` becomes the PR-opener and a `--tag-only` fallback, and its Phase 3 poller is retired. The manual owner-bypass merge gate that this ADR established is unchanged.
 **Related:** [ADR-0036](0036-dev-integration-main-stable-branch-model.md) (dev integration / main stable promotion model), [ADR-0046](0046-psmfd-pi-main-ruleset-migration.md) (psmfd/pi main ruleset; analogous bypass model), [`agent/rules/github-flow.md`](../agent/rules/github-flow.md) (promotion / merge strategy), [`agent/rules/conventional-commits.md`](../agent/rules/conventional-commits.md) (commit types that drive the version bump), [`scripts/lib/gh-verify-user.sh`](../scripts/lib/gh-verify-user.sh) (identity probe), [`hooks/gh-identity-guard.sh`](../hooks/gh-identity-guard.sh) (pre-push identity guard)
 
 ## Context and Problem Statement
