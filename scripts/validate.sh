@@ -928,11 +928,11 @@ fi
 # sourced lib/ files. The CI validate workflow installs the pinned shellcheck
 # (mirroring the gitleaks step); a local run without it is a required-check
 # error, consistent with the markdownlint/lint-extensions treatment below/above.
-info "Running shellcheck over scripts/, hooks/, install.sh, setup.sh"
+info "Running shellcheck over scripts/, hooks/, install.sh, install-expertise.sh, setup.sh"
 if ! command -v shellcheck >/dev/null 2>&1; then
   err "shellcheck: binary not on PATH (vendored pin agent/vendor/shellcheck/, ADR-0011); shell lint gate cannot run"
 else
-  sc_targets="$(find scripts hooks -name '*.sh' -type f; ls install.sh setup.sh 2>/dev/null)"
+  sc_targets="$(find scripts hooks -name '*.sh' -type f; ls install.sh install-expertise.sh setup.sh 2>/dev/null)"
   sc_count="$(printf '%s\n' "$sc_targets" | grep -c .)"
   if sc_output="$(printf '%s\n' "$sc_targets" | xargs shellcheck --external-sources --severity=warning 2>&1)"; then
     ok "shellcheck: clean (severity>=warning) across $sc_count shell script(s)"

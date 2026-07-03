@@ -17,7 +17,7 @@ mirror in sync:
 
 | Mirror | Mode | Source |
 |---|---|---|
-| `psmfd/pi-config` | replace | curated config surface (agent/, setup.sh, install.sh, adrs/, docs/, scripts/, hooks/, …) minus the eleven extension dirs and all dev-internal surfaces |
+| `psmfd/pi-config` | replace | curated config surface (agent/, setup.sh, install.sh, install-expertise.sh, adrs/, docs/, scripts/, hooks/, …) minus the eleven extension dirs and all dev-internal surfaces |
 | `psmfd/pi-secrets-guard` … `pi-auto-router` | overlay | the matching `agent/extensions/<name>/` source (packaging overlay in the mirror is preserved; `pi-indexing`, `pi-context-manager`, `pi-auto-router` also inline their `shared/` closure per ADR-0065) |
 
 Safety properties (see ADR-0050 for the full rationale):
