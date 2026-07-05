@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # check-ext-ref-drift.sh — report (and optionally fix) drift between the
-# hand-edited EXT_REF pins in install.sh / install-expertise.sh and the latest
-# published GitHub Release tag of each overlay mirror.
+# hand-edited version pins in install.sh (per-extension name@vX.Y.Z) and
+# install-expertise.sh (a single EXT_REF) and the latest published GitHub
+# Release tag of each overlay mirror.
 #
 # The overlay repo list is DERIVED from mirror/targets.yml (the sync manifest,
 # ADR-0050) — the same single-source-of-truth pattern as check-mirror-alerts.sh —
@@ -12,11 +13,11 @@
 #   scripts/check-ext-ref-drift.sh [--fix] [--target NAME] [--verbose] [-h|--help]
 #
 # Flags:
-#   --fix       Rewrite a pin in place when a SAFE bump is possible (see policy
-#               below). install-expertise.sh (1:1 with pi-expertise-client) is
-#               auto-fixable; install.sh's SHARED EXT_REF is NOT auto-fixed while
-#               mirrors have diverged (see #492) — it would pin a tag some mirrors
-#               lack. --fix on a divergent install.sh reports ERROR and no-ops.
+#   --fix       Rewrite a stale pin in place when a SAFE (strictly-newer) bump
+#               exists. Both install-expertise.sh (1:1 with pi-expertise-client)
+#               and install.sh's PER-EXTENSION pins (name@vX.Y.Z, ADR-0075) are
+#               auto-fixable independently — each mirror carries its own pin, so
+#               the old shared-EXT_REF divergence refusal (#492) no longer applies.
 #   --target N  Limit the check to one overlay target name from the manifest.
 #   --verbose   Print per-repo detail.
 #   -h|--help   Print this help and exit.
@@ -62,6 +63,12 @@ command -v gh >/dev/null 2>&1 || { err deps "gh not found"; exit 2; }
 command -v yq >/dev/null 2>&1 || { err deps "yq not found"; exit 2; }
 [ -f "$MANIFEST" ] || { err deps "manifest not found: $MANIFEST"; exit 2; }
 
+# Manifest-derived target names are interpolated into grep/sed programs and yq
+# filter strings below, so constrain them to the same safe slug shape
+# sync-mirror.sh's valid_name() enforces (defense against expression injection
+# from the manifest; lockstep with scripts/sync-mirror.sh).
+valid_name() { case "$1" in ''|*[!a-z0-9-]*) return 1 ;; *) return 0 ;; esac; }
+
 # pin_of <file>: the single EXT_REF="vX.Y.Z" pin declared in <file>.
 pin_of() { sed -nE 's/^EXT_REF="(v[0-9]+\.[0-9]+\.[0-9]+)"/\1/p' "$1" | head -n1; }
 
@@ -80,7 +87,10 @@ fix_pin() {
   # `/`), so a crafted tag like v1.2"$(cmd)".3 would be written verbatim and
   # execute on the next `bash install*.sh` run — a command-injection primitive.
   # The anchor rejects anything but a strict vX.Y.Z.
-  if ! printf '%s' "$new" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+  # bash [[ =~ ]] anchors the WHOLE string (grep -qE '^..$' anchors per line, so
+  # a $new containing an embedded newline like "v1.2.3\n<payload>" would slip
+  # through grep and inject the trailing content into the rewrite).
+  if ! [[ "$new" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     err fix "$file: refusing to write a non-vX.Y.Z value: $new"; return 1
   fi
   tmp="$(mktemp "${file}.XXXXXX")"
@@ -91,6 +101,32 @@ fix_pin() {
   else
     rm -f "$tmp"; err fix "$(basename "$file"): sed rewrite failed"; return 1
   fi
+}
+
+# install_pin_of <name>: the version pinned for <name> in install.sh's
+# EXT_MIRRORS array (name@vX.Y.Z), or empty. Anchored to an INDENTED array-entry
+# line (`^[[:space:]]+name@`) — the leading `@` alone would still match a
+# `name@vX.Y.Z` shape in a comment or help-text, so the line-shape anchor scopes
+# it to real entries (mirrors validate.sh's array-bounded parser).
+install_pin_of() {
+  grep -oE "^[[:space:]]+${1}@v[0-9]+\.[0-9]+\.[0-9]+" "$INSTALL_FILE" | head -n1 | sed -E 's/^.*@//'
+}
+
+# fix_install_pin <name> <new>: rewrite the <name>@vX.Y.Z pin in install.sh,
+# preserving the file's mode. Same anchored-semver guard as fix_pin ($new is an
+# untrusted release tag interpolated into a bash-source line + a sed program).
+fix_install_pin() {
+  local name="$1" new="$2" tmp
+  if ! [[ "$new" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    err fix "install.sh: refusing to write a non-vX.Y.Z value: $new"; return 1
+  fi
+  tmp="$(mktemp "${INSTALL_FILE}.XXXXXX")"
+  # Anchor to an INDENTED array entry so a name@version shape elsewhere (comment,
+  # help-text) is never rewritten; \1 preserves the entry's indentation.
+  if sed -E "s|^([[:space:]]+)${name}@v[0-9]+\.[0-9]+\.[0-9]+|\1${name}@${new}|" "$INSTALL_FILE" > "$tmp"; then
+    cat "$tmp" > "$INSTALL_FILE"; rm -f "$tmp"; return 0
+  fi
+  rm -f "$tmp"; err fix "install.sh: sed rewrite failed for $name"; return 1
 }
 
 # drift_found: any drift observed (drives the report). drift_unresolved: drift
@@ -121,71 +157,57 @@ if [ -z "$TARGET" ] || [ "$TARGET" = "pi-expertise-client" ]; then
         drift_unresolved=1
       fi
     else
-      warn drift "install-expertise.sh: $EXP_REPO pinned $exp_pin is AHEAD of latest $exp_latest (unreleased pin?)"
+      drift_unresolved=1
+      warn drift "install-expertise.sh: $EXP_REPO pinned $exp_pin is AHEAD of latest $exp_latest (unreleased pin? pi install may fail)"
     fi
   fi
 fi
 
-# --- install.sh: ONE shared EXT_REF across all overlay mirrors ----------------
-# Report per-repo. Because a single pin cannot represent 11 independently-
-# versioned mirrors (#492), --fix is refused whenever the mirrors' latest tags
-# are not all identical and newer than the pin.
+# --- install.sh: PER-EXTENSION pins (name@vX.Y.Z in EXT_MIRRORS) --------------
+# Each overlay mirror carries its own pin (ADR-0075), so drift and --fix are
+# per-extension and independent — the shared-EXT_REF divergence problem (#492)
+# is gone. --fix bumps only pins strictly older than the mirror's latest
+# release; a pin AHEAD of latest (unreleased) is reported, never downgraded.
 INSTALL_FILE="$REPO_DIR/install.sh"
-install_pin="$(pin_of "$INSTALL_FILE")"
-if [ -z "$install_pin" ]; then
-  err discover "install.sh: no EXT_REF=\"vX.Y.Z\" line found"
+if ! grep -q '^EXT_MIRRORS=(' "$INSTALL_FILE"; then
+  err discover "install.sh: no EXT_MIRRORS=( array found"
 else
-  lagging_count=0
-  total_count=0
-  uniform_latest=""
-  uniform=1
   while IFS= read -r name; do
     [ -n "$name" ] || continue
     [ -n "$TARGET" ] && [ "$name" != "$TARGET" ] && continue
-    repo="$(yq -r ".targets[] | select(.name==\"$name\") | .repo" "$MANIFEST")"
-    latest="$(latest_release "$repo")"
-    total_count=$((total_count + 1))
-    if [ -z "$latest" ]; then
-      err drift "install.sh: could not resolve latest release for $repo"
-      uniform=0
+    if ! valid_name "$name"; then
+      err drift "manifest target name is not a safe slug (expect lowercase [a-z0-9-]): $name"
       continue
     fi
-    if [ "$install_pin" = "$latest" ]; then
-      detail "install.sh: $repo pinned $install_pin matches latest"
-    else
+    repo="$(yq -r ".targets[] | select(.name==\"$name\") | .repo" "$MANIFEST")"
+    pin="$(install_pin_of "$name")"
+    if [ -z "$pin" ]; then
+      err drift "install.sh: $name has no name@vX.Y.Z pin in EXT_MIRRORS (onboarding drift — see #512)"
+      continue
+    fi
+    latest="$(latest_release "$repo")"
+    if [ -z "$latest" ]; then
+      err drift "install.sh: could not resolve latest release for $repo"
+      continue
+    fi
+    if [ "$pin" = "$latest" ]; then
+      detail "install.sh: $repo pinned $pin matches latest"
+    elif ver_gt "$latest" "$pin"; then
       drift_found=1
-      lagging_count=$((lagging_count + 1))
-      warn drift "install.sh: $repo pinned $install_pin, latest is $latest"
-    fi
-    if [ -z "$uniform_latest" ]; then uniform_latest="$latest"
-    elif [ "$uniform_latest" != "$latest" ]; then uniform=0; fi
-  done < <(yq -r '.targets[] | select(.mode=="overlay") | .name' "$MANIFEST")
-
-  if [ "$lagging_count" -gt 0 ]; then
-    warn drift "install.sh: shared EXT_REF ($install_pin) is stale for ${lagging_count}/${total_count} mirror(s)"
-    # install.sh's single EXT_REF spans ALL overlay mirrors, so it is auto-fixable
-    # ONLY on a full (non-targeted), uniform scan that is strictly newer. Under
-    # --target, `uniform` is computed over one mirror and is trivially true — a
-    # --fix there would rewrite the shared pin to that one mirror's tag (the #492
-    # divergence footgun the header promises to refuse), so a targeted run is
-    # report-only for the shared pin.
-    install_resolved=0
-    if [ -z "$TARGET" ] && [ "$uniform" = 1 ] && [ "$FIX" = 1 ] && ver_gt "$uniform_latest" "$install_pin"; then
-      if fix_pin "$INSTALL_FILE" "$uniform_latest"; then install_resolved=1; fi
-    fi
-    if [ "$install_resolved" = 0 ]; then
-      drift_unresolved=1
-      if [ -n "$TARGET" ]; then
-        detail "install.sh: shared EXT_REF not evaluated for --fix under --target (report only)"
-      elif [ "$uniform" != 1 ]; then
-        err drift "install.sh: overlay mirrors have DIVERGENT versions — a single shared EXT_REF cannot represent them (#492); refusing --fix"
-      elif [ "$FIX" = 1 ]; then
-        err fix "install.sh: shared EXT_REF not safely auto-fixable (#492)"
+      warn drift "install.sh: $repo pinned $pin, latest is $latest"
+      if [ "$FIX" = 1 ] && fix_install_pin "$name" "$latest"; then
+        ok fix "install.sh: $name -> $latest"
+      else
+        drift_unresolved=1
       fi
+    else
+      # Pin is newer than the mirror's latest release: the tag may not exist as a
+      # release (typo / hand-edit) and `pi install ...@$pin` would then fail. Not
+      # auto-fixable (never downgrade), but surface it via the exit code.
+      drift_unresolved=1
+      warn drift "install.sh: $repo pinned $pin is AHEAD of latest $latest (unreleased pin? pi install may fail)"
     fi
-  elif [ "$total_count" -gt 0 ]; then
-    ok drift "install.sh: shared EXT_REF ($install_pin) matches all ${total_count} checked mirror(s)"
-  fi
+  done < <(yq -r '.targets[] | select(.mode=="overlay") | .name' "$MANIFEST")
 fi
 
 echo "=================================="

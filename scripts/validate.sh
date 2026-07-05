@@ -395,6 +395,81 @@ if [ "$sp_bad" -eq 0 ]; then
   ok "secret-lockstep: all 3 copies carry the canonical pattern set"
 fi
 
+# --- 6b-ter. Mirror-target onboarding lockstep gate (#512, ADR-0074) -------
+# A mirror EXTENSION target must be declared in lockstep across three files:
+#   mirror/targets.yml               — the outbound sync manifest
+#   .github/workflows/sync-mirrors.yml — the mirror-sync App-token repositories: scope
+#   install.sh (EXT_MIRRORS)         — what the one-shot installer wires via pi install
+# PR #509 added pi-token-meter to the first and third but not the second (and
+# never created the mirror repo), so the v1.10.0 promotion sync failed on main
+# and skipped release.yml (#512). This static, offline gate asserts the three
+# extension sets are identical and fails the PR that introduces the drift.
+# Repo-existence / App-authorization (network + installer App) are caught by the
+# sync-mirror.sh onboarding preflight; this gate is the deterministic backstop.
+# pi-config is the base clone target, not a pi-install extension, so it is
+# excluded from the EXT_MIRRORS comparison by design.
+info "Mirror-target onboarding lockstep gate (#512)"
+mt_bad=0
+mt_targets="$(grep -E '^  - name: pi-' mirror/targets.yml | sed -E 's/^  - name: (pi-[a-z0-9-]+).*/\1/' | grep -vx pi-config | sort -u)"
+# Block-scalar parse: skip blanks, end only on DEDENT (indent <= the
+# `repositories:` key), and flag any other in-block line as MALFORMED — a
+# stray comment/typo must fail the gate loudly, not silently truncate the
+# extracted set (which would exempt every target listed after it).
+mt_repos_raw="$(awk '
+  /^[[:space:]]*repositories:[[:space:]]*\|/ {f=1; match($0,/[^ ]/); ind=RSTART; next}
+  f {
+    if (!NF) next
+    match($0,/[^ ]/)
+    if (RSTART<=ind) exit
+    if ($0 ~ /^[[:space:]]+pi-[a-z0-9-]+[[:space:]]*$/) {gsub(/[[:space:]]/,""); print}
+    else {print "MALFORMED:" $0}
+  }' .github/workflows/sync-mirrors.yml)"
+mt_repos_malformed="$(printf '%s\n' "$mt_repos_raw" | grep '^MALFORMED:' || true)"
+if [ -n "$mt_repos_malformed" ]; then
+  while IFS= read -r mt_ln; do
+    [ -n "$mt_ln" ] && err "mirror-lockstep: sync-mirrors.yml repositories: block has an unexpected line (not a pi-* slug):${mt_ln#MALFORMED:}"
+  done <<MT_REPOS_MALFORMED
+$mt_repos_malformed
+MT_REPOS_MALFORMED
+  mt_bad=1
+fi
+mt_repos="$(printf '%s\n' "$mt_repos_raw" | grep -v '^MALFORMED:' | grep -vx pi-config | sort -u)"
+mt_install="$(awk '/^EXT_MIRRORS=\(/{f=1;next} f&&/^\)/{f=0} f{print}' install.sh | grep -oE 'pi-[a-z0-9-]+' | sort -u)"
+# Every EXT_MIRRORS entry must be a well-formed name@vX.Y.Z pin (ADR-0075). The
+# set comparison above matches on the bare name, so a version-less or typo'd
+# entry (e.g. `pi-token-meter` with no `@v...`) would pass the lockstep gate yet
+# break install.sh's `${entry%@*}`/`${entry##*@}` split at runtime — fail it here.
+mt_malformed="$(awk '/^EXT_MIRRORS=\(/{f=1;next} f&&/^\)/{f=0} f && NF && $0 !~ /^[[:space:]]+pi-[a-z0-9-]+@v[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$/ {print}' install.sh)"
+if [ -n "$mt_malformed" ]; then
+  while IFS= read -r mt_ln; do
+    [ -n "$mt_ln" ] && err "mirror-lockstep: install.sh EXT_MIRRORS entry is not a well-formed name@vX.Y.Z pin:$mt_ln"
+  done <<MT_MALFORMED
+$mt_malformed
+MT_MALFORMED
+  mt_bad=1
+fi
+# Report every membership gap between two sorted sets, actionably.
+mt_report() { # $1 label-A  $2 set-A  $3 label-B  $4 set-B  — items in A not in B
+  local only; only="$(comm -23 <(printf '%s\n' "$2") <(printf '%s\n' "$4"))"
+  if [ -n "$only" ]; then
+    while IFS= read -r m; do
+      [ -n "$m" ] && err "mirror-lockstep: '$m' is in $1 but missing from $3"
+    done <<MT_EOF
+$only
+MT_EOF
+    mt_bad=1
+  fi
+}
+mt_report "mirror/targets.yml" "$mt_targets" "sync-mirrors.yml repositories:" "$mt_repos"
+mt_report "sync-mirrors.yml repositories:" "$mt_repos" "mirror/targets.yml" "$mt_targets"
+mt_report "mirror/targets.yml" "$mt_targets" "install.sh EXT_MIRRORS" "$mt_install"
+mt_report "install.sh EXT_MIRRORS" "$mt_install" "mirror/targets.yml" "$mt_targets"
+if [ "$mt_bad" -ne 0 ]; then
+  err "mirror-lockstep: onboard the missing target(s) per docs/outbound-mirror-sync.md § Adding a new mirror target — create the repo, run scripts/add-mirror-to-installation.sh, and add it to all three files in lockstep"
+else
+  ok "mirror-lockstep: extension targets consistent across targets.yml, sync-mirrors.yml, install.sh"
+fi
+
 # --- 6c. Pi vendor (agent/vendor/pi/) --------------------------------------
 # Per ADR-0009 (Pi runtime acquisition strategy). Network-free structural
 # check that VERSION + CHECKSUMS + README are consistent and that the

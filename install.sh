@@ -25,7 +25,8 @@
 #   --ref REF          Branch or tag to install (default: main). Release-tag
 #                      pinning will replace this default once the mirror cuts
 #                      releases (tracked as a follow-up).
-#   --ext-ref REF      Tag/ref for the extension mirrors (default: v0.1.0).
+#   --ext-ref REF      Override ALL extension-mirror pins with one ref (forks /
+#                      testing). Default: use the per-extension pins in EXT_MIRRORS.
 #   --skip-extensions  Do not `pi install` the first-party extension mirrors.
 #   --owner/--repo/--gh-login
 #                      Passed to scripts/personalize.sh --init (for redistributors
@@ -51,8 +52,27 @@ set -euo pipefail
 MIRROR_OWNER="psmfd"
 MIRROR_REPO="${MIRROR_OWNER}/pi-config"
 MIRROR_URL="https://github.com/${MIRROR_REPO}.git"
-EXT_REF="v0.1.0"
-EXT_MIRRORS=(pi-secrets-guard pi-bash-destructive-guard pi-artifact-handoff pi-web-fetch pi-cache-meter pi-token-meter pi-gh-identity-guard pi-compaction-optimizer pi-expertise-client pi-indexing pi-context-manager pi-auto-router)
+# Optional global override: `--ext-ref vX.Y.Z` pins ALL mirrors to one ref
+# (forks / testing). Empty (default) = use the per-extension pins below.
+EXT_REF=""
+# Per-extension version pins (name@vX.Y.Z). Each mirror versions independently
+# (ADR-0058), so a single shared pin cannot represent them (#492, ADR-0075).
+# Kept current by scripts/check-ext-ref-drift.sh --fix + the weekly
+# pin-drift-check.yml, which open per-extension bump PRs.
+EXT_MIRRORS=(
+  pi-secrets-guard@v0.2.0
+  pi-bash-destructive-guard@v0.2.0
+  pi-artifact-handoff@v0.1.0
+  pi-web-fetch@v0.1.1
+  pi-cache-meter@v0.1.1
+  pi-token-meter@v0.1.0
+  pi-gh-identity-guard@v0.1.1
+  pi-compaction-optimizer@v0.1.1
+  pi-expertise-client@v0.2.0
+  pi-indexing@v0.1.1
+  pi-context-manager@v0.1.1
+  pi-auto-router@v0.1.2
+)
 
 DIR="${HOME}/projects/pi-config"
 REF="main"
@@ -157,14 +177,28 @@ else
   command -v pi >/dev/null 2>&1 && pi_bin="pi"
   if [ -z "${pi_bin}" ] && [ "${DRY_RUN}" != "1" ]; then
     warn extensions "pi is installed but not on PATH yet (open a new shell, or add its bin dir to PATH), then run:"
-    for ext in "${EXT_MIRRORS[@]}"; do
-      warn extensions "  pi install git:github.com/${MIRROR_OWNER}/${ext}@${EXT_REF}"
+    for entry in "${EXT_MIRRORS[@]}"; do
+      # Same defensive guard as the install loop below: without it a version-less
+      # entry prints a bogus `name@name` install target instead of a clear warning.
+      case "${entry}" in
+        *@*) : ;;
+        *) warn extensions "malformed EXT_MIRRORS entry (no @version), skipping: ${entry}"; continue ;;
+      esac
+      ext="${entry%@*}"; ref="${EXT_REF:-${entry##*@}}"
+      warn extensions "  pi install git:github.com/${MIRROR_OWNER}/${ext}@${ref}"
     done
   else
     [ -z "${pi_bin}" ] && pi_bin="pi"   # dry-run display only
     ext_failed=0
-    for ext in "${EXT_MIRRORS[@]}"; do
-      ext_spec="git:github.com/${MIRROR_OWNER}/${ext}@${EXT_REF}"
+    for entry in "${EXT_MIRRORS[@]}"; do
+      # Defensive: a malformed entry (no @version) is a validate.sh error, but
+      # fail it loudly here too rather than emit a bogus `name@name` install target.
+      case "${entry}" in
+        *@*) : ;;
+        *) warn extensions "malformed EXT_MIRRORS entry (no @version), skipping: ${entry}"; ext_failed=$((ext_failed + 1)); continue ;;
+      esac
+      ext="${entry%@*}"; ref="${EXT_REF:-${entry##*@}}"
+      ext_spec="git:github.com/${MIRROR_OWNER}/${ext}@${ref}"
       info "pi install ${ext_spec}"
       if ! run "${pi_bin}" install "${ext_spec}"; then
         warn extensions "pi install ${ext} failed; retry later: ${pi_bin} install ${ext_spec}"

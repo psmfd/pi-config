@@ -42,7 +42,7 @@
 #   --api-dir DIR      agent-expertise-api clone target (default: ~/projects/agent-expertise-api).
 #   --api-version V    Release tag to install (default: latest published release).
 #   --bind ADDR:PORT   API bind address (default: 127.0.0.1:8080). Must be loopback.
-#   --ext-ref REF      Ref for the pi-expertise-client mirror (default: v0.1.2).
+#   --ext-ref REF      Ref for the pi-expertise-client mirror (default: v0.2.0).
 #   --allow-write      Enable local write/create tools (sets PI_EXPERTISE_ALLOW_LOCALDEV_WRITE=1).
 #   --rotate-key       Force a new API key even if one already exists (re-wires .env.local).
 #   --first-index [D]  After install, run `ccc init && ccc index` in D (default: cwd) to
@@ -67,7 +67,7 @@ set -euo pipefail
 API_REPO="psmfd/agent-expertise-api"
 API_URL="https://github.com/${API_REPO}.git"
 EXT_MIRROR="psmfd/pi-expertise-client"
-EXT_REF="v0.1.2"
+EXT_REF="v0.2.0"
 
 DIR=""
 API_DIR="${HOME}/projects/agent-expertise-api"

@@ -17,7 +17,7 @@ mirror in sync:
 
 | Mirror | Mode | Source |
 |---|---|---|
-| `psmfd/pi-config` | replace | curated config surface (agent/, setup.sh, install.sh, install-expertise.sh, adrs/, docs/, scripts/, hooks/, …) minus the eleven extension dirs and all dev-internal surfaces |
+| `psmfd/pi-config` | replace | curated config surface (agent/, setup.sh, install.sh, install-expertise.sh, adrs/, docs/, scripts/, hooks/, …) minus the twelve extension dirs and all dev-internal surfaces |
 | `psmfd/pi-secrets-guard` … `pi-auto-router` | overlay | the matching `agent/extensions/<name>/` source (packaging overlay in the mirror is preserved; `pi-indexing`, `pi-context-manager`, `pi-auto-router` also inline their `shared/` closure per ADR-0065) |
 
 Safety properties (see ADR-0050 for the full rationale):
@@ -104,17 +104,17 @@ long-lived `MIRROR_SYNC_TOKEN` PAT). One-time setup:
 2. **Generate a private key** (App General settings → Private keys → *Generate*)
    — downloads a `.pem`. Note the **Client ID** (`Iv23.…`) in the About section.
 3. **Install** the App (left sidebar → *Install App* → `psmfd` → **Only select
-   repositories**) on exactly the twelve mirrors: `pi-config`, `pi-secrets-guard`,
+   repositories**) on exactly the thirteen mirrors: `pi-config`, `pi-secrets-guard`,
    `pi-bash-destructive-guard`, `pi-artifact-handoff`, `pi-web-fetch`,
-   `pi-cache-meter`, `pi-gh-identity-guard`, `pi-compaction-optimizer`, `pi-expertise-client`,
-   `pi-indexing`, `pi-context-manager`, `pi-auto-router`.
+   `pi-cache-meter`, `pi-token-meter`, `pi-gh-identity-guard`, `pi-compaction-optimizer`,
+   `pi-expertise-client`, `pi-indexing`, `pi-context-manager`, `pi-auto-router`.
 4. **Create the `mirror-production` environment** on `psmfd/pi-config`
    (`Settings → Environments → New environment`) and add to it:
    - Variable **`APP_CLIENT_ID`** = the `Iv23.…` Client ID (non-secret).
    - Secret **`APP_PRIVATE_KEY`** = the full `.pem` contents (`-----BEGIN…`).
 
    The `sync` job declares `environment: mirror-production`, so only that job can
-   read the key. The workflow's mint step scopes the token to exactly the twelve
+   read the key. The workflow's mint step scopes the token to exactly the thirteen
    repos via an explicit `repositories:` list — with `owner:` alone it would reach
    every repo the App is installed on (the least-privilege footgun, ADR-0061).
    The token lives one hour and is auto-revoked at job end; the mint step fails
@@ -146,6 +146,16 @@ long-lived `MIRROR_SYNC_TOKEN` PAT). One-time setup:
    or write any repo's contents.)
 4. Verify with `scripts/sync-mirror.sh --target <name> --dry-run`, then let the
    next push to `main` sync it (or dispatch it manually).
+
+> **Enforced (ADR-0074, #512).** Steps 2–3 are a lockstep: a `pi-*` extension
+> target must appear in `mirror/targets.yml`, the `sync-mirrors.yml`
+> `repositories:` list, **and** `install.sh` `EXT_MIRRORS`. A `validate.sh`
+> gate fails any PR where the three sets disagree, and a `sync-mirror.sh`
+> onboarding preflight fails the real `--push` sync (with these steps) when a
+> target's repo is not reachable — and warns in dry-run (the `verify` PR job
+> passes a read-only `GH_TOKEN` so the probe is determinate, and a missing repo
+> surfaces as a PR annotation) — so a half-onboarded target can no longer
+> *silently* skip a release the way `pi-token-meter` did in v1.10.0.
 
 ## Inlining `shared/` for coupled extension mirrors ([ADR-0065](../adrs/0065-inline-shared-modules-for-coupled-extension-mirrors.md))
 
@@ -210,6 +220,11 @@ Each mirror gets an **annotated tag + GitHub Release**, created idempotently by
   `sync` job runs `--all --changed --push --release` (with `GH_TOKEN` set to the
   minted GitHub App token, ADR-0061); when an extension's source changes, the engine
   computes the bump, writes it into the mirror `package.json`, and releases it.
+- **Install-side pins are per-extension** ([ADR-0075](../adrs/0075-per-extension-install-pins.md)).
+  `install.sh` pins each mirror to its own release (`name@vX.Y.Z` in `EXT_MIRRORS`);
+  a single shared `EXT_REF` could not represent independently-versioned mirrors
+  (#492). `scripts/check-ext-ref-drift.sh --fix` + the weekly `pin-drift-check.yml`
+  bump each stale pin to its mirror's latest release via an automated PR.
 
 Properties:
 

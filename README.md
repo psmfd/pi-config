@@ -72,7 +72,7 @@ npm-install opt-out, and more).
 
 ## First-party extensions
 
-Eleven pi extensions are distributed as standalone mirrors and installed by
+Twelve pi extensions are distributed as standalone mirrors and installed by
 `install.sh`:
 
 | Extension | What it does |
@@ -82,6 +82,7 @@ Eleven pi extensions are distributed as standalone mirrors and installed by
 | [`pi-artifact-handoff`](https://github.com/psmfd/pi-artifact-handoff) | Stages large outputs for line-anchored human review before merge |
 | [`pi-web-fetch`](https://github.com/psmfd/pi-web-fetch) | Allowlisted, auditable web fetch |
 | [`pi-cache-meter`](https://github.com/psmfd/pi-cache-meter) | Measures prompt-cache hit ratio to diagnose context efficiency |
+| [`pi-token-meter`](https://github.com/psmfd/pi-token-meter) | Per-session, per-model token-usage counter (totals + cost by model, including subagents) |
 | [`pi-gh-identity-guard`](https://github.com/psmfd/pi-gh-identity-guard) | Blocks mutating `gh`/`git push` when the active GitHub identity is wrong for the repo |
 | [`pi-compaction-optimizer`](https://github.com/psmfd/pi-compaction-optimizer) | Deterministic context-compaction summaries with a local pre-compaction snapshot archive |
 | [`pi-expertise-client`](https://github.com/psmfd/pi-expertise-client) | Local loopback client for a developer's agent-expertise-api (search + create) |
