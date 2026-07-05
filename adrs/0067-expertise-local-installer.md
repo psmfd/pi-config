@@ -6,6 +6,7 @@ date: 2026-07-01
 # ADR-0067: a secondary installer (`install-expertise.sh`) that wires the local expertise backend to pi
 
 **Status:** Accepted
+**Amended by:** [ADR-0070](0070-install-expertise-debian-parity.md) — the "Scope: macOS-first" section is extended to also cover Debian/Ubuntu (#485); the macOS behavior below is unchanged.
 **Date:** 2026-07-01
 **Related:** [ADR-0051](0051-sendable-one-shot-installer.md) (the primary `install.sh` this complements), [ADR-0028](0028-agent-expertise-api-client.md) (the `expertise-client` extension it wires), [ADR-0033](0033-codebase-indexing.md) (the indexing engine it bootstraps), [ADR-0050](0050-outbound-distribution-mirror-sync.md) (the mirror that ships it), [ADR-0042](0042-standalone-extension-distribution.md) (the extension mirror it `pi install`s)
 

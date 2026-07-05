@@ -9,7 +9,8 @@
 #
 #   1. the local agent-expertise-api A2 native service, installed by delegating
 #      to the upstream signed installer (psmfd/agent-expertise-api's
-#      scripts/install.sh --from-release --install-deps) — launchd on macOS;
+#      scripts/install.sh --from-release --install-deps) — launchd on macOS,
+#      systemd --user on Debian/Ubuntu;
 #   2. the pi-expertise-client extension (psmfd/pi-expertise-client), installed
 #      via `pi install` if not already present;
 #   3. the code-indexing engine cocoindex-code (`ccc`, PyPI), pinned to the
@@ -26,8 +27,9 @@
 # Per ADR-0067 (this installer). See ADR-0051 (install.sh), ADR-0028
 # (expertise-client), ADR-0033 (indexing).
 #
-# SCOPE: macOS-first. On other platforms the API stand-up + dependency bootstrap
-# are skipped with a pointer to psmfd/pi-config#485 (Debian-first Linux parity).
+# SCOPE: macOS (Homebrew) and Debian/Ubuntu (apt), validated on Debian 13 arm64
+# 2026-07-03 (#485). Other Linux (RHEL) skips the API stand-up with a pointer to
+# agent-expertise-api#247; the extension + indexing still install.
 #
 # Usage:
 #   bash install-expertise.sh [--dir DIR] [--api-dir DIR] [--api-version vX.Y.Z]
@@ -40,7 +42,7 @@
 #   --api-dir DIR      agent-expertise-api clone target (default: ~/projects/agent-expertise-api).
 #   --api-version V    Release tag to install (default: latest published release).
 #   --bind ADDR:PORT   API bind address (default: 127.0.0.1:8080). Must be loopback.
-#   --ext-ref REF      Ref for the pi-expertise-client mirror (default: v0.1.0).
+#   --ext-ref REF      Ref for the pi-expertise-client mirror (default: v0.1.2).
 #   --allow-write      Enable local write/create tools (sets PI_EXPERTISE_ALLOW_LOCALDEV_WRITE=1).
 #   --rotate-key       Force a new API key even if one already exists (re-wires .env.local).
 #   --first-index [D]  After install, run `ccc init && ccc index` in D (default: cwd) to
@@ -188,22 +190,32 @@ else
 fi
 
 # --- 2. Stand up the local agent-expertise-api service (delegated) ---------
-# Upstream's CONFIG_DIR on macOS is ~/Library/Application Support/expertise-api
-# (install.sh resolves the XDG ~/.config path only on Linux). This script's API
-# section is macOS-only, so the macOS path is the only one that can be correct.
-API_CONFIG_DIR="${HOME}/Library/Application Support/expertise-api"
+# The upstream installer resolves CONFIG_DIR per-OS: macOS uses
+# ~/Library/Application Support/expertise-api; Linux uses XDG
+# ${XDG_CONFIG_HOME:-~/.config}/expertise-api. Match it so the managed auth
+# block lands in the file the service actually sources. macOS delegates
+# --install-deps to Homebrew; Debian/Ubuntu to apt (agent-expertise-api#246,
+# validated on Debian 13 2026-07-03 — closes pi_config#485).
+if [ "${IS_MACOS}" = "1" ]; then
+  API_CONFIG_DIR="${HOME}/Library/Application Support/expertise-api"
+else
+  API_CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/expertise-api"
+fi
 SECRETS_FILE="${API_CONFIG_DIR}/secrets.env"
 
 if [ "${SKIP_API}" = "1" ]; then
   skip api "--skip-api set; not touching the expertise-api service"
   [ "${ROTATE_KEY}" = "1" ] && warn api "--rotate-key has no effect with --skip-api (the linkage step is skipped)" || true
-elif [ "${IS_MACOS}" != "1" ]; then
-  skip api "non-macOS host — the delegated --install-deps path is macOS-only. See psmfd/pi-config#485 for Debian-first Linux parity."
+elif [ "${IS_MACOS}" != "1" ] && ! command -v apt-get >/dev/null 2>&1; then
+  # The upstream --install-deps Linux bootstrap is apt-based (Debian/Ubuntu,
+  # #246); RHEL parity is tracked upstream by #247.
+  skip api "non-apt Linux host — the delegated --install-deps path currently supports macOS (Homebrew) and Debian/Ubuntu (apt). See agent-expertise-api#247 for RHEL."
   warn api "the extension is installed but has no local API to talk to yet on this platform"
 else
-  # Homebrew is only needed for the REAL --install-deps run; under --dry-run nothing
-  # brew-related executes, so warn (don't die) to keep dry-run usable without brew.
-  if ! command -v brew >/dev/null 2>&1; then
+  # Homebrew is only needed for the REAL macOS --install-deps run; Debian uses
+  # apt (no brew). Under --dry-run nothing brew-related executes, so warn
+  # (don't die) to keep dry-run usable without brew.
+  if [ "${IS_MACOS}" = "1" ] && ! command -v brew >/dev/null 2>&1; then
     if [ "${DRY_RUN}" = "1" ]; then
       warn deps "Homebrew (brew) not found; a real run needs it for the macOS --install-deps path"
     else
@@ -289,16 +301,20 @@ else
       printf 'ASPNETCORE_ENVIRONMENT=Development\n'
       printf 'Auth__Mode=ApiKey\n'
       printf 'Auth__ApiKey="%s"\n' "${api_key}"
-      # ONNX model paths, pinned to the macOS layout. Upstream migrate.sh
-      # defaults these from a Linux-only PREFIX (~/.local/share) when install.sh
-      # invokes it without --prefix, so IEmbeddingGenerator silently never
-      # registers on macOS — latent in Production, but fatal under the
-      # Development environment this block sets, because Development enables
-      # eager DI validation (ValidateOnBuild). migrate.sh and the launch
-      # wrapper both honor values already present in secrets.env. Values are
-      # double-quoted: the path contains a space and the file is bash-sourced.
-      printf 'Onnx__ModelPath="%s/models/model.onnx"\n' "${API_CONFIG_DIR}"
-      printf 'Onnx__VocabPath="%s/models/vocab.txt"\n' "${API_CONFIG_DIR}"
+      # ONNX model paths — pinned ONLY on macOS. Upstream migrate.sh derives
+      # these from a Linux-only PREFIX (~/.local/share) default, so on macOS
+      # IEmbeddingGenerator silently never registers — latent in Production but
+      # fatal under the Development environment this block sets (eager DI
+      # validation / ValidateOnBuild). On Linux that same PREFIX default is the
+      # CORRECT location (validated on Debian 13 2026-07-03: the model loads and
+      # semantic search runs), so pinning here to CONFIG_DIR/models would point
+      # the service at the wrong path — omit it and let the default stand.
+      # Values are double-quoted: the macOS path contains a space and the file
+      # is bash-sourced.
+      if [ "${IS_MACOS}" = "1" ]; then
+        printf 'Onnx__ModelPath="%s/models/model.onnx"\n' "${API_CONFIG_DIR}"
+        printf 'Onnx__VocabPath="%s/models/vocab.txt"\n' "${API_CONFIG_DIR}"
+      fi
       printf '%s\n' "${END}"
     } >> "${tmp}" || die linkage "failed to write auth block to ${SECRETS_FILE}"
     chmod 600 "${tmp}"
@@ -355,8 +371,6 @@ fi
 # --- 5. Code-indexing engine (cocoindex-code / ccc) ------------------------
 if [ "${SKIP_INDEXING}" = "1" ]; then
   skip indexing "--skip-indexing set; not installing the code-indexing engine"
-elif [ "${IS_MACOS}" != "1" ]; then
-  skip indexing "non-macOS host — indexing-engine bootstrap is macOS-first. See psmfd/pi-config#485."
 else
   # Pin to the version vendored in the pi-config clone (single source of truth,
   # mirrored under agent/vendor/cocoindex-code/); fall back to the known-good pin.
@@ -375,17 +389,45 @@ else
     fi
   done
   if [ -z "${PY}" ]; then
-    info "Installing Python 3.13 (Homebrew) for the indexing engine"
-    run brew install python@3.13
-    command -v python3.13 >/dev/null 2>&1 && PY="python3.13"
-    [ -z "${PY}" ] && [ "${DRY_RUN}" != "1" ] && die indexing "python >=3.11 still not available after brew install"
-    [ -z "${PY}" ] && PY="python3.13"
+    # Package-manager presence is checked before use so a non-apt Linux (RHEL)
+    # or a mac without Homebrew gets a clean die() with guidance, not a raw
+    # `command not found` crash under `set -euo pipefail` (this branch is
+    # reachable independently of the API stand-up via --skip-api).
+    if [ "${IS_MACOS}" = "1" ]; then
+      if ! command -v brew >/dev/null 2>&1 && [ "${DRY_RUN}" != "1" ]; then
+        die indexing "Homebrew required to install Python for the indexing engine; install it from https://brew.sh, or pass --skip-indexing"
+      fi
+      info "Installing Python 3.13 (Homebrew) for the indexing engine"
+      run brew install python@3.13
+      command -v python3.13 >/dev/null 2>&1 && PY="python3.13"
+    elif command -v apt-get >/dev/null 2>&1; then
+      # Debian/Ubuntu ships python3 (3.13 on trixie) in its own repos.
+      info "Installing python3 (apt) for the indexing engine"
+      run sudo apt-get update -qq
+      run sudo apt-get install -y -qq python3
+      command -v python3 >/dev/null 2>&1 && PY="python3"
+    else
+      die indexing "no python >=3.11 found and no supported package manager (brew/apt) to install one on this host; install Python >=3.11, or pass --skip-indexing"
+    fi
+    [ -z "${PY}" ] && [ "${DRY_RUN}" != "1" ] && die indexing "python >=3.11 still not available after install"
+    [ -z "${PY}" ] && PY="python3"
   fi
 
   # pipx installs the CLI into an isolated venv on PATH.
   if ! command -v pipx >/dev/null 2>&1; then
-    info "Installing pipx (Homebrew)"
-    run brew install pipx
+    if [ "${IS_MACOS}" = "1" ]; then
+      if ! command -v brew >/dev/null 2>&1 && [ "${DRY_RUN}" != "1" ]; then
+        die indexing "Homebrew required to install pipx; install it from https://brew.sh, or pass --skip-indexing"
+      fi
+      info "Installing pipx (Homebrew)"
+      run brew install pipx
+    elif command -v apt-get >/dev/null 2>&1; then
+      info "Installing pipx (apt)"
+      run sudo apt-get update -qq
+      run sudo apt-get install -y -qq pipx
+    else
+      die indexing "no pipx and no supported package manager (brew/apt) to install it on this host; install pipx, or pass --skip-indexing"
+    fi
     run pipx ensurepath
   fi
 
@@ -416,11 +458,13 @@ fi
 echo
 info "Expertise wiring complete."
 echo "Next steps:"
-if [ "${SKIP_API}" != "1" ] && [ "${IS_MACOS}" = "1" ]; then
+# The API stand-up runs on macOS (brew) and apt-based Linux (#500); show the
+# service hints whenever it actually ran, not on macOS only.
+if [ "${SKIP_API}" != "1" ] && { [ "${IS_MACOS}" = "1" ] || command -v apt-get >/dev/null 2>&1; }; then
   echo "  * Manage the service: ${API_DIR}/scripts/expertise-apictl {status|restart|stop}"
   echo "  * The generated API key lives in ${SECRETS_FILE} and the extension's .env.local (mode 600)."
 fi
-if [ "${SKIP_INDEXING}" != "1" ] && [ "${IS_MACOS}" = "1" ] && [ "${FIRST_INDEX}" != "1" ]; then
+if [ "${SKIP_INDEXING}" != "1" ] && [ "${FIRST_INDEX}" != "1" ]; then
   echo "  * Pull the indexing model when ready: run 'ccc init && ccc index' in a project,"
   echo "    or start pi with --index (the background re-index pulls the model on first run)."
 fi

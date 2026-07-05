@@ -353,6 +353,48 @@ else
   fi
 fi
 
+# --- 6b-bis. Secret-pattern lockstep gate (#499, ADR-0071) -----------------
+# The secret-detection pattern set is duplicated in lockstep across three files
+# (ADR-0071: bash hook installs standalone; the two TS extensions are separate
+# modules — no shared source). The copies drifted once unnoticed (#499). This
+# gate asserts every canonical pattern fragment is present, verbatim, in the
+# ACTIVE (non-comment) lines of all three files — comment lines are stripped
+# first so a stale-comment fragment cannot mask a regressed live pattern. The
+# fragments are complete enough to encode each detector's invariant (the JWT
+# fragment carries all three segments + the two literal dots; the bearer
+# fragment carries the `Authorization:` prefix), so narrowing a live pattern
+# fails the gate. Matched as fixed strings (grep -F) so regex metacharacters are
+# literal; none matches its own detection regex, so listing them here is safe.
+info "Secret-pattern lockstep gate (#499)"
+sp_files="agent/extensions/secrets-guard/index.ts agent/extensions/expertise-client/lib/secret-scan.ts hooks/secrets-guard.sh"
+sp_fragments=(
+  'ENCRYPTED '
+  '(AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}'
+  'gh[oprsu]_[A-Za-z0-9]{36,}'
+  'github_pat_[A-Za-z0-9_]{82,}'
+  'eyJ[A-Za-z0-9_-]{10,4000}\.eyJ[A-Za-z0-9_-]{10,4000}\.[A-Za-z0-9_-]{10,4000}'
+  '[Aa]uthorization: [Bb]earer [A-Za-z0-9._~+/=-]{20,}'
+)
+sp_bad=0
+for sp_file in $sp_files; do
+  if [ ! -f "$sp_file" ]; then
+    err "secret-lockstep: $sp_file missing (cannot verify pattern parity)"
+    sp_bad=1
+    continue
+  fi
+  # Strip whole-line comments (bash #, TS // and *) so only live code counts.
+  sp_active="$(grep -vE '^[[:space:]]*(#|//|\*|/\*)' "$sp_file")"
+  for sp_frag in "${sp_fragments[@]}"; do
+    if ! printf '%s\n' "$sp_active" | grep -qF -- "$sp_frag"; then
+      err "secret-lockstep: $sp_file active lines are missing canonical pattern fragment: $sp_frag"
+      sp_bad=1
+    fi
+  done
+done
+if [ "$sp_bad" -eq 0 ]; then
+  ok "secret-lockstep: all 3 copies carry the canonical pattern set"
+fi
+
 # --- 6c. Pi vendor (agent/vendor/pi/) --------------------------------------
 # Per ADR-0009 (Pi runtime acquisition strategy). Network-free structural
 # check that VERSION + CHECKSUMS + README are consistent and that the
@@ -461,6 +503,18 @@ for lib in scripts/lib/platform-detect.sh scripts/lib/install-helpers.sh; do
     err "install-helpers: $(basename "$lib") --self-test failed"
   fi
 done
+
+# --- 6f-bis. semver-classify shared library self-test (ADR-0068) -----------
+# Canonical coverage for the Conventional-Commits classifier + SemVer arithmetic
+# shared by release.sh and sync-mirror.sh. Network-free, pure functions.
+info "Validating scripts/lib/semver-classify.sh (ADR-0068)"
+if [ ! -x scripts/lib/semver-classify.sh ]; then
+  err "semver-classify: scripts/lib/semver-classify.sh is missing or not executable"
+elif scripts/lib/semver-classify.sh --self-test >/dev/null 2>&1; then
+  ok "semver-classify: self-test passed"
+else
+  err "semver-classify: self-test failed (run: scripts/lib/semver-classify.sh --self-test)"
+fi
 
 # --- 6f. sync-mirror version-bump self-test (ADR-0058) ---------------------
 # Network-free check of the Conventional-Commits bump helpers that compute an
@@ -773,6 +827,48 @@ if [ -x scripts/analyze-cache-ratio.sh ]; then
   fi
 else
   err "cache-ratio: scripts/analyze-cache-ratio.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-token-meter. token-meter test suite (ADR-0073) ---------------------
+info "Running token-meter test suite"
+if [ -x scripts/test-token-meter.sh ]; then
+  if tmt_output="$(scripts/test-token-meter.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$tmt_output"
+    fi
+    ok "token-meter: tests passed"
+  else
+    tmt_status=$?
+    printf '%s\n' "$tmt_output" >&2
+    if [ "$tmt_status" -eq 2 ]; then
+      err "token-meter: test environment unavailable (node/npx); required check skipped"
+    else
+      err "token-meter: test suite failed (exit $tmt_status)"
+    fi
+  fi
+else
+  err "token-meter: scripts/test-token-meter.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-token-cli. token-meter CLI self-test (ADR-0073) --------------------
+info "Running token-meter CLI self-test"
+if [ -x scripts/token-meter.sh ]; then
+  if tmc_output="$(scripts/token-meter.sh --self-test 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$tmc_output"
+    fi
+    ok "token-meter: CLI self-test passed"
+  else
+    tmc_status=$?
+    printf '%s\n' "$tmc_output" >&2
+    if [ "$tmc_status" -eq 2 ]; then
+      err "token-meter: CLI self-test environment unavailable (jq); required check skipped"
+    else
+      err "token-meter: CLI self-test failed (exit $tmc_status)"
+    fi
+  fi
+else
+  err "token-meter: scripts/token-meter.sh missing or not executable; required check skipped"
 fi
 
 # --- 9b-0. expertise-client test suite (#317, ADR-0028) --------------------

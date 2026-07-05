@@ -131,7 +131,7 @@ agent/
 └── extensions/
     ├── subagent/                 # Vendored from pi 0.78.0 (ADR-0001)
     ├── secrets-guard/            # Blocks write/edit/bash/artifact_review that would surface secrets
-    ├── bash-destructive-guard/   # Blocks rm/mv outside safe paths
+    ├── bash-destructive-guard/   # Blocks rm/mv + clobber/find -delete/dd/truncate outside safe paths; GuardFall-hardened via shared/shell-lex.ts (ADR-0072)
     ├── gh-identity-guard/        # Blocks mutating gh/git push tool calls on gh-CLI identity drift (ADR-0022/0027)
     ├── artifact-handoff/         # Registers `artifact_review` tool for Tier 3 (.review/) payloads
     ├── web-fetch/                # Registers `web_fetch` tool against first-party-docs allowlist (ADR-0015)

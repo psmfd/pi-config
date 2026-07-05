@@ -1,7 +1,8 @@
 # shared/ — Pi Extension Suite foundation
 
 A small internal **library** consumed by the Pi Extension Suite extensions
-(auto-router, context-manager, indexing). It is **not a loadable pi extension**:
+(auto-router, context-manager, indexing) and the bash-guard family
+(bash-destructive-guard, via `shell-lex.ts`). It is **not a loadable pi extension**:
 it has no `index.ts`, so pi's auto-discovery (`~/.pi/agent/extensions/*/index.ts`)
 skips it. Consumers import its modules by relative path, e.g.
 `import { getUsage } from "../shared/signals.ts";`. See [ADR-0030](../../../adrs/0030-shared-foundation.md).
@@ -20,6 +21,7 @@ thresholds.
 | `cost.ts` | `buildCostTable`, `lookupCost`, `normalizeCost`, `modelKey`, `ModelCost`, `ZERO_COST` | One per-model cost table (`input`/`output`/`cacheRead`/`cacheWrite` per MTok); local models priced at zero. |
 | `notify.ts` | `notify`, `formatMessage`, `NotifyLevel` | `[pi-suite:<scope>]`-tagged notifications over `ctx.ui.notify`, guarded on `ctx.hasUI`. |
 | `state.ts` | `loadState`, `saveState`, `stateFile`, `stateDir`, `STATE_SCHEMA_VERSION`, `VersionedState` | Schema-versioned per-extension JSON state under `~/.pi/agent/extensions/<namespace>/state.json` (ADR-0019 data subtree). No extension writes another's state. |
+| `shell-lex.ts` | `lex`, `preprocessCommand`, `deglueWordSubstitutions`, `stripEnvAssignments`, `hasMinusC`, `Segment`, `Redirect` | Quote-aware shell-command lexer for the bash-guard family (ADR-0072): segments a raw command on unquoted control operators, joins quote-adjacent words, normalizes `$IFS`, captures stdin/pipe-sink/redirection, and degluing word-internal empty command substitutions. Parsing only — the consuming guard owns policy. **Not** a POSIX parser; value-dependent expansion is out of scope by design. |
 
 ## Design contracts
 

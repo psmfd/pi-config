@@ -3,8 +3,8 @@
 # secrets-guard.sh — git pre-commit hook
 #
 # Blocks commits containing unencrypted Ansible vault files and common secret
-# patterns (PEM private keys, AWS access keys, GitHub personal access tokens,
-# SSH private key file paths).
+# patterns (PEM private keys, AWS access keys, GitHub tokens, signed JWTs,
+# Authorization: Bearer literals, SSH private key file paths).
 #
 # This is a git pre-commit hook, not a pi extension. The pi-extension
 # counterpart lives at agent/extensions/secrets-guard/index.ts and uses the
@@ -116,8 +116,16 @@ is_binary() {
 # shellcheck disable=SC2016
 VAULT_HEADER_RE='^\$ANSIBLE_VAULT;[0-9]+\.[0-9]+;[A-Z0-9]+'
 
-# Combined secret-content patterns (single grep -E).
-SECRET_PATTERNS='-----BEGIN (RSA |EC |OPENSSH |DSA |PGP |)PRIVATE KEY|(^|[^A-Z0-9])(AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}([^A-Z0-9]|$)|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{82}'
+# Combined secret-content patterns (single grep -E). Keep in lockstep with
+# agent/extensions/secrets-guard/index.ts and
+# agent/extensions/expertise-client/lib/secret-scan.ts (ADR-0071; framework
+# ADR-095 for the JWT/Bearer detectors). validate.sh check_secret_pattern_lockstep
+# enforces parity. The PEM alternation uses the (...)? optional-group form, NOT
+# the empty-alternation (...|) — BSD grep rejects the latter. The grep -qE --
+# call below passes `--`, so a leading `-----` is safe regardless of alternative
+# order; keeping the PEM alternative first is a defensive convention, not a hard
+# requirement.
+SECRET_PATTERNS='-----BEGIN (RSA |EC |OPENSSH |DSA |PGP |ENCRYPTED )?PRIVATE KEY|(^|[^A-Z0-9])(AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}([^A-Z0-9]|$)|gh[oprsu]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{82,}|eyJ[A-Za-z0-9_-]{10,4000}\.eyJ[A-Za-z0-9_-]{10,4000}\.[A-Za-z0-9_-]{10,4000}|[Aa]uthorization: [Bb]earer [A-Za-z0-9._~+/=-]{20,}'
 
 errors=0
 warnings=0

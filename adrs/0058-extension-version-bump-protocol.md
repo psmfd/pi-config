@@ -6,6 +6,7 @@ date: 2026-06-25
 # ADR-0058: extension mirror versions are computed from Conventional-Commits history
 
 **Status:** Accepted
+**Superseded in part by:** [ADR-0068](0068-shared-semver-classify-library.md) — the "bump logic is duplicated inline / kept in lockstep by comment" consequence is retired; the classifier now lives in `scripts/lib/semver-classify.sh`, sourced by both `release.sh` and `sync-mirror.sh`. The version-computation decision here is unchanged.
 **Date:** 2026-06-25
 **Closes:** #415 (extension releases were stuck at v0.1.0)
 **Related:** [ADR-0055](0055-automated-mirror-releases.md) (the release automation this completes), [ADR-0042](0042-standalone-extension-distribution.md) (overlay-owns-packaging — this carves a narrow exception), [ADR-0050](0050-outbound-distribution-mirror-sync.md) (the sync engine), [ADR-0047](0047-release-automation-script.md) (`release.sh`, which derives the SOURCE version the same way — the logic kept in lockstep).
