@@ -62,7 +62,7 @@ EXT_REF=""
 EXT_MIRRORS=(
   pi-secrets-guard@v0.2.0
   pi-bash-destructive-guard@v0.2.0
-  pi-artifact-handoff@v0.1.0
+  pi-artifact-handoff@v0.1.1
   pi-web-fetch@v0.1.1
   pi-cache-meter@v0.1.1
   pi-token-meter@v0.1.0
@@ -70,7 +70,7 @@ EXT_MIRRORS=(
   pi-compaction-optimizer@v0.1.1
   pi-expertise-client@v0.2.0
   pi-indexing@v0.1.1
-  pi-context-manager@v0.1.1
+  pi-context-manager@v0.1.2
   pi-auto-router@v0.1.2
 )
 
