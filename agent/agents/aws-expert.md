@@ -2,6 +2,7 @@
 name: aws-expert
 description: AWS infrastructure specialist — IAM (incl. IRSA, SCPs, permission boundaries), S3, Route 53, VPC networking, EKS, ECR, ECS, Elastic Beanstalk, MSK (Managed Kafka). Read-only advisor. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch
+model: omlx/coding-workhorse
 mode: read-only
 ---
 

@@ -22,7 +22,16 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { type ExtensionAPI, getMarkdownTheme, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { clearCopilotCache, resolveCopilotFilter } from "../shared/copilot-discovery.ts";
+import { clearOmlxCache, resolveOmlxFilter } from "../shared/omlx-discovery.ts";
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.ts";
+import {
+	filterDownOmlxIds,
+	getAvailableModelIds,
+	resolveModelPin,
+	sanitizeFallbackModelId,
+	type CopilotFallback,
+} from "./model-pin.ts";
 
 const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
@@ -152,6 +161,8 @@ interface SingleResult {
 	stopReason?: string;
 	errorMessage?: string;
 	step?: number;
+	/** Set when a frontmatter model pin was omitted by the spawn-time gate (#519). */
+	pinNote?: string;
 }
 
 interface SubagentDetails {
@@ -258,9 +269,91 @@ function getPiInvocation(args: string[]): { command: string; args: string[] } {
 
 type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
 
+/**
+ * Built-in Copilot fallback rung target (#536, ADR-0080): the cheapest
+ * generally-available Copilot chat model under the June-2026 AI-Credits
+ * billing (~an order of magnitude fewer credits per child than the
+ * Sonnet/Opus tiers). Overridable per operator — see readFallbackModelSetting.
+ */
+const DEFAULT_COPILOT_FALLBACK = "github-copilot/gpt-5-mini";
+
+/**
+ * Read the USER-layer `extensionSettings.subagent.copilotFallbackModel`
+ * override (#536). Project-layer settings are deliberately not consulted —
+ * same trust boundary as token-meter (ADR-0073): a hostile repo must not be
+ * able to redirect fan-out spend. Any read/parse error or a value that is not
+ * a qualified `github-copilot/<id>` string falls back to the built-in default.
+ */
+async function readFallbackModelSetting(): Promise<string> {
+	try {
+		const p = path.join(os.homedir(), ".pi", "agent", "settings.json");
+		const j = JSON.parse(await fs.promises.readFile(p, "utf8")) as {
+			extensionSettings?: { subagent?: { copilotFallbackModel?: unknown } };
+		};
+		return (
+			sanitizeFallbackModelId(j?.extensionSettings?.subagent?.copilotFallbackModel) ??
+			DEFAULT_COPILOT_FALLBACK
+		);
+	} catch {
+		return DEFAULT_COPILOT_FALLBACK;
+	}
+}
+
+/**
+ * Build the Copilot fallback rung's inputs once per tool call (#536) — never
+ * per agent, so a cold discovery cache cannot thundering-herd at fan-out
+ * concurrency. The live probe runs only when the fallback id is actually
+ * registry-present (the cheap set check); a registry-absent fallback is still
+ * returned so the gate's note can name it. `availableModelIds === null`
+ * (registry unreadable) returns undefined — pins pass through fail-open and
+ * the rung is never consulted without registry data.
+ */
+async function buildCopilotFallback(
+	ctx: Parameters<typeof resolveCopilotFilter>[0],
+	availableModelIds: ReadonlySet<string> | null,
+	signal?: AbortSignal,
+): Promise<CopilotFallback | undefined> {
+	if (availableModelIds === null) return undefined;
+	const modelId = await readFallbackModelSetting();
+	if (!availableModelIds.has(modelId)) return { modelId };
+	const liveEnabledIds = await resolveCopilotFilter(ctx, signal ? { signal } : {}).catch(
+		() => null,
+	);
+	return { modelId, liveEnabledIds };
+}
+
+/**
+ * Probe oMLX liveness once per tool call (#534, ADR-0081) — never per agent, so
+ * a fan-out cannot thundering-herd the local server. Lazy: skipped entirely
+ * (zero cost, no network) unless some `omlx/*` id is registry-present, matching
+ * buildCopilotFallback's cheap pre-check. Returns the authoritative served-id
+ * set (possibly empty = confirmed down), or `null` when the probe is
+ * inconclusive, no omlx is registered, or the registry is unreadable — all of
+ * which mean FAIL OPEN downstream (filterDownOmlxIds leaves the menu unchanged).
+ */
+async function buildOmlxLiveness(
+	ctx: Parameters<typeof resolveOmlxFilter>[0],
+	availableModelIds: ReadonlySet<string> | null,
+	signal?: AbortSignal,
+): Promise<ReadonlySet<string> | null> {
+	if (availableModelIds === null) return null;
+	let hasOmlx = false;
+	for (const id of availableModelIds) {
+		if (id.startsWith("omlx/")) {
+			hasOmlx = true;
+			break;
+		}
+	}
+	if (!hasOmlx) return null;
+	return resolveOmlxFilter(ctx, signal ? { signal } : {}).catch(() => null);
+}
+
 async function runSingleAgent(
 	defaultCwd: string,
 	agents: AgentConfig[],
+	availableModelIds: ReadonlySet<string> | null,
+	copilotFallback: CopilotFallback | undefined,
+	servedOmlxIds: ReadonlySet<string> | null,
 	agentName: string,
 	task: string,
 	cwd: string | undefined,
@@ -285,8 +378,18 @@ async function runSingleAgent(
 		};
 	}
 
+	// Spawn-time pin gate (#519): a slash-qualified pin only reaches argv when
+	// its exact provider/id is credentialed here — pi hard-exits a child whose
+	// --model names an unregistered provider (e.g. omlx on a host without the
+	// operator-local models.json block). `availableModelIds` is already narrowed
+	// by the oMLX liveness probe (#534): a registered-but-down workhorse pin is
+	// absent here and takes the drop path. A dropped non-Copilot pin tries the
+	// Copilot fallback rung (#536, ADR-0080) before the session default;
+	// `servedOmlxIds` only shapes the note wording (server-down vs not-installed).
+	const pin = resolveModelPin(agent.model, availableModelIds, copilotFallback, servedOmlxIds);
+
 	const args: string[] = ["--mode", "json", "-p", "--no-session"];
-	if (agent.model) args.push("--model", agent.model);
+	if (pin.modelArg) args.push("--model", pin.modelArg);
 	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
 
 	let tmpPromptDir: string | null = null;
@@ -300,7 +403,10 @@ async function runSingleAgent(
 		messages: [],
 		stderr: "",
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-		model: agent.model,
+		// When the pin was omitted, leave model unset so the child's actual
+		// model (from its message events) fills it in — honest reporting.
+		...(pin.modelArg ? { model: pin.modelArg } : {}),
+		...(pin.note ? { pinNote: pin.note } : {}),
 		step,
 	};
 
@@ -459,6 +565,15 @@ const SubagentParams = Type.Object({
 });
 
 export default function (pi: ExtensionAPI) {
+	// #536/#534: keep the Copilot tier and oMLX liveness discovery fresh per
+	// session without relying on auto-router being installed (both shared
+	// modules' caches are process singletons; auto-router's own session_start
+	// clears cover them only when both extensions are loaded).
+	pi.on("session_start", () => {
+		clearCopilotCache();
+		clearOmlxCache();
+	});
+
 	pi.registerTool({
 		name: "subagent",
 		label: "Subagent",
@@ -474,6 +589,26 @@ export default function (pi: ExtensionAPI) {
 			const agentScope: AgentScope = params.agentScope ?? "user";
 			const discovery = discoverAgents(ctx.cwd, agentScope);
 			const agents = discovery.agents;
+			// One registry read per tool call feeds the spawn-time pin gate (#519);
+			// null (registry unreadable) makes the gate fail open. The oMLX
+			// liveness probe (#534) and the Copilot fallback rung (#536) are
+			// likewise resolved once per call, never per child.
+			const availableModelIds = await getAvailableModelIds(ctx.modelRegistry);
+			// #534: probe oMLX once, drop any confirmed-down workhorse id from the
+			// effective menu so its pin takes the drop→fallback path. servedOmlxIds
+			// is kept for the note wording; effectiveAvailableIds drives every
+			// downstream decision (fallback build + each child's pin gate).
+			const servedOmlxIds = await buildOmlxLiveness(
+				ctx as unknown as Parameters<typeof resolveOmlxFilter>[0],
+				availableModelIds,
+				signal,
+			);
+			const effectiveAvailableIds = filterDownOmlxIds(availableModelIds, servedOmlxIds);
+			const copilotFallback = await buildCopilotFallback(
+				ctx as unknown as Parameters<typeof resolveCopilotFilter>[0],
+				effectiveAvailableIds,
+				signal,
+			);
 			const confirmProjectAgents = params.confirmProjectAgents ?? true;
 
 			const hasChain = (params.chain?.length ?? 0) > 0;
@@ -554,6 +689,9 @@ export default function (pi: ExtensionAPI) {
 					const result = await runSingleAgent(
 						ctx.cwd,
 						agents,
+						effectiveAvailableIds,
+						copilotFallback,
+						servedOmlxIds,
 						step.agent,
 						taskWithContext,
 						step.cwd,
@@ -575,8 +713,13 @@ export default function (pi: ExtensionAPI) {
 					}
 					previousOutput = getFinalOutput(result.messages);
 				}
+				const chainNotes = results
+					.filter((r) => r.pinNote)
+					.map((r) => `[note] step ${r.step} (${r.agent}): ${r.pinNote}`)
+					.join("\n");
+				const chainText = getFinalOutput(results[results.length - 1].messages) || "(no output)";
 				return {
-					content: [{ type: "text", text: getFinalOutput(results[results.length - 1].messages) || "(no output)" }],
+					content: [{ type: "text", text: chainNotes ? `${chainNotes}\n\n${chainText}` : chainText }],
 					details: makeDetails("chain")(results),
 				};
 			}
@@ -626,6 +769,9 @@ export default function (pi: ExtensionAPI) {
 					const result = await runSingleAgent(
 						ctx.cwd,
 						agents,
+						effectiveAvailableIds,
+						copilotFallback,
+						servedOmlxIds,
 						t.agent,
 						t.task,
 						t.cwd,
@@ -651,7 +797,8 @@ export default function (pi: ExtensionAPI) {
 					const status = isFailedResult(r)
 						? `failed${r.stopReason && r.stopReason !== "end" ? ` (${r.stopReason})` : ""}`
 						: "completed";
-					return `### [${r.agent}] ${status}\n\n${output}`;
+					const note = r.pinNote ? `[note] ${r.pinNote}\n\n` : "";
+					return `### [${r.agent}] ${status}\n\n${note}${output}`;
 				});
 				return {
 					content: [
@@ -668,6 +815,9 @@ export default function (pi: ExtensionAPI) {
 				const result = await runSingleAgent(
 					ctx.cwd,
 					agents,
+					effectiveAvailableIds,
+					copilotFallback,
+					servedOmlxIds,
 					params.agent,
 					params.task,
 					params.cwd,
@@ -685,8 +835,11 @@ export default function (pi: ExtensionAPI) {
 						isError: true,
 					};
 				}
+				const singleText = getFinalOutput(result.messages) || "(no output)";
 				return {
-					content: [{ type: "text", text: getFinalOutput(result.messages) || "(no output)" }],
+					content: [
+						{ type: "text", text: result.pinNote ? `[note] ${result.pinNote}\n\n${singleText}` : singleText },
+					],
 					details: makeDetails("single")([result]),
 				};
 			}

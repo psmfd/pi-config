@@ -71,7 +71,18 @@ Argv assembly:
 
 ```typescript
 const args = ["--mode", "json", "-p", "--no-session"];
-if (agent.model) args.push("--model", agent.model);
+// #519/#536/#534 spawn-time gate (model-pin.ts, ADR-0076/ADR-0080/ADR-0081): a
+// slash-qualified pin reaches argv only when its exact provider/id is in
+// modelRegistry.getAvailable() AND (for omlx pins) the server is live — a
+// once-per-call probe (shared/omlx-discovery.ts) pre-filters down-omlx ids out
+// of availableModelIds via filterDownOmlxIds, so a dead-server pin is treated
+// as absent. A dropped non-Copilot pin then substitutes the Copilot fallback
+// (registry-present + live-tier-enabled, shared/copilot-discovery.ts) before
+// --model is omitted entirely (child inherits the session default). servedOmlxIds
+// shapes only the note wording (server-down vs not-installed). The tool result
+// carries a [note] naming the rung that actually ran. Slash-less pins ungated.
+const pin = resolveModelPin(agent.model, effectiveAvailableIds, copilotFallback, servedOmlxIds);
+if (pin.modelArg) args.push("--model", pin.modelArg);
 if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
 // Prompt body is written to a 0o600 temp file (see writePromptToTempFile at
 // index.ts:210); only the path enters argv. This avoids leaking prompt content

@@ -57,7 +57,7 @@ If we add `thinking:` to agent frontmatter, the per-agent value will override `d
 - `--list-models gpt-5` → matches every gpt-5.x entry **and** claude-haiku-4.5, claude-opus-4.5, claude-sonnet-4.5, gemini-2.5-pro, gemini-3.5-flash (the literal `5` matches the `.5` in version numbers).
 - `--list-models "claude-opus:high"` → returns "No models matching" — the `:thinking` suffix is not a valid pattern token in `--list-models` (it is valid in `--model`).
 
-**Implication:** for `defaultModel`, agent frontmatter `model:`, and any place where deterministic resolution matters, **use exact ids** (`claude-opus-4.7`, `gpt-5.4-mini`) — not bare family names. Patterns are an interactive-picker convenience, not a config-file primitive. ADR-0026 records this finding alongside the `models.json` decision.
+**Implication:** for `defaultModel`, agent frontmatter `model:`, and any place where deterministic resolution matters, **use provider-qualified exact ids** (`github-copilot/claude-opus-4.7`, `omlx/coding-workhorse`) — not bare family names, and not bare ids either: pi's exact-id match runs against the *full* registry (auth-ignorant) before fuzzy matching, and the same friendly name can be a different id per provider (Copilot ids are dotted — `claude-opus-4.7`; Anthropic ids are dashed — `claude-opus-4-7`), so a bare dotted id silently binds to the Copilot provider (#519/ADR-0076). Patterns are an interactive-picker convenience, not a config-file primitive. ADR-0026 records the exact-ids finding alongside the `models.json` decision.
 
 #### Custom-provider overrides (`agent/models.json`)
 
@@ -73,6 +73,15 @@ Hard prerequisites that `models.json` cannot bypass:
 2. The model must be exposed to the operator's Copilot subscription tier server-side. Tier-gated exclusions (e.g. MAI-Code-1-Flash on enterprise as of 2026-06-07) cannot be unlocked locally regardless of `models.json` contents.
 
 Full field schema for the per-model object: `docs/models.md` "Model Configuration" table. The on-disk reference at `/home/pdavis/.cache/pi_config/pi-v<ver>/pi/docs/models.md` is authoritative for the installed version. See ADR-0026 for the forward-fix decision.
+
+#### Custom local providers (oMLX — #518)
+
+The same file registers entirely new providers — pi's documented Ollama/vLLM/local-model path (`docs/models.md` "Custom Models"): a provider block needs `baseUrl` + `api` (e.g. `openai-completions`), and `apiKey` supports value resolution — `"!command"` executes at **request time** (never stored as a literal), `"$ENV_VAR"` interpolates. Two semantics matter for local servers:
+
+1. **Offline-safe by construction:** pi loads the file and starts cleanly regardless of server state; the `/model` availability check tests auth *presence* without executing `!command` values.
+2. **The flip side:** a configured `apiKey` command counts as "credentialed" even on a machine where the command would fail — which is why `models.example.json` keeps its oMLX block commented; the local-llm repo's installer (`setup-omlx-m5.sh --configure-pi`) writes the live block on the oMLX host.
+
+The registered `omlx/coding-workhorse` model (GLM-4.7-Flash-6bit alias, cost-0, `contextWindow` held to 131072 for concurrency — local-llm ADR-009/010) flows into `shared/candidates.getCandidates()` and the auto-router menu like any built-in. Fourteen read-only specialist wrappers pin it via frontmatter, behind the subagent extension's spawn-time registry gate (ADR-0076) — hosts without this operator-local block run those subagents on the Copilot fallback rung (`github-copilot/gpt-5-mini` by default, #536/ADR-0080) or, failing that, the session default. Known accepted limitation: oMLX overflow errors are not normalized to `context_length_exceeded`, so auto-compaction may not fire on overflow (#518).
 
 ### Compaction
 
@@ -177,7 +186,7 @@ For our subagent children, CLI flags constructed by `index.ts` win over the chil
 
 These keep getting asked about — they're not real:
 
-- No `subagent.*` settings — our extension has no settings keys; behavior is per-agent frontmatter
+- One `subagent.*` key exists since #536: `extensionSettings.subagent.copilotFallbackModel` (user-layer only, ADR-0080) — the spawn-gate's Copilot fallback target. Everything else remains per-agent frontmatter
 - No `maxConcurrent` or `queueSize` — we cap parallel mode at 8 tasks / 4 concurrent in `index.ts` constants
 - No `defaultAgent` — every `subagent` call must name an agent
 - No skill-disable list in settings — use `disable-model-invocation` in the skill's own frontmatter instead

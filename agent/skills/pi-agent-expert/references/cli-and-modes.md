@@ -20,7 +20,7 @@ In `-p` mode pi also reads piped stdin and merges it into the initial prompt. Ou
 
 | Flag | Argument | Used by us | Notes |
 |---|---|---|---|
-| `--model` | `provider/id` or pattern with optional `:<thinking>` (e.g. `sonnet:high`) | Optional, per-agent | If unset, child inherits pi's resolved default model. |
+| `--model` | `provider/id` or pattern with optional `:<thinking>` (e.g. `sonnet:high`) | Optional, per-agent | If unset, child inherits pi's resolved default model. Slash-qualified frontmatter pins pass a spawn-time registry gate first (#519/ADR-0076, `model-pin.ts`) — pi hard-exits when the named provider has no registered models; a dropped non-Copilot pin tries the Copilot fallback rung (#536/ADR-0080, live-tier-checked) before the session default. An explicit `--model` also makes auto-router inert for the process (the precedence guard, `argv-guard.ts`). |
 | `--thinking` | `off`/`minimal`/`low`/`medium`/`high`/`xhigh` | **Not yet** — candidate for migration | Clamped to model capabilities; non-reasoning models always use `off`. |
 | `--tools`, `-t` | comma-separated allowlist of built-in + extension + custom tool names | Yes, when `tools:` frontmatter is set | Built-ins: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`. |
 | `--no-builtin-tools`, `-nbt` | (none) | No | Keeps extension/custom tools, disables built-ins |

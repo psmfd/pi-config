@@ -2,6 +2,7 @@
 name: hyperv-expert
 description: Hyper-V specialist — root partition / VMBus architecture, nested virtualization (`Set-VMProcessor -ExposeVirtualizationExtensions`), WSL2 utility-VM plumbing, Windows Hypervisor Platform (WHPX), Hyper-V PowerShell module, VBS / HVCI / Credential Guard suppression of L2 hypervisors, and CI runner virtualization capabilities. Read-only advisor. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch
+model: omlx/coding-workhorse
 mode: read-only
 ---
 

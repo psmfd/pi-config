@@ -2,6 +2,7 @@
 name: azure-devops-expert
 description: Azure DevOps specialist — Repos git operations, YAML pipeline authoring (stages, jobs, templates, expressions), classic release pipelines, Boards/WIQL, REST API, service connections, environments, approvals, and the `az devops` CLI. Read-only advisor. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch
+model: omlx/coding-workhorse
 mode: read-only
 ---
 

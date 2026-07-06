@@ -52,6 +52,64 @@
 //   }
 //
 // See: ADR-0026 (forward-fix pattern).
+//
+// ---------------------------------------------------------------------------
+// Local inference providers (oMLX — #518, ADR-0076; local-llm ADR-009/010)
+//
+// The same models.json mechanism registers custom providers (pi docs/models.md
+// — the documented Ollama/vLLM path). The local oMLX workhorse is installed by
+// the local-llm repo's `setup-omlx-m5.sh --configure-pi`, which renders
+// templates/pi-models-omlx.json into ~/.pi/agent/models.json (or leaves
+// ~/.omlx/pi-provider-snippet.json for a manual merge when a providers block
+// already exists).
+//
+// Keep this repo's copy COMMENTED: pi's /model availability check tests auth
+// *presence* only (a configured `!command` apiKey counts and is never
+// executed by the check), so an active block would make coding-workhorse look
+// selectable on machines with no oMLX server at all. Registration is
+// offline-safe on the oMLX host for the same reason — the key command runs at
+// request time, so pi starts cleanly when the server is down.
+//
+// Known limitation of the models.json path (accepted in #518): oMLX
+// context-overflow errors are not normalized to `context_length_exceeded`, so
+// pi auto-compaction may not trigger on overflow. If that bites, a slim
+// message_end-normalizing extension can be added without changing this
+// registration.
+//
+//   "providers": {
+//     "omlx": {
+//       "baseUrl": "http://localhost:8000/v1",
+//       "api": "openai-completions",
+//       "apiKey": "!cat ~/.omlx/api-key",
+//       "authHeader": true,
+//       "compat": {
+//         "supportsDeveloperRole": false,
+//         "supportsReasoningEffort": false,
+//         "supportsUsageInStreaming": true
+//       },
+//       (supportsUsageInStreaming: verified 2026-07-05 — oMLX serves full usage,
+//       including cached-token detail, in the final stream chunk when pi requests
+//       stream_options.include_usage; a `false` here zeroes every local turn in
+//       token-meter/task-types measurement. See ADR-0077, local-llm#34.)
+//       "models": [
+//         {
+//           "id": "coding-workhorse",
+//           "name": "coding-workhorse — GLM-4.7-Flash (local oMLX)",
+//           "reasoning": false,
+//           "input": ["text"],
+//           "contextWindow": 131072,
+//           "maxTokens": 16384,
+//           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+//         }
+//       ]
+//     }
+//   }
+//
+// `id` is the oMLX ALIAS (= mlx-community/GLM-4.7-Flash-6bit, the sole pinned
+// resident — local-llm ADR-010). contextWindow is deliberately held to 131072
+// inside the 202K native window: oMLX concurrency is prefill-activation-bound
+// and falls as context grows (ADR-009/010). Cost 0 ⇒ auto-router renders the
+// hint "local/free"; the cost-0 routing policy is #363's scope.
 {
   "providers": {}
 }

@@ -26,6 +26,12 @@ agent/extensions/*/state.json
 # written into the same symlinked subtree. Runtime data, never committed.
 agent/extensions/cache-meter/turns.jsonl
 
+# auto-router task-type measurement log (#351) and token-meter per-session logs
+# (ADR-0073) — same symlinked-subtree runtime telemetry as turns.jsonl above,
+# never committed (#543).
+agent/extensions/auto-router/task-types.jsonl
+agent/extensions/*/sessions/
+
 # gh-identity-guard local-only, per-developer config (ADR-0022/0027). Never
 # committed — these carry per-host GitHub identity choices, not shared content.
 /.gh-identity-allowlist
@@ -51,3 +57,8 @@ drafts/
 /node_modules
 # CocoIndex Code (ccc)
 /.cocoindex_code/
+
+# pi's runtime git-install extension cache. Only lands inside this checkout on
+# a dev host where ~/.pi symlinks into the repo (pi_config#529); never wanted
+# in version control.
+/agent/git/

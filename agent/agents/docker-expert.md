@@ -2,6 +2,7 @@
 name: docker-expert
 description: Docker specialist — Dockerfile authoring, BuildKit features, rootless BuildKit, multi-stage builds, multi-platform images, secret and cache mounts, Compose v2, and container security patterns. Read-only advisor. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch
+model: omlx/coding-workhorse
 mode: read-only
 ---
 

@@ -2,6 +2,7 @@
 name: dotnet-expert
 description: .NET specialist — .NET 10 LTS SDK, cross-platform development (macOS, Linux, Windows, containers), ASP.NET Core minimal APIs, worker services, dependency injection, EF Core, testing, publishing, and security best practices. Read-only advisor. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch
+model: omlx/coding-workhorse
 mode: read-only
 ---
 

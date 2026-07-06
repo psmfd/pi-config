@@ -164,6 +164,33 @@ if [ -z "${DIR}" ]; then
 fi
 [ -d "${DIR}" ] || warn dir "pi-config clone not found at ${DIR} (pass --dir); vendored pins may be unavailable"
 
+# Detect a dev-host checkout: ~/.pi symlinked into a repo that ships the
+# expertise-client extension in-repo (agent/extensions/expertise-client/) —
+# true only for the private monorepo; the public mirror excludes this path
+# (see mirror/targets.yml). Reuses the same ~/.pi symlink-resolution idiom as
+# the DIR block above rather than inventing a second detection mechanism.
+REPO_EXT_DIR=""
+if [ -L "${HOME}/.pi" ]; then
+  pi_link_target="$(cd -P "${HOME}/.pi" 2>/dev/null && pwd)" || pi_link_target=""
+  if [ -n "${pi_link_target}" ] && [ -d "${pi_link_target}/agent/extensions/expertise-client" ]; then
+    REPO_EXT_DIR="${pi_link_target}/agent/extensions/expertise-client"
+  fi
+fi
+
+# Installed git extensions live at ~/.pi/agent/git/<host>/<owner>/<repo> (pi
+# docs packages.md). EXT_DIR is the SINGLE source of truth for where the
+# extension linkage (.env.local, step 4) is wired: it prefers the repo-shipped
+# copy over the git-install path whenever both exist. Without this precedence,
+# pi loads the repo-shipped copy (it wins the load race via the ~/.pi symlink)
+# while step 4 would wire .env.local into the git-install copy nobody reads —
+# leaving the winning copy unauthenticated (pi_config#529).
+GIT_EXT_DIR="${HOME}/.pi/agent/git/github.com/${EXT_MIRROR}"
+if [ -n "${REPO_EXT_DIR}" ]; then
+  EXT_DIR="${REPO_EXT_DIR}"
+else
+  EXT_DIR="${GIT_EXT_DIR}"
+fi
+
 # pi must be installed already (run install.sh first). Make ~/.local/bin visible.
 export PATH="${HOME}/.local/bin:${PATH}"
 if ! command -v pi >/dev/null 2>&1 && [ "${DRY_RUN}" != "1" ]; then
@@ -176,11 +203,19 @@ IS_MACOS=0
 info "Wiring local expertise for pi (bind ${BIND_ADDR})"
 
 # --- 1. Ensure the expertise-client extension is installed -----------------
-# Installed git extensions live at ~/.pi/agent/git/<host>/<owner>/<repo> (pi docs
-# packages.md). The extension resolves .env.local relative to its own module, so
-# this directory is where the linkage file must land.
-EXT_DIR="${HOME}/.pi/agent/git/github.com/${EXT_MIRROR}"
-if [ -d "${EXT_DIR}" ]; then
+# The extension resolves .env.local relative to its own module, so EXT_DIR
+# (resolved above) is where the linkage file must land.
+if [ -n "${REPO_EXT_DIR}" ] && [ -d "${GIT_EXT_DIR}" ]; then
+  # Already-broken dev-host state (pi_config#529): both copies present. pi
+  # loads the repo-shipped copy; the git-install copy is a dead duplicate that
+  # fails to load ("Tool \"expertise_search\" conflicts...") and its .env.local
+  # (if any) is never read. Point at remediation rather than silently fixing —
+  # removing an installed extension out from under the operator is not this
+  # script's call to make.
+  warn extension "both a repo-shipped copy (${REPO_EXT_DIR}) and a git-install copy (${GIT_EXT_DIR}) of expertise-client are present; pi loads the repo-shipped copy, so the git-install copy is a dead duplicate — remove it: pi remove git:github.com/${EXT_MIRROR}"
+elif [ -n "${REPO_EXT_DIR}" ]; then
+  skip extension "expertise-client already active via the repo-shipped copy (${REPO_EXT_DIR}, via the ~/.pi symlink); not installing a second global copy — see pi_config#529"
+elif [ -d "${GIT_EXT_DIR}" ]; then
   ok extension "pi-expertise-client already installed (${EXT_DIR})"
 else
   info "Installing pi-expertise-client extension"

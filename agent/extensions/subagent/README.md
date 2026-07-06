@@ -155,6 +155,53 @@ model: claude-haiku-4-5
 System prompt for the agent goes here.
 ```
 
+**Model pins and the spawn-time gate (#519/#536, ADR-0076/ADR-0080):** a
+slash-qualified `model:` pin (`provider/id`, e.g. `omlx/coding-workhorse`) is
+passed to the child as `--model` only when that exact provider/id is
+credentialed in the model registry (`model-pin.ts`). When it is not, the
+ADR-0076 tier ladder is walked before conceding — three outcomes, each with an
+honest `[note]` line naming the rung the child actually ran on:
+
+1. **Pin resolves** → passed through, no note. For an `omlx/*` pin this also
+   requires the oMLX server to be **live** (#534, ADR-0081): a spawn-time probe
+   (`shared/omlx-discovery.ts`, resolved once per tool call) drops a
+   registered-but-down workhorse pin so it takes outcome 2 or 3 below, with a
+   note distinguishing "the oMLX server appears to be down" (restart the
+   process) from "not available on this host" (registration/config). An
+   inconclusive probe (timeout, 5xx) fails open — the pin is kept, never
+   falsely dropped.
+2. **Pin dropped, Copilot fallback resolves** (#536): a non-`github-copilot`
+   dropped pin substitutes the Copilot fallback model when it is
+   registry-present AND not excluded by the live tier filter
+   (`shared/copilot-discovery.ts`, ADR-0035 — a registered Copilot model can
+   still be subscription-gated). A dropped `github-copilot/*` pin never
+   substitutes a sibling (the rung itself is dead).
+3. **Neither resolves** → `--model` omitted; the child inherits the session
+   default, and the note says why each rung was skipped (absent vs tier-gated).
+
+This is deliberate: pi hard-exits a child whose `--model` names a provider
+with no registered models, and pins like the local oMLX workhorse
+(operator-local `models.json`) or a Copilot model (login-gated) do not resolve
+on every host. Slash-less pins pass through ungated and resolve via pi's own
+pattern matching. If the registry cannot be read, the gate fails open (the pin
+is passed; the fallback rung is never consulted without registry data). The
+live tier set is resolved once per tool call — never per child — and its
+discovery cache is cleared each `session_start`.
+
+**Settings:** the fallback target defaults to `github-copilot/gpt-5-mini` —
+the cheapest picker-enabled Copilot chat model under AI-Credits billing
+(ADR-0080 Q2); fan-out children are the quota-frugal rung, not the review
+trio's quality rung. Override per operator in `~/.pi/agent/settings.json`:
+
+```jsonc
+{ "extensionSettings": { "subagent": { "copilotFallbackModel": "github-copilot/claude-haiku-4-5" } } }
+```
+
+Only the **user-layer** settings file is honored — a project's
+`.pi/settings.json` cannot redirect fan-out spend (same trust boundary as
+token-meter, ADR-0073). A value that is not a qualified `github-copilot/<id>`
+string falls back to the built-in default.
+
 **Locations:**
 
 - `~/.pi/agent/agents/*.md` - User-level (always loaded)

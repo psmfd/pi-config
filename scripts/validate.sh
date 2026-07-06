@@ -818,6 +818,27 @@ else
   err "auto-router: scripts/test-auto-router.sh missing or not executable; required check skipped"
 fi
 
+# --- 9b-subagent. subagent test suite (#519, ADR-0076) ---------------------
+info "Running subagent test suite"
+if [ -x scripts/test-subagent.sh ]; then
+  if sa_output="$(scripts/test-subagent.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$sa_output"
+    fi
+    ok "subagent: tests passed"
+  else
+    sa_status=$?
+    printf '%s\n' "$sa_output" >&2
+    if [ "$sa_status" -eq 2 ]; then
+      err "subagent: test environment unavailable (node/npx); required check skipped"
+    else
+      err "subagent: test suite failed (exit $sa_status)"
+    fi
+  fi
+else
+  err "subagent: scripts/test-subagent.sh missing or not executable; required check skipped"
+fi
+
 # --- 9b-context-manager. context-manager test suite (#331/#334, ADR-0032) --
 info "Running context-manager test suite"
 if [ -x scripts/test-context-manager.sh ]; then
@@ -902,6 +923,105 @@ if [ -x scripts/analyze-cache-ratio.sh ]; then
   fi
 else
   err "cache-ratio: scripts/analyze-cache-ratio.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-routing-matrix. routing-matrix analysis self-test (#351) -----------
+# Regression-tests the taskType x model aggregation against fixtures. The LIVE
+# measurement comes from real routed sessions and is intentionally NOT CI-gated.
+info "Running routing-matrix analysis self-test"
+if [ -x scripts/analyze-routing-matrix.sh ]; then
+  if arm_output="$(scripts/analyze-routing-matrix.sh --self-test 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$arm_output"
+    fi
+    ok "routing-matrix: analysis self-test passed"
+  else
+    arm_status=$?
+    printf '%s\n' "$arm_output" >&2
+    if [ "$arm_status" -eq 2 ]; then
+      err "routing-matrix: self-test environment unavailable (jq); required check skipped"
+    else
+      err "routing-matrix: analysis self-test failed (exit $arm_status)"
+    fi
+  fi
+else
+  err "routing-matrix: scripts/analyze-routing-matrix.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-routing-matrix-bis. routing-matrix.json integrity/staleness (#352) --
+# Structural + staleness guard for the hand-authored capability floor
+# (ADR-0078). Does NOT re-check capable[] membership in TASK_TYPES — that is
+# auto-router/test/routing-matrix.test.ts, which imports TASK_TYPES from
+# types.ts directly (zero lockstep risk). This section covers what that test
+# does not: strict provider/id key format, lastReviewed validity/staleness
+# (WARN — the file is human-reviewed, never auto-bumped), and a best-effort
+# cross-reference against agent frontmatter model: pins (WARN only — a new
+# capability-floor row may legitimately precede agent adoption; this must
+# never FAIL a correct-but-not-yet-pinned addition).
+info "Validating routing-matrix.json integrity (#352)"
+MX="agent/extensions/shared/routing-matrix.json"
+if [ ! -f "$MX" ]; then
+  err "routing-matrix: $MX missing"
+elif ! command -v jq >/dev/null 2>&1; then
+  err "routing-matrix: jq not found; integrity guard cannot run (required)"
+elif ! jq empty "$MX" >/dev/null 2>&1; then
+  err "routing-matrix: $MX does not parse as JSON"
+else
+  ok "routing-matrix: $MX is valid JSON"
+
+  mx_model_count="$(jq -r '.models | length' "$MX" 2>/dev/null)"
+  if [ -z "$mx_model_count" ] || [ "$mx_model_count" = "0" ]; then
+    err "routing-matrix: .models is missing or empty in $MX"
+  else
+    ok "routing-matrix: $mx_model_count model row(s) present"
+  fi
+
+  # Key format: stricter than the TS test's loose provider/id split. The id
+  # part may itself contain slashes (e.g. openrouter/meta/llama-3).
+  mx_keys="$(jq -r '.models | keys[]' "$MX" 2>/dev/null)"
+  mx_bad_keys=0
+  while IFS= read -r k; do
+    [ -n "$k" ] || continue
+    if ! [[ "$k" =~ ^[a-z0-9-]+/[A-Za-z0-9._/-]+$ ]]; then
+      err "routing-matrix: model key '$k' is not a well-formed provider/id"
+      mx_bad_keys=1
+    fi
+  done <<MX_KEYS
+$mx_keys
+MX_KEYS
+  [ "$mx_bad_keys" -eq 0 ] && ok "routing-matrix: all model keys are well-formed provider/id"
+
+  # lastReviewed: malformed is a structural FAIL; stale-but-valid is a WARN.
+  # jq's strptime/mktime/now avoid GNU-vs-BSD `date` portability entirely.
+  mx_age_days="$(jq -r '
+    ((.lastReviewed | strptime("%Y-%m-%d") | mktime)) as $reviewed
+    | ((now - $reviewed) / 86400 | floor)
+  ' "$MX" 2>/dev/null)"
+  if [ -z "$mx_age_days" ]; then
+    err "routing-matrix: lastReviewed in $MX is missing or not a valid YYYY-MM-DD date"
+  elif [ "$mx_age_days" -gt 180 ]; then
+    warn "routing-matrix: lastReviewed is $mx_age_days day(s) old (>180); re-review the capability floor and bump lastReviewed with a rationale"
+  else
+    ok "routing-matrix: lastReviewed is $mx_age_days day(s) old (<=180)"
+  fi
+
+  # Best-effort "known model" cross-reference against live agent pins (WARN).
+  mx_known_pins="$(for f in agent/agents/*.md; do
+    [ -f "$f" ] || continue
+    fm="$(extract_frontmatter "$f")"
+    fm_value "$fm" model
+  done | sed '/^$/d' | sort -u)"
+  mx_unknown=0
+  while IFS= read -r k; do
+    [ -n "$k" ] || continue
+    if ! printf '%s\n' "$mx_known_pins" | grep -qxF "$k"; then
+      warn "routing-matrix: model key '$k' is not pinned by any agent frontmatter — confirm it is a real, currently-resolvable model id"
+      mx_unknown=1
+    fi
+  done <<MX_KEYS2
+$mx_keys
+MX_KEYS2
+  [ "$mx_unknown" -eq 0 ] && ok "routing-matrix: every model key matches a live agent frontmatter pin"
 fi
 
 # --- 9b-token-meter. token-meter test suite (ADR-0073) ---------------------

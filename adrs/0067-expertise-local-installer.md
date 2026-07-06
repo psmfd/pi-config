@@ -110,7 +110,13 @@ a wildcard across all interfaces, which would void this control.
 Re-runs reuse the existing key (parsed back from `secrets.env`) so the extension
 stays wired; `--rotate-key` forces a fresh key and re-writes `.env.local`. The
 managed block is delimited by markers and rewritten in place, so re-runs never
-duplicate it or disturb the operator-owned connection string.
+duplicate it or disturb the operator-owned connection string. On a checkout that
+ships `agent/extensions/expertise-client/` in-repo (the private monorepo; the
+public mirror excludes this path), the repo-shipped copy takes precedence over
+the `pi install`ed git copy for both extension detection and `.env.local`
+wiring — pi loads the repo-shipped copy via the `~/.pi` symlink regardless, so
+installing a second copy only creates a broken, unauthenticated duplicate
+(pi_config#529).
 
 ### Scope: macOS-first
 

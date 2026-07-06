@@ -2,6 +2,7 @@
 name: ansible-expert
 description: Ansible specialist — playbook authoring, variable precedence, collection architecture (post-2.10), privilege escalation, Jinja2 type coercion, handler semantics, vault, inventory, roles, callback plugins, and GitHub Actions integration. Read-only advisor. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch
+model: omlx/coding-workhorse
 mode: read-only
 ---
 

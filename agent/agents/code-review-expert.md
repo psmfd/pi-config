@@ -2,7 +2,7 @@
 name: code-review-expert
 description: Read-only semantic code review — logic errors, design quality, security smells, requirement fidelity. Produces structured findings table with verdict. Spawns isolated subprocess.
 tools: read, grep, find, ls, bash, web_fetch
-model: claude-opus-4.7
+model: github-copilot/claude-opus-4.7
 mode: read-only
 ---
 

@@ -2,6 +2,7 @@
 name: wsl2-expert
 description: WSL2 specialist — `wsl.exe` CLI surface, per-distro `/etc/wsl.conf` and host-side `%UserProfile%\.wslconfig`, distro lifecycle including `wsl --export` / `wsl --import` rootfs packaging (the load-bearing path for distributing as a pre-populated tarball), `/etc/wsl-distribution.conf` OOBE contract, systemd-in-WSL2 enablement, NAT vs mirrored networking modes, Windows ↔ Linux interop and `WSLENV`, WSLg, and runtime diagnostics. Read-only advisor. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch
+model: omlx/coding-workhorse
 mode: read-only
 ---
 

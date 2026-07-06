@@ -1,7 +1,7 @@
 # shared/ — Pi Extension Suite foundation
 
 A small internal **library** consumed by the Pi Extension Suite extensions
-(auto-router, context-manager, indexing) and the bash-guard family
+(auto-router, context-manager, indexing, subagent) and the bash-guard family
 (bash-destructive-guard, via `shell-lex.ts`). It is **not a loadable pi extension**:
 it has no `index.ts`, so pi's auto-discovery (`~/.pi/agent/extensions/*/index.ts`)
 skips it. Consumers import its modules by relative path, e.g.
@@ -22,6 +22,10 @@ thresholds.
 | `notify.ts` | `notify`, `formatMessage`, `NotifyLevel` | `[pi-suite:<scope>]`-tagged notifications over `ctx.ui.notify`, guarded on `ctx.hasUI`. |
 | `state.ts` | `loadState`, `saveState`, `stateFile`, `stateDir`, `STATE_SCHEMA_VERSION`, `VersionedState` | Schema-versioned per-extension JSON state under `~/.pi/agent/extensions/<namespace>/state.json` (ADR-0019 data subtree). No extension writes another's state. |
 | `shell-lex.ts` | `lex`, `preprocessCommand`, `deglueWordSubstitutions`, `stripEnvAssignments`, `hasMinusC`, `Segment`, `Redirect` | Quote-aware shell-command lexer for the bash-guard family (ADR-0072): segments a raw command on unquoted control operators, joins quote-adjacent words, normalizes `$IFS`, captures stdin/pipe-sink/redirection, and degluing word-internal empty command substitutions. Parsing only — the consuming guard owns policy. **Not** a POSIX parser; value-dependent expansion is out of scope by design. |
+| `routing-matrix.json` | — (data, no code) | Hand-authored capability floor per task type (#350/#363): which models clear the bar for each classifier-emitted task-type label. Seeded with the `omlx/coding-workhorse` row; human-reviewed, never auto-written. **Consulted by auto-router's `resolveByTaskType` since #352** (ADR-0078) when matrix routing is enabled — closed-world for matrix picks. Schema sanity is pinned by `auto-router/test/routing-matrix.test.ts` (the taxonomy lives in auto-router); structure/staleness guarded by `validate.sh` (`9b-routing-matrix-bis`). |
+| `routing-matrix.ts` | `defaultMatrixPath`, `loadRoutingMatrix` | Fail-soft loader for the matrix (#352): any missing/malformed state yields `null` (matrix routing degrades to classifier picks — "absent" stays distinguishable from "present but empty"); malformed rows are dropped individually. |
+| `copilot-discovery.ts` | `resolveCopilotFilter`, `getEnabledCopilotModels`, `clearCopilotCache`, … | Live GitHub Copilot `/models` tier discovery (ADR-0035; moved here from auto-router in #536 so the subagent spawn gate can reuse it). Fail-open, host-pinned, per-session 20-min cache of model-id strings only — never the JWT. |
+| `omlx-discovery.ts` | `resolveOmlxFilter`, `getServedOmlxModels`, `clearOmlxCache`, … | Live oMLX `/v1/models` probe (#364; moved here from auto-router in #534 so the subagent spawn gate can gate on server liveness, ADR-0081). Loopback-pinned, key read at request time never stored, 60s cache; **authoritative even when empty** (confirmed-down drops all omlx), null only when inconclusive/no-omlx (fail open). |
 
 ## Design contracts
 

@@ -2,6 +2,7 @@
 name: docs-expert
 description: Documentation review and authoring guidance — best practices, content style, curation, Mermaid diagrams (general and Azure DevOps flavors). Research-heavy advisor. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch
+model: omlx/coding-workhorse
 mode: read-only
 ---
 
