@@ -9,6 +9,9 @@
     },
     "ghIdentityGuard": {
       "expectedIdentity": "<your-github-login>"
+    },
+    "autoRouter": {
+      "preferLocalOmlx": true
     }
   },
   "enabledModels": [
