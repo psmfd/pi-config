@@ -12,8 +12,6 @@
     }
   },
   "enabledModels": [
-    "anthropic/claude-opus-4-7",
-    "github-copilot/gpt-5.4-mini",
-    "github-copilot/gpt-4o"
+    "github-copilot/gpt-5.4-mini"
   ]
 }

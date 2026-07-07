@@ -173,6 +173,28 @@ else
   # setup.sh installs the vendored pi into ~/.local/bin; make sure it is on PATH
   # for this step even if the recipient's shell rc has not been re-sourced yet.
   export PATH="${HOME}/.local/bin:${PATH}"
+
+  # `pi install` shells out to `npm install --omit=dev` for each extension
+  # (ADR-0042), so node/npm must be on PATH too. In a non-interactive shell the
+  # rc that loads nvm has not run — the same nvm-not-on-PATH class as #388/#483 —
+  # so every `pi install` aborts after cloning, before registering the extension
+  # in settings.json, and the box silently ships with no extensions (#557).
+  # setup.sh already installed node via nvm; load it here if npm is absent. This
+  # is inline (not a scripts/lib source) because install.sh is standalone.
+  if ! command -v npm >/dev/null 2>&1 && [ "${DRY_RUN}" != "1" ]; then
+    nvm_sh="${NVM_DIR:-${HOME}/.nvm}/nvm.sh"
+    if [ -s "${nvm_sh}" ]; then
+      # nvm.sh is third-party and not nounset-clean; relax -e/-u around it only.
+      set +eu
+      # shellcheck disable=SC1090
+      . "${nvm_sh}" >/dev/null 2>&1
+      nvm use node >/dev/null 2>&1
+      set -eu
+    fi
+    command -v npm >/dev/null 2>&1 || warn extensions \
+      "npm is not on PATH (node via nvm is not loaded); every 'pi install' below will fail its npm step. Load node — e.g. '. \"\${NVM_DIR:-\$HOME/.nvm}/nvm.sh\" && nvm use node' — then re-run install.sh, or re-run in a shell where node is on PATH."
+  fi
+
   pi_bin=""
   command -v pi >/dev/null 2>&1 && pi_bin="pi"
   if [ -z "${pi_bin}" ] && [ "${DRY_RUN}" != "1" ]; then
@@ -205,10 +227,16 @@ else
         ext_failed=$((ext_failed + 1))
       fi
     done
+    ext_total="${#EXT_MIRRORS[@]}"
     if [ "${ext_failed}" -eq 0 ]; then
-      ok extensions "installed ${#EXT_MIRRORS[@]} first-party extension mirror(s)"
+      ok extensions "installed ${ext_total} first-party extension mirror(s)"
+    elif [ "${ext_failed}" -ge "${ext_total}" ]; then
+      # A total failure means the box has NO first-party extensions — do not let
+      # the summary report PASS. Commonly npm/node not on PATH (see the WARN
+      # above and #557).
+      err extensions "all ${ext_total} extension mirror(s) failed to install — the install is not usable (commonly npm/node not on PATH; see #557)"
     else
-      warn extensions "${ext_failed} extension mirror(s) failed to install"
+      warn extensions "${ext_failed} of ${ext_total} extension mirror(s) failed to install"
     fi
   fi
 fi
