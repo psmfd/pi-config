@@ -314,6 +314,28 @@ for d in agent/extensions/*/; do
   ok "extensions: $ext_name"
 done
 
+# --- 6a. Subagent vendored-source drift check (pi_config #582) -------------
+# Diff-signature manifest: fails when agent/extensions/subagent/{index,agents}.ts
+# drifts from the pinned pi snapshot in a way not recorded in
+# agent/extensions/subagent/PATCH_MANIFEST.json. Closes the audit trap that
+# let patches #4a–d accumulate in the vendored source between the 0.75.4
+# and 0.80.2 re-pairs (pi_config #136, #296, #396). Sibling of
+# validate-pi-vendor.sh; tightens the vendored-source contract that
+# ADR-0001 governs.
+info "Validating agent/extensions/subagent/ vendored-source drift (#582)"
+if [ -x scripts/validate-subagent-drift.sh ]; then
+  if scripts/validate-subagent-drift.sh >/dev/null; then
+    ok "subagent drift: manifest matches vendored source"
+  else
+    # Re-run to surface the actual error messages to the operator; the
+    # dry gate above only checks the exit code.
+    scripts/validate-subagent-drift.sh || true
+    err "subagent drift: manifest mismatch (see ERROR lines above)"
+  fi
+else
+  err "subagent drift: scripts/validate-subagent-drift.sh is missing or not executable"
+fi
+
 # --- 6b. Secrets-guard SKIP_PATH_GLOBS smoke test --------------------------
 # Per ADR-0006 § Consequences, `drafts/**` and `.review/**` must remain in
 # scope for secrets-guard content scans. They are gitignored / never-merged

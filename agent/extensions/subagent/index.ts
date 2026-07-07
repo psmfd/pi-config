@@ -19,7 +19,7 @@ import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { type ExtensionAPI, getMarkdownTheme, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, CONFIG_DIR_NAME, getAgentDir, getMarkdownTheme, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { clearCopilotCache, resolveCopilotFilter } from "../shared/copilot-discovery.ts";
@@ -470,15 +470,25 @@ async function runSingleAgent(
 					emitUpdate();
 				}
 
-				// LOCAL PATCH (pi_config issue #46): the upstream snapshot listens for
-				// `tool_result_end` with `event.message`, but current pi (re-verified against
-				// pi 0.78.1 docs/rpc.md § 852 and docs/extensions.md § 565; `tool_result_end` is
-				// no longer documented) emits `tool_execution_start` /
-				// `tool_execution_end` and neither carries a `message`. We trigger UI
-				// refresh on both edges so the orchestrator sees per-tool-call progress
-				// during long child runs, without injecting synthetic messages into
-				// `currentResult.messages` (which would corrupt `getFinalOutput`).
-				if (event.type === "tool_execution_start" || event.type === "tool_execution_end") {
+				// LOCAL PATCH #3 (pi_config issue #46, expanded in #396): the upstream
+				// 0.80.2 snapshot still listens for `tool_result_end` with
+				// `event.message`, but pi 0.80.2 does NOT emit that event — confirmed
+				// against `pi/docs/rpc.md` § 855–898 and `pi/docs/extensions.md` §
+				// 596–615, which document `tool_execution_start` /
+				// `tool_execution_update` / `tool_execution_end` (+ `tool_result` as a
+				// separate middleware event, not consumed here). We trigger UI
+				// refresh on all three tool-execution edges so the orchestrator sees
+				// per-tool-call progress during long child runs, without injecting
+				// synthetic messages into `currentResult.messages` (which would
+				// corrupt `getFinalOutput`). Consuming `tool_execution_update`
+				// closes pi_config #46 — the partialResult on those events is the
+				// accumulated tool output; surfacing it in the details table is a
+				// future concern tracked separately.
+				if (
+					event.type === "tool_execution_start" ||
+					event.type === "tool_execution_update" ||
+					event.type === "tool_execution_end"
+				) {
 					emitUpdate();
 				}
 			};
@@ -580,8 +590,8 @@ export default function (pi: ExtensionAPI) {
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
 			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
-			'Default agent scope is "user" (from ~/.pi/agent/agents).',
-			'To enable project-local agents in .pi/agents, set agentScope: "both" (or "project").',
+			`Default agent scope is "user" (from ${path.join(getAgentDir(), "agents")}).`,
+			`To enable project-local agents in ${CONFIG_DIR_NAME}/agents, set agentScope: "both" (or "project").`,
 		].join(" "),
 		parameters: SubagentParams,
 

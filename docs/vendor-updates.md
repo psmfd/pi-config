@@ -265,31 +265,72 @@ reviewed allowlist or baseline decision.
 
 ### Subagent extension: `agent/extensions/subagent/`
 
-Use this procedure for vendored subagent source re-pairing or re-audit work.
+Two distinct workflows share this section: **Procedure A** (add a new local patch to the vendored source) and **Procedure B** (re-pair the vendored snapshot to a new upstream pi). They touch overlapping files but with different retain/drop decisions, so they are kept separate.
+
+Both procedures are gated by the diff-signature drift check (`scripts/validate-subagent-drift.sh`, added under pi_config #582) which fails `scripts/validate.sh` when `agent/extensions/subagent/{index,agents}.ts` diverges from the pinned pi snapshot in a way not recorded in `agent/extensions/subagent/PATCH_MANIFEST.json`. Either procedure must end with a manifest regeneration + patch-table update in the same commit.
+
+#### Procedure A — add a new local patch (new downstream divergence)
+
+Use when introducing a new patch that upstream does not carry (e.g. a new policy layer, a new event-handling branch).
+
+Files normally changed:
+
+- `agent/extensions/subagent/index.ts` (or `agents.ts`, or a new ours-only sibling under `agent/extensions/subagent/`)
+- `agent/extensions/subagent/README.md` (**required** — append a new row to the `Local patches` table)
+- `agent/extensions/subagent/PATCH_MANIFEST.json` (**required** — regenerate; see below)
+- paired pi-agent-expert references when patch inventory or source-version facts change
+
+Steps:
+
+1. Make the source change; keep edits minimal, well-commented, and citation-linked (issue number + ADR reference in the code comment).
+2. **Add a new row to the patch table** in `agent/extensions/subagent/README.md` (patch #, files, rationale, tracking).
+3. **Regenerate the manifest:** `scripts/validate-subagent-drift.sh --regenerate`
+4. Run `scripts/typecheck-extensions.sh`, `scripts/lint-extensions.sh`, and `scripts/validate.sh` — all must be clean.
+5. Commit README, source, and manifest **together** in the same commit; conventional-commits scope `subagent`.
+6. Run `/review` on the aggregate diff before opening the PR (draft-first if the auto-merge race is a concern).
+
+#### Procedure B — re-pair to a new upstream pi snapshot
+
+Use when the pi runtime pin (`agent/vendor/pi/VERSION`) has been bumped and the vendored subagent source should track it. Typically follows a runtime bump PR by a few days.
 
 Files normally changed:
 
 - `agent/extensions/subagent/index.ts`
 - `agent/extensions/subagent/agents.ts`
-- `agent/extensions/subagent/README.md`
+- `agent/extensions/subagent/README.md` (**required** — update source pi version + audit the patch table)
+- `agent/extensions/subagent/PATCH_MANIFEST.json` (**required** — regenerate against the new upstream)
+- `agent/vendor/pi/README.md` if it carried a pin-gap warning that is now retired
 - paired pi-agent-expert references when patch inventory or source-version facts change
 
-Procedure:
+Steps:
+
+1. Set `UPSTREAM=~/.cache/pi_config/pi-$(cat agent/vendor/pi/VERSION)/pi/examples/extensions/subagent` (run `./setup.sh` first if the cache is empty).
+2. Diff each tracked file against upstream: `diff -u "$UPSTREAM/index.ts" agent/extensions/subagent/index.ts` (and the same for `agents.ts`). Reconcile **every** hunk against a patch-table row — the mechanical check will refuse the manifest regeneration otherwise. If a hunk isn't documented, either (a) adopt the upstream side, (b) add a patch-table row for it, or (c) drop the local edit.
+3. **Explicit retain/drop decision** per row of the current patch table — note in the commit body which patches were retained, expanded, or retired (and why).
+4. Adopt trivial upstream deltas (helper imports, string reflows, etc.) unless they conflict with a load-bearing local patch.
+5. Update `agent/extensions/subagent/README.md`: new source pi version in the header, patch-table rows edited, retired rows removed.
+6. **Regenerate the manifest:** `scripts/validate-subagent-drift.sh --regenerate` (must be the last edit — any subsequent source touch requires another regeneration).
+7. Run `scripts/typecheck-extensions.sh`, `scripts/lint-extensions.sh`, and `scripts/validate.sh`.
+8. Commit README, source, and manifest together; conventional-commits scope `subagent`; commit body cites source pi version + which patches were retained/dropped.
+9. Run `/review` on the aggregate diff (draft-first).
+
+#### The snapshot manifest — `agent/extensions/subagent/PATCH_MANIFEST.json`
+
+A v1 JSON manifest keyed by `trackedFiles` (`index.ts`, `agents.ts`). Each entry stores a `diffSha256` (sha256 of `diff -u --strip-trailing-cr upstream/<file> local/<file>` with the abs-path headers neutralised), a hunk count, and net-line count. The pinned pi version is stored at the top level and cross-checked against `agent/vendor/pi/VERSION` on every run.
+
+Commands:
 
 ```sh
-scripts/typecheck-extensions.sh
-scripts/lint-extensions.sh
-scripts/validate.sh
+# Check (invoked automatically by scripts/validate.sh)
+scripts/validate-subagent-drift.sh
+
+# Regenerate after intentional source or README changes
+scripts/validate-subagent-drift.sh --regenerate
 ```
 
-Before committing:
+Missing upstream cache is an ERROR, not a skip — fresh clones must run `./setup.sh` (or `scripts/lib/fetch-pi-binary.sh`) to populate `~/.cache/pi_config/pi-$(cat agent/vendor/pi/VERSION)/` before `validate.sh` can complete. Per `agent/rules/extension-type-check-and-lint.md`, environment unavailability for a required check is a validation error.
 
-- Diff against upstream `examples/extensions/subagent/` for the exact target pi version, using the release tarball or tag that matches the declared source version rather than an arbitrary `main` checkout.
-- Review the local patch table in `agent/extensions/subagent/README.md`.
-- Make an explicit retain/drop decision for each local patch.
-- Update patch line ranges and provenance text.
-- Cite the source pi version in the commit message.
-- Run `/review` because extension source or runtime behavior changed.
+**Anti-pattern:** regenerating the manifest without also updating the patch table is a documented failure mode (#582 § design fan-out). Reviewers should reject any PR whose sole diff to `agent/extensions/subagent/` is a manifest hash bump.
 
 ## Validation matrix
 
@@ -301,7 +342,7 @@ Before committing:
 | `agent/vendor/yq/` | `gh release view "$NEW_TAG" --repo mikefarah/yq --json assets` | `scripts/validate-yq-vendor.sh` | `scripts/lib/install-helpers.sh --self-test`; confirm mikefarah/yq variant |
 | `agent/vendor/shellcheck/` | `gh release view "$NEW_TAG" --repo koalaman/shellcheck --json assets` | `scripts/validate-shellcheck-vendor.sh` | `scripts/lib/install-helpers.sh --self-test`; run full validation for new lint findings |
 | `agent/vendor/gitleaks/` | `gh release view "$NEW_TAG" --repo gitleaks/gitleaks --json assets` | `scripts/validate-gitleaks-vendor.sh` | `scripts/lib/install-helpers.sh --self-test`; run `scripts/scan-secrets.sh --history --all-refs` |
-| `agent/extensions/subagent/` | Diff target pi `examples/extensions/subagent/` against local source | `scripts/typecheck-extensions.sh`; `scripts/lint-extensions.sh` | Review local patch table; run `/review` for source/runtime changes |
+| `agent/extensions/subagent/` | Diff target pi `examples/extensions/subagent/` against local source | `scripts/typecheck-extensions.sh`; `scripts/lint-extensions.sh`; `scripts/validate-subagent-drift.sh` (diff-signature manifest, #582) | Review local patch table; regenerate manifest via `--regenerate`; run `/review` for source/runtime changes |
 
 Always finish with:
 
@@ -317,7 +358,7 @@ Before editing, classify documentation impact per [`agent/rules/documentation-in
 |---|---|
 | Vendor version bump | The affected vendor `README.md`; governing ADR links; PR checklist evidence |
 | Pi runtime bump | `agent/vendor/pi/README.md`; possible `agent/extensions/subagent/README.md`; pi-agent-expert references if subagent provenance changes |
-| Subagent extension re-pair | `agent/extensions/subagent/README.md`; `agent/extensions/README.md`; `agent/AGENTS.md` repo layout; pi-agent-expert wrapper, skill, and references |
+| Subagent extension re-pair | `agent/extensions/subagent/README.md`; `agent/extensions/subagent/PATCH_MANIFEST.json` (regenerate); `agent/extensions/README.md`; `agent/AGENTS.md` repo layout; pi-agent-expert wrapper, skill, and references |
 | New slash workflow or prompt changes | `agent/AGENTS.md` workflow catalog; `README.md` workflow table |
 | Strategy, trust-posture, install-policy, or architecture change | New ADR or successor ADR; `README.md` Architecture Decisions list |
 

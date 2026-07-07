@@ -21,7 +21,7 @@ After completing the work for an individual task (GitHub Issue or other ticket),
   | An agent wrapper (`agent/agents/<name>.md`) | `agent/AGENTS.md` agent catalog (regenerate via `scripts/regen-agent-catalog.sh`); `README.md` if the agent is mentioned |
   | A prompt template (`agent/prompts/<name>.md`) | `agent/AGENTS.md` workflows section (if listed); `README.md` workflow table |
   | A rule (`agent/rules/<name>.md`) | `agent/AGENTS.md` if the rule is inlined or referenced from there |
-  | A vendored extension (`agent/extensions/<name>/`) | Note the source-pi version in the commit message |
+  | A vendored extension (`agent/extensions/<name>/`) | Note the source-pi version in the commit message. For `agent/extensions/subagent/` specifically: any change to `index.ts` or `agents.ts` MUST be paired with a `PATCH_MANIFEST.json` regeneration (`scripts/validate-subagent-drift.sh --regenerate`) AND a `README.md` patch-table update in the same commit — the drift check (pi_config #582) will fail `scripts/validate.sh` otherwise |
   | An extension TypeScript file (`agent/extensions/**/*.ts`) | Run `./scripts/typecheck-extensions.sh` and `./scripts/lint-extensions.sh` (or umbrella `./scripts/validate.sh`); zero errors required. New extension dir requires its own `tsconfig.json` per ADR-0021 |
   | The eslint flat config (`eslint.config.js`) or extension-deps versions (`scripts/lib/extension-deps.sh`) | `agent/rules/extension-type-check-and-lint.md` if the rule contract changes |
   | An ADR (`adrs/<n>-<name>.md`) | `README.md` Architecture Decisions list |
