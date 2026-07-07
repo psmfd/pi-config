@@ -9,6 +9,16 @@
 # ADR-0050) — the same single-source-of-truth pattern as check-mirror-alerts.sh —
 # so this gate can never drift from the set of live mirrors.
 #
+# Extended surfaces (#566, coupled to the pi runtime pin at
+# `agent/vendor/pi/VERSION` rather than to a mirror release — the
+# "always match runtime" policy):
+#
+#   scripts/lib/extension-deps.sh  EXTENSION_DEPS_PI_AGENT_VERSION
+#   agent/settings.example.json    lastChangelogVersion
+#
+# These use bare X.Y.Z (no `v` prefix); the mirror pins use vX.Y.Z. See
+# `runtime_semver` and `fix_semver_pin` below for the parallel helpers.
+#
 # Usage:
 #   scripts/check-ext-ref-drift.sh [--fix] [--target NAME] [--verbose] [-h|--help]
 #
@@ -18,7 +28,9 @@
 #               and install.sh's PER-EXTENSION pins (name@vX.Y.Z, ADR-0075) are
 #               auto-fixable independently — each mirror carries its own pin, so
 #               the old shared-EXT_REF divergence refusal (#492) no longer applies.
-#   --target N  Limit the check to one overlay target name from the manifest.
+#   --target N  Limit the check to one overlay target name from the manifest,
+#               OR one of the extended-surface names: `extension-deps` /
+#               `settings-example`.
 #   --verbose   Print per-repo detail.
 #   -h|--help   Print this help and exit.
 #
@@ -110,6 +122,54 @@ fix_pin() {
 # it to real entries (mirrors validate.sh's array-bounded parser).
 install_pin_of() {
   grep -oE "^[[:space:]]+${1}@v[0-9]+\.[0-9]+\.[0-9]+" "$INSTALL_FILE" | head -n1 | sed -E 's/^.*@//'
+}
+
+# runtime_semver: the pi runtime pin, stripped to bare X.Y.Z for comparison
+# with the extended-surface pins below (which are bare semver, not vX.Y.Z).
+# `agent/vendor/pi/VERSION` shape is `vX.Y.Z-psmfd.N`; strip the leading `v`
+# and any `-suffix` (psmfd or upstream-rollback), then anchor-validate. Empty
+# output = unresolvable (missing file or malformed); callers WARN and skip.
+runtime_semver() {
+  local v
+  [ -f "$REPO_DIR/agent/vendor/pi/VERSION" ] || { printf ''; return 1; }
+  v="$(head -n1 "$REPO_DIR/agent/vendor/pi/VERSION" | tr -d '[:space:]')"
+  v="${v#v}"; v="${v%%-*}"
+  [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf ''; return 1; }
+  printf '%s' "$v"
+}
+
+# fix_extdeps_pin <new>: rewrite EXTENSION_DEPS_PI_AGENT_VERSION's default in
+# scripts/lib/extension-deps.sh (bare X.Y.Z inside `${VAR:-X.Y.Z}`). Same
+# command-injection hardening as fix_pin: anchored semver check on $new,
+# anchored sed against the specific `${VAR:-...}` shape, tempfile + `cat >`.
+fix_extdeps_pin() {
+  local new="$1" tmp
+  if ! [[ "$new" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    err fix "extension-deps.sh: refusing to write a non-X.Y.Z value: $new"; return 1
+  fi
+  tmp="$(mktemp "${EXTDEPS_FILE}.XXXXXX")"
+  if sed -E "s#^(EXTENSION_DEPS_PI_AGENT_VERSION=\"\\\$\{EXTENSION_DEPS_PI_AGENT_VERSION:-)[0-9]+\.[0-9]+\.[0-9]+(\}\")#\1${new}\2#" \
+    "$EXTDEPS_FILE" > "$tmp"; then
+    cat "$tmp" > "$EXTDEPS_FILE"; rm -f "$tmp"; return 0
+  fi
+  rm -f "$tmp"; err fix "extension-deps.sh: sed rewrite failed"; return 1
+}
+
+# fix_settings_changelog_pin <new>: rewrite lastChangelogVersion in
+# agent/settings.example.json. JSON is a subset of a line-oriented sed target
+# here (the whole "key": "X.Y.Z", pair lives on a single line by convention);
+# we anchor on the key name so no other X.Y.Z string in the file is affected.
+fix_settings_changelog_pin() {
+  local new="$1" tmp
+  if ! [[ "$new" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    err fix "settings.example.json: refusing to write a non-X.Y.Z value: $new"; return 1
+  fi
+  tmp="$(mktemp "${SETTINGS_FILE}.XXXXXX")"
+  if sed -E "s#(\"lastChangelogVersion\"[[:space:]]*:[[:space:]]*\")[0-9]+\.[0-9]+\.[0-9]+(\")#\1${new}\2#" \
+    "$SETTINGS_FILE" > "$tmp"; then
+    cat "$tmp" > "$SETTINGS_FILE"; rm -f "$tmp"; return 0
+  fi
+  rm -f "$tmp"; err fix "settings.example.json: sed rewrite failed"; return 1
 }
 
 # fix_install_pin <name> <new>: rewrite the <name>@vX.Y.Z pin in install.sh,
@@ -209,6 +269,61 @@ else
     fi
   done < <(yq -r '.targets[] | select(.mode=="overlay") | .name' "$MANIFEST")
 fi
+
+# --- Runtime-coupled surfaces (#566) ------------------------------------------
+# Pins here track `agent/vendor/pi/VERSION` (the "always match runtime" policy),
+# NOT a producer mirror release. The runtime pin is the source of truth; a
+# runtime bump should be followed by a bump of each surface here in the same or
+# a companion PR, and this workflow's belt/suspenders now catches the miss.
+#
+# Bare X.Y.Z (no `v` prefix) is the on-disk shape for both surfaces; ver_gt
+# strips `v` automatically so mixed-shape compares work.
+RUNTIME_PIN="$(runtime_semver)" || RUNTIME_PIN=""
+if [ -z "$RUNTIME_PIN" ]; then
+  warn discover "agent/vendor/pi/VERSION missing or malformed — skipping runtime-coupled surface checks"
+fi
+
+# Parse regex per surface. Anchored on the specific `${VAR:-...}` shape / the
+# specific JSON key name; drift on any other X.Y.Z-shaped string in these files
+# will never trigger, nor be rewritten.
+EXTDEPS_FILE="$REPO_DIR/scripts/lib/extension-deps.sh"
+EXTDEPS_PARSE_RE='^EXTENSION_DEPS_PI_AGENT_VERSION="\$\{EXTENSION_DEPS_PI_AGENT_VERSION:-([0-9]+\.[0-9]+\.[0-9]+)\}"'
+SETTINGS_FILE="$REPO_DIR/agent/settings.example.json"
+SETTINGS_PARSE_RE='"lastChangelogVersion":[[:space:]]*"([0-9]+\.[0-9]+\.[0-9]+)"'
+
+# check_runtime_coupled <label> <target-filter-name> <file> <parse-regex> <fix-fn>:
+# common flow. Reports OK/WARN/ERROR, honours --target, applies --fix via the
+# per-surface rewriter, and NEVER downgrades an ahead-of-runtime pin (surfaced
+# as WARN + drift_unresolved, mirroring the mirror-ahead-of-latest path).
+check_runtime_coupled() {
+  local label="$1" filter="$2" file="$3" parse_re="$4" fixer="$5" pin
+  [ -n "$TARGET" ] && [ "$TARGET" != "$filter" ] && return 0
+  [ -z "$RUNTIME_PIN" ] && return 0
+  if [ ! -f "$file" ]; then
+    err drift "$label: file not found: $file"; return 0
+  fi
+  pin="$(sed -nE "s#.*${parse_re}.*#\1#p" "$file" | head -n1)"
+  if [ -z "$pin" ]; then
+    err drift "$label: could not parse pin from $(basename "$file")"; return 0
+  fi
+  if [ "$pin" = "$RUNTIME_PIN" ]; then
+    detail "$label: $(basename "$file") pin $pin matches runtime $RUNTIME_PIN"
+  elif ver_gt "$RUNTIME_PIN" "$pin"; then
+    drift_found=1
+    warn drift "$label: $(basename "$file") pinned $pin, runtime is $RUNTIME_PIN"
+    if [ "$FIX" = 1 ] && "$fixer" "$RUNTIME_PIN"; then
+      ok fix "$label: $(basename "$file") -> $RUNTIME_PIN"
+    else
+      drift_unresolved=1
+    fi
+  else
+    drift_unresolved=1
+    warn drift "$label: $(basename "$file") pinned $pin is AHEAD of runtime $RUNTIME_PIN (bump runtime, or reset pin)"
+  fi
+}
+
+check_runtime_coupled "extension-deps"   "extension-deps"    "$EXTDEPS_FILE"  "$EXTDEPS_PARSE_RE"  fix_extdeps_pin
+check_runtime_coupled "settings-example" "settings-example" "$SETTINGS_FILE" "$SETTINGS_PARSE_RE" fix_settings_changelog_pin
 
 echo "=================================="
 if [ "$errors" -gt 0 ]; then

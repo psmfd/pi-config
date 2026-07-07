@@ -83,3 +83,25 @@ drift surfaces via the issue, not an auto-bump.
   (install-expertise.sh is currently current).
 - **Trade-off:** up to one week of staleness between a mirror release and the issue —
   acceptable, and shortenable later with the optional dispatch fast-path.
+
+### Load-bearing GitHub Actions permission (#569, 2026-07-07)
+
+The workflow's final `gh pr create` step depends on the
+`can_approve_pull_request_reviews` toggle being **true** at all three GitHub
+tiers that gate it: **enterprise → organization → repository** (Settings →
+Actions → General → Workflow permissions → "Allow GitHub Actions to create and
+approve pull requests"). When any tier is off, the workflow silently succeeds
+the `check-ext-ref-drift.sh --fix` + `git push` steps and refreshes the
+`pin-drift` issue, but the PR-open step fails with a `409 Conflict` and the
+bump branch sits pushed with no PR opened — an easy false-healthy state.
+
+This was the actual state at ADR-adoption (spotted 2026-07-07 in #569 while
+manually dispatching the workflow for #565/#566). All three tiers were flipped
+on the same day and the repo-level toggle was verified via
+`gh api /repos/psmfd/pi-config/actions/permissions/workflow`.
+
+A future permissions audit that re-tightens Actions defaults must preserve
+this toggle or replace the delivery mechanism with the Path 2 fallback
+documented in #569 (workflow emits a pre-filled PR-create URL as an issue
+comment; human clicks once). This is called out in the workflow's header
+comment as well so a reader of the YAML alone sees the dependency.

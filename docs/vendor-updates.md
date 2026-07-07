@@ -15,6 +15,8 @@ This guide is the canonical maintainer runbook for checking, bumping, validating
 | ShellCheck | `agent/vendor/shellcheck/` | Release asset version and checksum metadata | [ADR-0011](../adrs/0011-toolchain-install-strategy.md) |
 | Gitleaks | `agent/vendor/gitleaks/` | Release asset version and checksum metadata | [ADR-0037](../adrs/0037-secret-scanner-tooling-strategy.md) |
 | Subagent extension | `agent/extensions/subagent/` | Vendored source snapshot with local patch table | [ADR-0001](../adrs/0001-subagent-orchestration-substrate.md) |
+| Extension SDK pin | `scripts/lib/extension-deps.sh` | `EXTENSION_DEPS_PI_AGENT_VERSION` — the `@earendil-works/pi-*` pin used by `typecheck-extensions.sh` / `lint-extensions.sh`. **Runtime-coupled**: policy is `EXTENSION_DEPS_PI_AGENT_VERSION` == `agent/vendor/pi/VERSION` (stripped to X.Y.Z). Automated by `pin-drift-check.yml` (#566). | [ADR-0021](../adrs/0021-extension-type-checking-and-linting.md), [ADR-0069](../adrs/0069-ext-ref-pin-drift-automation.md) |
+| Changelog toast baseline | `agent/settings.example.json` | `lastChangelogVersion` — the version pi's changelog-toast compares against on session start. **Runtime-coupled** the same way. Automated by `pin-drift-check.yml` (#566). | [ADR-0069](../adrs/0069-ext-ref-pin-drift-automation.md) |
 
 Do **not** treat archived `docs/archive/smolvm/` material as a live vendored surface.
 
@@ -87,6 +89,15 @@ gh release view "$NEW_TAG" --repo earendil-works/pi --json assets \
 ```
 
 Also consider whether `agent/extensions/subagent/` should re-pair to the new pi source snapshot. A runtime-pin bump does not automatically require a subagent-extension bump, but a widening version gap should be audited.
+
+The two **runtime-coupled surfaces** (`scripts/lib/extension-deps.sh` and `agent/settings.example.json`) will be picked up by `pin-drift-check.yml`'s next run — which fires on `sync-mirrors` completion (belt), or the Monday cron (suspenders), whichever comes first. The workflow opens a bump PR against `dev` that advances both pins to the new runtime pin (stripped to bare `X.Y.Z`). You can also fix locally in the same runtime-bump PR by running:
+
+```sh
+scripts/check-ext-ref-drift.sh --fix --target extension-deps
+scripts/check-ext-ref-drift.sh --fix --target settings-example
+```
+
+Both `--fix` operations are surgical (single-line rewrite each, anchored on the specific `${VAR:-...}` / JSON-key shape).
 
 ### nvm: `agent/vendor/nvm/`
 

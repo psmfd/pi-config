@@ -65,13 +65,13 @@ EXT_MIRRORS=(
   pi-artifact-handoff@v0.1.1
   pi-web-fetch@v0.1.1
   pi-cache-meter@v0.1.1
-  pi-token-meter@v0.1.0
+  pi-token-meter@v0.2.0
   pi-gh-identity-guard@v0.1.1
   pi-compaction-optimizer@v0.1.1
   pi-expertise-client@v0.2.0
   pi-indexing@v0.1.1
   pi-context-manager@v0.1.2
-  pi-auto-router@v0.1.2
+  pi-auto-router@v0.3.0
 )
 
 DIR="${HOME}/projects/pi-config"
