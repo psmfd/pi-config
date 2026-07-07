@@ -1109,6 +1109,27 @@ else
   err "expertise-client: scripts/test-expertise-client.sh missing or not executable; required check skipped"
 fi
 
+# --- 9b-0-bis. expertise-indexer test suite (#598, epic #595) --------------
+info "Running expertise-indexer test suite"
+if [ -x scripts/test-expertise-indexer.sh ]; then
+  if ei_output="$(scripts/test-expertise-indexer.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$ei_output"
+    fi
+    ok "expertise-indexer: tests passed"
+  else
+    ei_status=$?
+    printf '%s\n' "$ei_output" >&2
+    if [ "$ei_status" -eq 2 ]; then
+      err "expertise-indexer: test environment unavailable (node/npx); required check skipped"
+    else
+      err "expertise-indexer: test suite failed (exit $ei_status)"
+    fi
+  fi
+else
+  err "expertise-indexer: scripts/test-expertise-indexer.sh missing or not executable; required check skipped"
+fi
+
 # --- 9b-bis. gh-identity-guard test suite (ADR-0022) -----------------------
 info "Running gh-identity-guard test suite"
 if [ -x scripts/test-gh-identity-guard.sh ]; then

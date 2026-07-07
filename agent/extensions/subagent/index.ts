@@ -32,6 +32,7 @@ import {
 	sanitizeFallbackModelId,
 	type CopilotFallback,
 } from "./model-pin.ts";
+import { buildSanitizedEnv } from "./sanitize-env.ts";
 
 const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
@@ -432,10 +433,18 @@ async function runSingleAgent(
 
 		const exitCode = await new Promise<number>((resolve) => {
 			const invocation = getPiInvocation(args);
+			// LOCAL PATCH #5 (pi_config issue #596, epic #595): sanitize the child
+			// env so `PI_EXPERTISE_ALLOW_LOCALDEV_WRITE` never reaches a spawned
+			// subagent — enforces the ADR-0028 "orchestrator-only
+			// expertise_create" trust boundary structurally rather than by
+			// convention. Default mode is passthrough-with-explicit-denies to
+			// avoid disturbing existing wrappers; per-wrapper strict-mode rollout
+			// tracked in pi_config issue #606.
 			const proc = spawn(invocation.command, invocation.args, {
 				cwd: cwd ?? defaultCwd,
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
+				env: buildSanitizedEnv(process.env),
 			});
 			let buffer = "";
 
