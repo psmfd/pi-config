@@ -4,9 +4,9 @@
   "upstreamRelativePath": "examples/extensions/subagent",
   "trackedFiles": {
     "index.ts": {
-      "diffSha256": "a9a82d9d352326288759fcecc8e7bca9297cbac00306a6c63b4c51a6fc29ccb7",
-      "hunks": 15,
-      "netLines": 173
+      "diffSha256": "e7e8f36f33ca6f7cb52a632e6e2b6449b7e2cc50dfd6d760359418efd53481ee",
+      "hunks": 23,
+      "netLines": 243
     },
     "agents.ts": {
       "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -14,6 +14,6 @@
       "netLines": 0
     }
   },
-  "generatedAt": "2026-07-07T13:03:49Z",
+  "generatedAt": "2026-07-07T18:08:03Z",
   "note": "See agent/extensions/subagent/README.md for the patch table. Regenerate with: scripts/validate-subagent-drift.sh --regenerate"
 }

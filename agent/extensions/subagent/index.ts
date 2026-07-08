@@ -26,6 +26,12 @@ import { clearCopilotCache, resolveCopilotFilter } from "../shared/copilot-disco
 import { clearOmlxCache, resolveOmlxFilter } from "../shared/omlx-discovery.ts";
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.ts";
 import {
+	collectCoalescedExpertise,
+	buildInjectedTaskArg,
+	extractExpertiseFromChildOutput,
+	type ExtractedExpertise,
+} from "./expertise-wiring.ts";
+import {
 	filterDownOmlxIds,
 	getAvailableModelIds,
 	resolveModelPin,
@@ -164,6 +170,13 @@ interface SingleResult {
 	step?: number;
 	/** Set when a frontmatter model pin was omitted by the spawn-time gate (#519). */
 	pinNote?: string;
+	/**
+	 * LOCAL PATCH #6 (pi_config #611, epic #595): Form B expertise
+	 * candidates extracted from this child's assistant output. Absent
+	 * when the child produced no `EXPERTISE_CANDIDATES` blocks (the
+	 * common case). Coalesced across children in the mode finalizer.
+	 */
+	extractedExpertisePayloads?: ExtractedExpertise;
 }
 
 interface SubagentDetails {
@@ -171,6 +184,16 @@ interface SubagentDetails {
 	agentScope: AgentScope;
 	projectAgentsDir: string | null;
 	results: SingleResult[];
+	/**
+	 * LOCAL PATCH #6 (pi_config #611): coalesced expertise candidates
+	 * across all children in this fanout. Absent when no child
+	 * produced any candidates. Downstream approval (#605) reads this
+	 * envelope to drive the human-in-the-loop `expertise_create` flow;
+	 * per the SECURITY invariant on `CoalescedGroup.candidate`, the
+	 * approval UI MUST enforce per-proposer body inspection when a
+	 * group carries `bodyHashesByProposer` (variantCount > 1).
+	 */
+	expertiseCandidates?: ReturnType<typeof collectCoalescedExpertise>;
 }
 
 function getFinalOutput(messages: Message[]): string {
@@ -362,6 +385,7 @@ async function runSingleAgent(
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
+	expertiseInjection?: string,
 ): Promise<SingleResult> {
 	const agent = agents.find((a) => a.name === agentName);
 
@@ -428,7 +452,11 @@ async function runSingleAgent(
 			args.push("--append-system-prompt", tmpPromptPath);
 		}
 
-		args.push(`Task: ${task}`);
+		// LOCAL PATCH #6 (pi_config #611, epic #595): prepend the optional
+		// canonical-expertise block to the user-role Task: framing. Kept
+		// on the user-role side per no-mcp-servers.md; never injected via
+		// --append-system-prompt.
+		args.push(buildInjectedTaskArg(task, expertiseInjection));
 		let wasAborted = false;
 
 		const exitCode = await new Promise<number>((resolve) => {
@@ -537,6 +565,11 @@ async function runSingleAgent(
 
 		currentResult.exitCode = exitCode;
 		if (wasAborted) throw new Error("Subagent was aborted");
+		// LOCAL PATCH #6 (pi_config #611): extract Form B EXPERTISE_CANDIDATES
+		// payloads from the child's final assistant output. Absent field when
+		// no blocks were emitted (the common case).
+		const extracted = extractExpertiseFromChildOutput(getFinalOutput(currentResult.messages));
+		if (extracted) currentResult.extractedExpertisePayloads = extracted;
 		return currentResult;
 	} finally {
 		if (tmpPromptPath)
@@ -558,12 +591,31 @@ const TaskItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
 	task: Type.String({ description: "Task to delegate to the agent" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
+	// LOCAL PATCH #6 (pi_config #611, epic #595): optional canonical-fanout
+	// expertise injection. Orchestrator builds the block via
+	// `renderCanonicalResultsBlock` from the expertise-indexer collector
+	// primitives (#599) and passes it here; the extension prepends it to
+	// the child's `Task:` framing in user-role (never --append-system-prompt,
+	// per no-mcp-servers.md). Missing/empty string = normal fanout.
+	expertiseInjection: Type.Optional(
+		Type.String({
+			description:
+				"Optional canonical-expertise block (pre-built via renderCanonicalResultsBlock) to prepend to the child's task. See ADR-0028 and agent/rules/expertise-canonical-fanout.md.",
+		}),
+	),
 });
 
 const ChainItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
 	task: Type.String({ description: "Task with optional {previous} placeholder for prior output" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
+	/** See TaskItem.expertiseInjection. */
+	expertiseInjection: Type.Optional(
+		Type.String({
+			description:
+				"Optional canonical-expertise block (pre-built via renderCanonicalResultsBlock) to prepend to the step's task.",
+		}),
+	),
 });
 
 const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
@@ -581,6 +633,13 @@ const SubagentParams = Type.Object({
 		Type.Boolean({ description: "Prompt before running project-local agents. Default: true.", default: true }),
 	),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
+	/** See TaskItem.expertiseInjection. Applies to single-mode invocations. */
+	expertiseInjection: Type.Optional(
+		Type.String({
+			description:
+				"Optional canonical-expertise block (pre-built via renderCanonicalResultsBlock) to prepend to the task (single mode).",
+		}),
+	),
 });
 
 export default function (pi: ExtensionAPI) {
@@ -637,12 +696,20 @@ export default function (pi: ExtensionAPI) {
 
 			const makeDetails =
 				(mode: "single" | "parallel" | "chain") =>
-				(results: SingleResult[]): SubagentDetails => ({
-					mode,
-					agentScope,
-					projectAgentsDir: discovery.projectAgentsDir,
-					results,
-				});
+				(results: SingleResult[]): SubagentDetails => {
+					// LOCAL PATCH #6 (pi_config #611): coalesce Form B expertise
+					// candidates across all children. Absent field when none were
+					// extracted (the common case) so existing consumers/tests that
+					// assert on the details shape are unaffected.
+					const expertiseCandidates = collectCoalescedExpertise(results);
+					return {
+						mode,
+						agentScope,
+						projectAgentsDir: discovery.projectAgentsDir,
+						results,
+						...(expertiseCandidates ? { expertiseCandidates } : {}),
+					};
+				};
 
 			if (modeCount !== 1) {
 				const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
@@ -718,6 +785,7 @@ export default function (pi: ExtensionAPI) {
 						signal,
 						chainUpdate,
 						makeDetails("chain"),
+						step.expertiseInjection,
 					);
 					results.push(result);
 
@@ -804,6 +872,7 @@ export default function (pi: ExtensionAPI) {
 							}
 						},
 						makeDetails("parallel"),
+						t.expertiseInjection,
 					);
 					allResults[index] = result;
 					emitParallelUpdate();
@@ -844,6 +913,7 @@ export default function (pi: ExtensionAPI) {
 					signal,
 					onUpdate,
 					makeDetails("single"),
+					params.expertiseInjection,
 				);
 				const isError = isFailedResult(result);
 				if (isError) {

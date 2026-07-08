@@ -94,6 +94,14 @@ Orchestrator-side building blocks for the canonical-fanout methodology described
 - `extractCandidatePayloads` performs no file I/O — Form A returns a validated path; the caller reads inside its own boundary with `realpath` + O_NOFOLLOW-equivalent checks.
 - `coalesceCandidates` runs every candidate through the #608 universal-first-scan invariant, so no code path here can echo a secret substring into a rejection surface.
 
+#### Consumers
+
+The collector primitives are wired into the vendored `subagent` extension's runtime as of #611 (LOCAL PATCH #6, "Option A"). The sibling module `agent/extensions/subagent/expertise-wiring.ts`:
+
+- prepends the orchestrator-supplied canonical block to each child's user-role `Task:` framing (via the `subagent` tool's `expertiseInjection` param) — the extension does **not** call `expertise_search` itself (autonomous search deferred to #613);
+- extracts Form B `EXPERTISE_CANDIDATES` payloads from each child return via `extractCandidatePayloads`, coalesces them via `coalesceCandidates` with `proposedBy` set to the orchestrator-attributed `SingleResult.agent`, and surfaces the result on `SubagentDetails.expertiseCandidates` (structured data, never merged into the tool-result text);
+- detects but does **not** open Form A (`REPORT_FILE`) payloads — a hardened `O_NOFOLLOW`+`fstat` reader is deferred (no catalog agent produces Form A today), and a one-line stderr warning fires if one is ever seen.
+
 ## Secret-scan reuse
 
 `writeCanonicalBlob` and `acceptCandidates` both import from `../expertise-client/lib/secret-scan.ts` (`scanRawString`). This deliberately **does not** create a fourth lockstep site for the `SECRET_PATTERNS` set (see `scripts/validate.sh` §6b-bis, ADR-0071). Adding `scanRawString` as a sibling export in `expertise-client` keeps the pattern set single-sourced within a lockstep target that `validate.sh` already verifies.

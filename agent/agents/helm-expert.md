@@ -2,7 +2,6 @@
 name: helm-expert
 description: Helm specialist — Helm 3 chart authoring, values merge semantics, values layering, hooks, template debugging, chart structure, dependency management, release management, and helm diff validation. Read-only advisor with constrained bash for read-only helm operations. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch, bash
-model: omlx/coding-workhorse
 mode: read-only
 ---
 

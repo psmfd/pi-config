@@ -67,7 +67,7 @@ set -euo pipefail
 API_REPO="psmfd/agent-expertise-api"
 API_URL="https://github.com/${API_REPO}.git"
 EXT_MIRROR="psmfd/pi-expertise-client"
-EXT_REF="v0.2.0"
+EXT_REF="v0.3.0"
 
 DIR=""
 API_DIR="${HOME}/projects/agent-expertise-api"

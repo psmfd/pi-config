@@ -150,6 +150,18 @@ The future implementation PR must include:
 - Remote/team support will require a new decision or ADR amendment covering OIDC, tenant/auth semantics, threat model updates, and non-loopback network policy.
 - Update/delete/archive operations require a later capability split and review.
 
+## Consumption Wiring Milestones
+
+The original ADR is planning-only for the *client*. Epic #595 layers a deterministic, hardened *consumption* pipeline on top of the client without amending the core trust boundary (orchestrator-only `expertise_create`, loopback-only, advisory/untrusted results, never system context). Milestones landed as pattern-following additions (no superseding ADR required):
+
+- **#596** — spawn-env sanitizer strips `PI_EXPERTISE_ALLOW_LOCALDEV_WRITE` from every subagent child (subagent LOCAL PATCH #5), enforcing orchestrator-only create structurally.
+- **#598** — canonicalizer + cache (`canonicalize.ts`): SHA-256 of NFKC-normalized deterministic JSON; gzip cache at `${PI_CODING_AGENT_DIR:-$HOME/.pi}/expertise_cache/`.
+- **#608** — candidate gate (`candidate-gate.ts`): `acceptCandidates` with a universal-first secret scan and a closed set of stable rejection reason codes.
+- **#599** — collector primitives (`collector.ts`): `buildCanonicalQuery`, `renderCanonicalResultsBlock`/`parseCanonicalResultsBlock`, `extractCandidatePayloads`, `coalesceCandidates`. Byte-locked injection + fingerprint shapes.
+- **#611** — "Option A" runtime wiring (subagent LOCAL PATCH #6, `expertise-wiring.ts`): the extension prepends the orchestrator-supplied canonical block to each child's user-role `Task:` framing (via the `expertiseInjection` param) and auto-extracts + coalesces returned `EXPERTISE_CANDIDATES` onto `SubagentDetails.expertiseCandidates`. `proposedBy` attribution is sourced from the orchestrator (`SingleResult.agent`), never a candidate-payload field. The extension does **not** call `expertise_search` itself — the canonical pre-fetch and per-candidate dedupe searches stay orchestrator-driven to keep the vendored extension's runtime posture minimal.
+
+Deferred: autonomous in-extension search + 429 backoff (#613); hardened Form A `REPORT_FILE` reader (no catalog agent produces Form A today); out-of-band human-approval loop (#605); CI expertise-audit (#601). The consumption rule is `agent/rules/expertise-canonical-fanout.md`.
+
 ## Verification
 
 This ADR is planning-only. Implementation verification is deferred to the future #149 implementation PR. At minimum, that PR must pass:

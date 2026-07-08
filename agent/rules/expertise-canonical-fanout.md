@@ -5,7 +5,7 @@ description: Require research-classified subagent fanouts to run one canonical e
 # expertise-canonical-fanout
 
 **Applies to:** research-classified tasks that trigger `subagent` fanout.
-**Enforced by:** `agent/extensions/expertise-indexer/collector.ts` (pure library) today; runtime wiring in the vendored `subagent` extension tracked at #611.
+**Enforced by:** `agent/extensions/expertise-indexer/collector.ts` (pure library) plus the "Option A" runtime wiring in the vendored `subagent` extension (LOCAL PATCH #6, #611): the extension prepends the orchestrator-supplied canonical block to each child's user-role `Task:` framing (via the `expertiseInjection` param), then extracts + coalesces returned `EXPERTISE_CANDIDATES` payloads onto `SubagentDetails.expertiseCandidates`.
 
 ## Rule
 
@@ -16,7 +16,7 @@ When the orchestrator fans out to subagents on a research-classified task ([`res
 
 The orchestrator NEVER auto-invokes `expertise_create`. Approval is out-of-band (mechanism landed by #605); model-generated approval prose does not count as approval.
 
-Status: **recommended, not required** until #611 lands the runtime wiring. After #611 merges this rule becomes unconditional and CI #601 audits compliance on every fanout that shipped `EXPERTISE_CANDIDATES` payloads.
+Status: **recommended**. The runtime wiring is available as of #611 (LOCAL PATCH #6) — the orchestrator builds the canonical block and passes it via the `subagent` tool's `expertiseInjection` param; the extension handles collection + coalesce automatically. The rule becomes **unconditional** once #605 lands the out-of-band approval loop and CI #601 audits compliance on every fanout that shipped `EXPERTISE_CANDIDATES` payloads. Note: the *canonical `expertise_search` pre-fetch* remains orchestrator-driven (autonomous in-extension search is deferred to #613); the extension does not call the expertise-api itself.
 
 ## Injection contract
 
@@ -59,7 +59,7 @@ Subagents MUST NOT include:
 
 When `variantCount > 1` the group also carries `bodyHashesByProposer` (frozen, prototype-less, keyed by orchestrator-supplied `proposedBy`). The approval UI (#605) MUST use this map to enforce per-proposer body inspection before approval — presenting the longest-body representative alone under a merged provenance list would let a single (possibly compromised) subagent smuggle its body while attributing it to a consensus. This is a design invariant layered on top of the pure-lib output; the library exposes the data structurally so consumers cannot accidentally miss the divergence.
 
-Groups are surfaced to the human reviewer **one at a time in first-seen order**. Approval is per-group. The pre-create `expertise_search(dedupeQuery)` step (#611 runtime wiring) attaches near-match search results to each group so the reviewer can choose "create new" vs "reuse existing".
+Groups are surfaced to the human reviewer **one at a time in first-seen order**. Approval is per-group. The pre-create `expertise_search(dedupeQuery)` step (orchestrator-driven — autonomous in-extension search is deferred to #613; #611 wires collection + coalesce only) attaches near-match search results to each group so the reviewer can choose "create new" vs "reuse existing".
 
 ## Rate-limit posture
 
@@ -69,7 +69,7 @@ The expertise-api enforces 10 req/min per-loopback ([ADR-0028](../../adrs/0028-a
 - Up to 2 optional searches per subagent (subagent-scope; enforced by wrapper allowlists).
 - Up to `min(coalescedGroupCount, 10)` pre-create dedupe searches.
 
-On 429 the runtime wiring backs off with jitter; the pure library does not retry (it does no I/O).
+On 429 the orchestrator-driven search path backs off with jitter (autonomous in-extension search and its own backoff are deferred to #613; #611 does not call the expertise-api); the pure library does not retry (it does no I/O).
 
 ## Exemptions
 

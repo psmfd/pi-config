@@ -20,5 +20,12 @@
 		"noImplicitReturns": true,
 		"exactOptionalPropertyTypes": false
 	},
-	"include": ["index.ts", "agents.ts", "model-pin.ts", "test/**/*.ts"]
+	"include": [
+		"index.ts",
+		"agents.ts",
+		"model-pin.ts",
+		"sanitize-env.ts",
+		"expertise-wiring.ts",
+		"test/**/*.ts"
+	]
 }
