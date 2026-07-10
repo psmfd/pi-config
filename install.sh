@@ -22,9 +22,10 @@
 #
 # Flags:
 #   --dir DIR          Clone target (default: ~/projects/pi-config).
-#   --ref REF          Branch or tag to install (default: main). Release-tag
-#                      pinning will replace this default once the mirror cuts
-#                      releases (tracked as a follow-up).
+#   --ref REF          Branch or tag to install. Default: the latest vX.Y.Z
+#                      release tag of the mirror (resolved at runtime). Pass
+#                      --ref main for the bleeding-edge integration branch, or
+#                      --ref vX.Y.Z to pin an exact release (ADR-0086).
 #   --ext-ref REF      Override ALL extension-mirror pins with one ref (forks /
 #                      testing). Default: use the per-extension pins in EXT_MIRRORS.
 #   --skip-extensions  Do not `pi install` the first-party extension mirrors.
@@ -71,11 +72,11 @@ EXT_MIRRORS=(
   pi-expertise-client@v0.3.0
   pi-indexing@v0.1.1
   pi-context-manager@v0.1.2
-  pi-auto-router@v0.5.0
+  pi-auto-router@v0.5.1
 )
 
 DIR="${HOME}/projects/pi-config"
-REF="main"
+REF=""   # empty => resolve the latest release tag after flag parsing (ADR-0086)
 SKIP_EXT=0
 DRY_RUN=0
 OWNER=""; REPO=""; GH_LOGIN=""
@@ -91,6 +92,34 @@ err()  { printf 'ERROR [%s] %s\n' "$1" "$2" >&2; errors=$((errors + 1)); }
 die()  { err "${1:-install}" "${2:-fatal}"; exit "${3:-1}"; }
 # run: execute, or just print under --dry-run.
 run()  { if [ "$DRY_RUN" = "1" ]; then info "[dry-run] $*"; else "$@"; fi; }
+
+# --- SemVer helpers (LOCKSTEP with scripts/lib/semver-classify.sh) ----------
+# install.sh is standalone (sent as a single file), so it cannot source the
+# shared lib; update.sh, which runs from inside the clone, sources it instead.
+# Keep these two definitions in sync with that lib's is_semver/ver_gt.
+is_semver() { printf '%s' "$1" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; }
+# ver_gt <vA> <vB>: return 0 iff A > B (numeric per-field; no `sort -V`, absent/
+# broken on BSD — mis-sorts v0.9.0 vs v0.10.0 lexically).
+ver_gt() {
+  local a="${1#v}" b="${2#v}" rest am an ap bm bn bp
+  am="${a%%.*}"; rest="${a#*.}"; an="${rest%%.*}"; ap="${rest#*.}"
+  bm="${b%%.*}"; rest="${b#*.}"; bn="${rest%%.*}"; bp="${rest#*.}"
+  [ "$am" -ne "$bm" ] && { [ "$am" -gt "$bm" ]; return; }
+  [ "$an" -ne "$bn" ] && { [ "$an" -gt "$bn" ]; return; }
+  [ "$ap" -gt "$bp" ]
+}
+# resolve_latest_tag <remote-url>: print the highest vX.Y.Z tag, or fail (rc 1).
+# Network-only (`git ls-remote`) — no clone, no gh, no auth; `--refs` drops the
+# peeled `^{}` lines.
+resolve_latest_tag() {
+  local url="$1" best="" t
+  while IFS= read -r t; do
+    is_semver "$t" || continue
+    if [ -z "${best}" ] || ver_gt "$t" "${best}"; then best="$t"; fi
+  done < <(git ls-remote --tags --refs "${url}" 'v*' 2>/dev/null | sed -E 's#.*refs/tags/##')
+  [ -n "${best}" ] || return 1
+  printf '%s\n' "${best}"
+}
 
 # --- Flags -----------------------------------------------------------------
 while [ $# -gt 0 ]; do
@@ -109,6 +138,18 @@ while [ $# -gt 0 ]; do
 done
 
 command -v git >/dev/null 2>&1 || die deps "git not found in PATH; install git first" 2
+
+# --- 0. Resolve the default ref to the latest release tag ------------------
+# Default (no --ref): install the latest vX.Y.Z release tag — a coherent,
+# reviewed snapshot whose EXT_MIRRORS pins match the config (ADR-0086). Fail
+# closed if it cannot be resolved rather than silently falling back to `main`.
+if [ -z "${REF}" ]; then
+  REF="$(resolve_latest_tag "${MIRROR_URL}" || true)"
+  if [ -z "${REF}" ]; then
+    die ref "could not resolve the latest release tag of ${MIRROR_REPO} (offline, or no tags?); pass --ref <tag|main> explicitly" 2
+  fi
+  info "Resolved default ref to latest release tag: ${REF}"
+fi
 
 # --- 1. Clone or update the mirror -----------------------------------------
 info "Installing pi_config from ${MIRROR_REPO} (ref: ${REF}) into ${DIR}"

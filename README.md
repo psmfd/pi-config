@@ -57,6 +57,10 @@ bash install.sh                  # or: --dir ~/pi-config to choose the location
 
 This mirror ships **generic config only** — no maintainer personalizations.
 
+By default `install.sh` installs the **latest release tag** (a coherent, reviewed
+snapshot whose extension pins match the config). Pass `--ref main` for the
+bleeding-edge integration branch, or `--ref vX.Y.Z` to pin an exact release.
+
 ### Manual install
 
 ```bash
@@ -69,6 +73,29 @@ sha256-verifies the developer toolchain, installs the pi runtime, seeds config
 from templates, and symlinks `~/.pi` to the clone. See [`setup.sh --help`](setup.sh)
 for the full flag and environment-variable list (skip phases, `sudo` gates, an
 npm-install opt-out, and more).
+
+## Updating
+
+Once installed, update from **inside your clone** with the shipped `update.sh`:
+
+```bash
+cd ~/pi-config        # or wherever you installed it
+./update.sh --check   # report installed vs latest release; changes nothing
+./update.sh           # update to the latest release
+```
+
+`update.sh` resolves the latest release tag, updates the clone, and re-runs the
+installer so the pi runtime and extension pins move together — you don't re-run
+`install.sh` yourself (a saved copy carries stale extension pins). It refuses to
+run if you have uncommitted edits to tracked files (pass `--force` to override);
+your live `agent/settings.json` and `agent/models.json` are never touched.
+
+- **Preview:** `./update.sh --dry-run` prints what it would do.
+- **Roll back / pin:** `./update.sh --ref v1.17.0` moves to a specific release.
+  An explicit `--ref` is what authorizes a downgrade; without it, `update.sh`
+  refuses to move to an older version.
+- **Release notes:** the update prints the GitHub Release URL for the target tag
+  and the commit range since your previous version.
 
 ## First-party extensions
 
