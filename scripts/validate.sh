@@ -375,20 +375,22 @@ else
   fi
 fi
 
-# --- 6b-bis. Secret-pattern lockstep gate (#499, ADR-0071) -----------------
+# --- 6b-bis. Secret-pattern lockstep gate (#499, ADR-0071, ADR-0088) -------
 # The secret-detection pattern set is duplicated in lockstep across three files
-# (ADR-0071: bash hook installs standalone; the two TS extensions are separate
-# modules — no shared source). The copies drifted once unnoticed (#499). This
-# gate asserts every canonical pattern fragment is present, verbatim, in the
-# ACTIVE (non-comment) lines of all three files — comment lines are stripped
-# first so a stale-comment fragment cannot mask a regressed live pattern. The
-# fragments are complete enough to encode each detector's invariant (the JWT
-# fragment carries all three segments + the two literal dots; the bearer
-# fragment carries the `Authorization:` prefix), so narrowing a live pattern
-# fails the gate. Matched as fixed strings (grep -F) so regex metacharacters are
-# literal; none matches its own detection regex, so listing them here is safe.
+# (ADR-0071: the bash hook installs standalone; secrets-guard/index.ts is its own
+# module; the shared TS pattern set was moved to agent/extensions/shared/secret-scan.ts
+# per ADR-0088/#635 so it is single-sourced for both expertise-client and
+# expertise-indexer — the move kept the lockstep-site count at three). The copies
+# drifted once unnoticed (#499). This gate asserts every canonical pattern
+# fragment is present, verbatim, in the ACTIVE (non-comment) lines of all three
+# files — comment lines are stripped first so a stale-comment fragment cannot
+# mask a regressed live pattern. The fragments are complete enough to encode each
+# detector's invariant (the JWT fragment carries all three segments + the two
+# literal dots; the bearer fragment carries the `Authorization:` prefix), so
+# narrowing a live pattern fails the gate. Matched as fixed strings (grep -F) so
+# regex metacharacters are literal; none matches its own detection regex.
 info "Secret-pattern lockstep gate (#499)"
-sp_files="agent/extensions/secrets-guard/index.ts agent/extensions/expertise-client/lib/secret-scan.ts hooks/secrets-guard.sh"
+sp_files="agent/extensions/secrets-guard/index.ts agent/extensions/shared/secret-scan.ts hooks/secrets-guard.sh"
 sp_fragments=(
   'ENCRYPTED '
   '(AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}'
@@ -415,6 +417,65 @@ for sp_file in $sp_files; do
 done
 if [ "$sp_bad" -eq 0 ]; then
   ok "secret-lockstep: all 3 copies carry the canonical pattern set"
+fi
+
+# --- 6b-quater. Cross-extension shipped-import gate (#635, ADR-0088) --------
+# Generalizes ADR-0065's ../shared/ resolution check into a systemic dev-time
+# gate: an extension must never hard-import a relative path into a DIFFERENT
+# extension that is excluded from the config mirror (and therefore shipped, if
+# at all, as its own standalone overlay mirror — never as a sibling on disk in a
+# distributed install). That is exactly #635: config-mirror-shipped
+# expertise-indexer imported ../expertise-client/… which is excluded. ../shared/
+# imports are governed by inline_stage/verify_inline_imports (ADR-0065) and are
+# explicitly out of scope here. Path resolution is by real cd+pwd (not slug
+# string-match) so same-extension imports (test/ -> ../lib/x.ts, ../foo.ts)
+# never false-positive. Fails at dev-time/pre-merge — strictly earlier than the
+# sync-mirror.sh staged-tree backstop (verify_no_orphan_cross_imports).
+info "Cross-extension shipped-import gate (#635)"
+# Extract the pi-config target's exclude: list, extension basenames only
+# (block-scalar parse style of the 6b-ter gate; no yq).
+xi_excluded="$(awk '
+  /^  - name: pi-config$/ {intgt=1; next}
+  intgt && /^  - name: / {exit}
+  intgt && /^    exclude:/ {inx=1; next}
+  intgt && inx && /^    [a-z]/ {inx=0}
+  intgt && inx && /^      - agent\/extensions\// {
+    sub(/^      - agent\/extensions\//, ""); print
+  }
+' mirror/targets.yml | sort -u)"
+xi_excluded_has() { case "
+$xi_excluded
+" in *"
+$1
+"*) return 0 ;; *) return 1 ;; esac; }
+xi_bad=0
+xi_root="$(pwd)"
+while IFS= read -r xi_file; do
+  [ -n "$xi_file" ] || continue
+  xi_e="${xi_file#agent/extensions/}"; xi_e="${xi_e%%/*}"   # importing extension
+  while IFS= read -r xi_spec; do
+    [ -n "$xi_spec" ] || continue
+    xi_resolved="$(cd "$(dirname "$xi_file")/$(dirname "$xi_spec")" 2>/dev/null && pwd)" || xi_resolved=""
+    case "$xi_resolved" in
+      "$xi_root"/agent/extensions/*)
+        xi_other="${xi_resolved#"$xi_root"/agent/extensions/}"; xi_other="${xi_other%%/*}"
+        [ "$xi_other" = "$xi_e" ] && continue      # same extension (test/->../lib) — legal
+        [ "$xi_other" = "shared" ] && continue     # ADR-0065's domain, not this gate's
+        if xi_excluded_has "$xi_e"; then
+          err "cross-ext-import: $xi_file imports '../$xi_other/…' but $xi_e is a standalone/excluded extension that never co-ships a sibling"
+          xi_bad=1
+        elif xi_excluded_has "$xi_other"; then
+          err "cross-ext-import: $xi_file imports '../$xi_other/…' but $xi_other is excluded from the config mirror (mirror/targets.yml) — unresolvable on a distributed install (#635)"
+          xi_bad=1
+        fi
+        ;;
+      *) : ;;   # resolves outside agent/extensions/ — out of scope
+    esac
+  done < <(grep -oE '(from|import)[[:space:]]+"(\.\./)+[^"]+\.ts"' "$xi_file" \
+             | sed -E 's/^(from|import)[[:space:]]+"//; s/"$//')
+done < <(git ls-files -- agent/extensions | grep -E '\.ts$')
+if [ "$xi_bad" -eq 0 ]; then
+  ok "cross-ext-import: no unresolvable cross-extension imports in shipped extensions"
 fi
 
 # --- 6b-ter. Mirror-target onboarding lockstep gate (#512, ADR-0074) -------

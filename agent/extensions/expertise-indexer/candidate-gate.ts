@@ -32,7 +32,7 @@
  */
 
 import { isValidGitSha } from "./canonicalize.ts";
-import { scanRawString } from "../expertise-client/lib/secret-scan.ts";
+import { scanRawString } from "../shared/secret-scan.ts";
 
 // ---------------------------------------------------------------------------
 // Field allowlist (schema v1, from issue #600).

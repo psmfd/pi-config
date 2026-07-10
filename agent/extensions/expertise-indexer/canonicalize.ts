@@ -58,7 +58,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { gzipSync } from "node:zlib";
 
-import { scanRawString } from "../expertise-client/lib/secret-scan.ts";
+import { scanRawString } from "../shared/secret-scan.ts";
 
 // -----------------------------------------------------------------------------
 // Types

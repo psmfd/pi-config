@@ -5,7 +5,7 @@ date: 2026-07-04
 
 # ADR-0071: reconcile the secret-detection pattern set across all three copies + enforce lockstep
 
-**Status:** Accepted
+**Status:** Accepted (amended by [ADR-0088](0088-cross-extension-import-boundary.md) — the TS lockstep copy moved from `expertise-client/lib/secret-scan.ts` to `shared/secret-scan.ts`; the three-copy lockstep model is unchanged)
 **Date:** 2026-07-04
 **Closes:** #499 (sync the pattern set with agent-framework-claude ADR-095).
 **Related:** [ADR-0037](0037-secret-scanner-tooling-strategy.md) (the complementary gitleaks scanner), agent-framework-claude ADR-095 (the JWT + Authorization-Bearer detectors this adopts) and its ADR-053 (in-session-layer / lockstep-by-duplication precedent).

@@ -104,7 +104,7 @@ The collector primitives are wired into the vendored `subagent` extension's runt
 
 ## Secret-scan reuse
 
-`writeCanonicalBlob` and `acceptCandidates` both import from `../expertise-client/lib/secret-scan.ts` (`scanRawString`). This deliberately **does not** create a fourth lockstep site for the `SECRET_PATTERNS` set (see `scripts/validate.sh` §6b-bis, ADR-0071). Adding `scanRawString` as a sibling export in `expertise-client` keeps the pattern set single-sourced within a lockstep target that `validate.sh` already verifies.
+`writeCanonicalBlob` and `acceptCandidates` both import `scanRawString` from `../shared/secret-scan.ts`. The canonical `SECRET_PATTERNS` set + `scanRawString` live in `shared/` (ADR-0088, #635) so that both this config-mirror-shipped extension and `expertise-client` (a mirror-excluded, standalone extension) can consume them without a cross-mirror import — the earlier `../expertise-client/lib/secret-scan.ts` import broke `pi` on every distributed install, since `expertise-client` never co-ships as a sibling. The move keeps the pattern set single-sourced within a lockstep target (`scripts/validate.sh` §6b-bis, ADR-0071) — it is a relocation, not a fourth copy.
 
 ## Tests
 
