@@ -444,6 +444,16 @@ async function runSingleAgent(
 		}
 	};
 
+	// LOCAL PATCH #7 (pi_config #643): emit once at the moment of invocation so
+	// the resolved child model is visible immediately, not only in the completion
+	// footer. `currentResult.model` is already seeded from the spawn-time pin
+	// (pin.modelArg) above, so a pinned / fallback-resolved child renders its
+	// model in the streaming footer at spawn; an unpinned child (no --model,
+	// inherits the session model) fills the field in from its first message_end
+	// as before. This reads currentResult.messages only — it never mutates the
+	// accumulation getFinalOutput consumes, so the final output is unaffected.
+	emitUpdate();
+
 	try {
 		if (agent.systemPrompt.trim()) {
 			const tmp = await writePromptToTempFile(agent.name, agent.systemPrompt);

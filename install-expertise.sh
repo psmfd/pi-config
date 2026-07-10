@@ -25,7 +25,7 @@
 # trace would print the generated key to stderr. A normal run never echoes it.
 #
 # Per ADR-0067 (this installer). See ADR-0051 (install.sh), ADR-0028
-# (expertise-client), ADR-0033 (indexing).
+# (expertise-client), ADR-0033 (indexing), ADR-0089 (Debian cosign bootstrap).
 #
 # SCOPE: macOS (Homebrew) and Debian/Ubuntu (apt), validated on Debian 13 arm64
 # 2026-07-03 (#485). Other Linux (RHEL) skips the API stand-up with a pointer to
@@ -42,7 +42,7 @@
 #   --api-dir DIR      agent-expertise-api clone target (default: ~/projects/agent-expertise-api).
 #   --api-version V    Release tag to install (default: latest published release).
 #   --bind ADDR:PORT   API bind address (default: 127.0.0.1:8080). Must be loopback.
-#   --ext-ref REF      Ref for the pi-expertise-client mirror (default: v0.2.0).
+#   --ext-ref REF      Ref for the pi-expertise-client mirror (default: the EXT_REF pin below).
 #   --allow-write      Enable local write/create tools (sets PI_EXPERTISE_ALLOW_LOCALDEV_WRITE=1).
 #   --rotate-key       Force a new API key even if one already exists (re-wires .env.local).
 #   --first-index [D]  After install, run `ccc init && ccc index` in D (default: cwd) to
@@ -67,7 +67,7 @@ set -euo pipefail
 API_REPO="psmfd/agent-expertise-api"
 API_URL="https://github.com/${API_REPO}.git"
 EXT_MIRROR="psmfd/pi-expertise-client"
-EXT_REF="v0.3.0"
+EXT_REF="v0.3.1"
 
 DIR=""
 API_DIR="${HOME}/projects/agent-expertise-api"
@@ -95,8 +95,14 @@ run()  { if [ "$DRY_RUN" = "1" ]; then info "[dry-run] $*"; else "$@"; fi; }
 
 # Temp-file registry + cleanup: any interrupted run (Ctrl-C, disk full, crash)
 # must not strand a temp file holding the plaintext generated API key on disk.
+# _tmpdirs holds whole scratch directories (cosign bootstrap downloads).
 _tmpfiles=()
-cleanup() { local f; for f in "${_tmpfiles[@]:-}"; do [ -n "${f}" ] && rm -f -- "${f}" 2>/dev/null || true; done; }
+_tmpdirs=()
+cleanup() {
+  local f
+  for f in "${_tmpfiles[@]:-}"; do [ -n "${f}" ] && rm -f  -- "${f}" 2>/dev/null || true; done
+  for f in "${_tmpdirs[@]:-}";  do [ -n "${f}" ] && rm -rf -- "${f}" 2>/dev/null || true; done
+}
 trap cleanup EXIT INT TERM
 # mktemp in the TARGET directory (so the later mv is an atomic same-filesystem
 # rename) with mode 0600; register it for cleanup. Echoes the temp path.
@@ -104,6 +110,112 @@ mktemp_secure() { local t; t="$(mktemp "${1}.XXXXXX")" || die tmp "mktemp failed
 
 # require the flag's value argument or fail with the documented exit code (2).
 req() { [ "$1" -ge 2 ] || die args "${2} requires a value" 2; }
+
+# --- cosign >= 3 verified bootstrap (Debian/Ubuntu; ADR-0089) ----------------
+# Upstream v1.4.1 moved release signing to the Sigstore bundle format and
+# raised verify-release.sh's floor to cosign >= 3.0.0, but Debian 13's apt
+# archive ships cosign 2.5.0 (trixie-backports has none; 3.x is only in
+# sid/forky), so a fresh upstream --install-deps run self-breaks
+# (agent-expertise-api#402). Bootstrap: "old cosign verifies new cosign" —
+# the apt cosign (trusted via Debian's archive signature chain) keylessly
+# verifies the pinned 3.x release's signed checksums manifest (Fulcio cert
+# identity + Rekor transparency-log inclusion; 2.5.x parses the v3 bundles,
+# confirmed with negative controls), the binary is sha256-checked against
+# that verified manifest, and the result lands in /usr/local/bin — which
+# upstream's _debian_ensure_cosign honors (on PATH, not dpkg-managed) and
+# leaves alone. Fail-closed: ANY verification failure dies; this never falls
+# back to an unverified binary. Exact-version pin per house style (cf.
+# EXT_REF); staleness is watched by pin-drift automation (pi_config#646).
+# v3.0.0 was never published and v3.0.1 shipped without artifact-key
+# signatures — never pin below v3.0.2.
+COSIGN_PIN_VERSION="v3.1.1"
+# cosign's release CI signs as this GCP identity (docs.sigstore.dev) — NOT a
+# GitHub Actions identity. Exact match on purpose: if sigstore ever rotates
+# it, the bootstrap breaks loudly and the pin gets reviewed, never silently
+# bypassed.
+COSIGN_RELEASE_IDENTITY="keyless@projectsigstore.iam.gserviceaccount.com"
+COSIGN_RELEASE_OIDC_ISSUER="https://accounts.google.com"
+
+# Run "$@" as root: directly when already root, else via sudo.
+_as_root() { if [ "$(id -u)" = "0" ]; then "$@"; else sudo "$@"; fi; }
+
+_ensure_cosign_ge3() {
+  local have_ver="" have_major=0
+  if command -v cosign >/dev/null 2>&1; then
+    have_ver="$(cosign version 2>/dev/null | awk -F': *' '/GitVersion/{print $2; exit}')"
+    have_major="${have_ver#v}"; have_major="${have_major%%.*}"
+    case "${have_major}" in ''|*[!0-9]*) have_major=0 ;; esac
+    if [ "${have_major}" -ge 3 ]; then
+      ok cosign "cosign ${have_ver} already meets the upstream >= 3.0.0 verify floor"
+      return 0
+    fi
+  fi
+  info "cosign ${have_ver:-<absent>} is below upstream's 3.0.0 verify floor; bootstrapping ${COSIGN_PIN_VERSION} (verified)"
+  if [ "${DRY_RUN}" = "1" ]; then
+    info "[dry-run] apt-get install cosign (bootstrap verifier), verify ${COSIGN_PIN_VERSION} checksums via Sigstore bundle, sha256-check the binary, install to /usr/local/bin/cosign"
+    return 0
+  fi
+
+  # The apt cosign is the VERIFIER for the new one, not the target.
+  if ! command -v cosign >/dev/null 2>&1; then
+    _as_root apt-get update -qq || die cosign "apt-get update failed" 2
+    _as_root apt-get install -y -qq cosign \
+      || die cosign "apt-get install cosign failed — the Debian-archive cosign is required as the bootstrap verifier" 2
+    command -v cosign >/dev/null 2>&1 || die cosign "apt-get install cosign produced no cosign on PATH" 2
+  fi
+
+  local arch asset base tmpd
+  arch="$(dpkg --print-architecture 2>/dev/null || true)"
+  case "${arch}" in
+    amd64|arm64) : ;;
+    *) case "$(uname -m)" in
+         x86_64)        arch="amd64" ;;
+         aarch64|arm64) arch="arm64" ;;
+         *) die cosign "unsupported CPU architecture for the cosign bootstrap: $(uname -m)" 2 ;;
+       esac ;;
+  esac
+  asset="cosign-linux-${arch}"
+  base="https://github.com/sigstore/cosign/releases/download/${COSIGN_PIN_VERSION}"
+  tmpd="$(mktemp -d)" || die cosign "mktemp -d failed" 1
+  _tmpdirs+=("${tmpd}")
+
+  curl -fsSL --retry 3 -o "${tmpd}/${asset}" "${base}/${asset}" \
+    || die cosign "download failed: ${base}/${asset}" 1
+  curl -fsSL --retry 3 -o "${tmpd}/cosign_checksums.txt" "${base}/cosign_checksums.txt" \
+    || die cosign "download failed: ${base}/cosign_checksums.txt" 1
+  curl -fsSL --retry 3 -o "${tmpd}/cosign_checksums.txt.sigstore.json" "${base}/cosign_checksums.txt.sigstore.json" \
+    || die cosign "download failed: ${base}/cosign_checksums.txt.sigstore.json" 1
+
+  # Keyless verify of the checksums manifest. Fulcio identity and Rekor
+  # inclusion are checked by default — never pass --insecure-ignore-* here.
+  # A network MITM can withhold these files (we die), but cannot forge them.
+  cosign verify-blob \
+      --bundle "${tmpd}/cosign_checksums.txt.sigstore.json" \
+      --certificate-identity "${COSIGN_RELEASE_IDENTITY}" \
+      --certificate-oidc-issuer "${COSIGN_RELEASE_OIDC_ISSUER}" \
+      "${tmpd}/cosign_checksums.txt" >/dev/null 2>&1 \
+    || die cosign "signature verification FAILED for ${COSIGN_PIN_VERSION}'s checksums manifest — refusing to install an unverified cosign" 2
+
+  # sha256-check the binary against the NOW-VERIFIED manifest (never against
+  # an unverified checksums file).
+  local want_line
+  want_line="$(grep -E "[[:space:]]${asset}\$" "${tmpd}/cosign_checksums.txt" | head -1 || true)"
+  [ -n "${want_line}" ] || die cosign "no entry for ${asset} in the verified checksums manifest" 2
+  ( cd "${tmpd}" && printf '%s\n' "${want_line}" | sha256sum --check --strict - >/dev/null ) \
+    || die cosign "sha256 mismatch for ${asset} — refusing to install" 2
+
+  _as_root install -m 0755 "${tmpd}/${asset}" /usr/local/bin/cosign \
+    || die cosign "failed to install /usr/local/bin/cosign" 1
+  hash -r 2>/dev/null || true
+  have_ver="$(cosign version 2>/dev/null | awk -F': *' '/GitVersion/{print $2; exit}')"
+  have_major="${have_ver#v}"; have_major="${have_major%%.*}"
+  case "${have_major}" in ''|*[!0-9]*) have_major=0 ;; esac
+  if [ "${have_major}" -ge 3 ]; then
+    ok cosign "installed verified cosign ${have_ver} to /usr/local/bin (upstream's apt bootstrap honors it)"
+  else
+    die cosign "/usr/local/bin/cosign installed but PATH still resolves ${have_ver:-nothing} — ensure /usr/local/bin precedes /usr/bin in PATH" 1
+  fi
+}
 
 # --- Flags -----------------------------------------------------------------
 while [ $# -gt 0 ]; do
@@ -256,6 +368,14 @@ else
     else
       die deps "Homebrew (brew) is required for the macOS --install-deps path; install it from https://brew.sh and re-run" 2
     fi
+  fi
+
+  # Debian/Ubuntu: satisfy upstream's cosign >= 3.0.0 verify floor BEFORE
+  # delegating — upstream's own apt bootstrap can only install 2.5.0
+  # (agent-expertise-api#402; ADR-0089). macOS is covered by Homebrew's
+  # cosign formula, which upstream's bootstrap installs/upgrades itself.
+  if [ "${IS_MACOS}" != "1" ]; then
+    _ensure_cosign_ge3
   fi
 
   # Resolve the release tag. --from-release needs a concrete vX.Y.Z on first
