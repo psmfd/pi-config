@@ -27,9 +27,15 @@
 #     would discard); pass --force to override. Gitignored live config
 #     (agent/settings.json, agent/models.json) is never touched by reset --hard.
 #
+# Before applying an update, the fetched release tag's SSH signature is verified
+# FAIL-CLOSED against the allowed-signers key this clone already carries
+# (scripts/lib/release-signers.txt) — a tampered, unsigned, or wrong-signer tag
+# is refused (ADR-0087). Needs `ssh-keygen` (ships with OpenSSH). Only semver
+# release tags are verified; a branch --ref is not.
+#
 # Usage:
 #   update.sh [--ref REF] [--check] [--force] [--skip-extensions]
-#             [--dry-run] [-h|--help]
+#             [--dry-run] [--no-verify] [-h|--help]
 #
 # Flags:
 #   --ref REF          Update to REF (release tag, branch, or older tag for
@@ -44,6 +50,8 @@
 #   --dry-run          Print intended actions without changing anything. NOTE:
 #                      dry-run skips the fetch/reset, so the install.sh it execs
 #                      is the CURRENT (not yet updated) copy.
+#   --no-verify        Skip release signature verification. Loud escape hatch for
+#                      a deliberate rollback to a pre-signing (unsigned) release.
 #   -h | --help        Print this header and exit.
 #
 # Environment: PI_* variables pass through to install.sh -> setup.sh unchanged.
@@ -85,6 +93,7 @@ CHECK=0
 FORCE=0
 SKIP_EXT=0
 DRY_RUN=0
+NO_VERIFY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --ref)             REF="${2:?--ref requires a value}"; REF_EXPLICIT=1; shift 2 ;;
@@ -92,6 +101,7 @@ while [ $# -gt 0 ]; do
     --force)           FORCE=1; shift ;;
     --skip-extensions) SKIP_EXT=1; shift ;;
     --dry-run)         DRY_RUN=1; shift ;;
+    --no-verify)       NO_VERIFY=1; shift ;;
     -h|--help)         sed -nE '/^# /{s/^# ?//;p;};/^$/q' "$0"; exit 0 ;;
     *)                 die args "unknown flag: $1" 2 ;;
   esac
@@ -211,6 +221,29 @@ if [ "$(git -C "${DIR}" rev-parse --is-shallow-repository 2>/dev/null || echo fa
   run git -C "${DIR}" fetch --unshallow origin || warn fetch "could not unshallow; changelog range may be unavailable"
 fi
 run git -C "${DIR}" fetch origin "${REF}"
+
+# --- Verify the fetched tag's signature (FAIL-CLOSED; ADR-0087) ------------
+# Verify the just-fetched tag BEFORE reset, against the allowed-signers key THIS
+# already-trusted clone carries (scripts/lib/release-signers.txt) — the correct
+# trust anchor is the key we already have, not the incoming content. Verify
+# FETCH_HEAD, not the tag name (local refs/tags/<name> materialization is
+# unreliable across fetch flavors). Only semver release tags are signed: a branch
+# --ref is an explicit user choice with no release tag; --dry-run performed no
+# fetch. `--no-verify` is the loud escape hatch for rolling back to a pre-signing
+# (unsigned) release.
+if [ "${DRY_RUN}" != "1" ] && [ "${NO_VERIFY}" != "1" ] && is_semver "${REF}"; then
+  signers="${DIR}/scripts/lib/release-signers.txt"
+  [ -f "${signers}" ] || die verify "release-signers key file missing (${signers}); cannot verify ${REF} — refusing" 1
+  command -v ssh-keygen >/dev/null 2>&1 || die verify "ssh-keygen not found (install openssh-client); cannot verify ${REF} — refusing" 2
+  if git -C "${DIR}" -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="${signers}" verify-tag FETCH_HEAD >/dev/null 2>&1; then
+    ok verify "release ${REF} signature verified"
+  else
+    die verify "signature verification FAILED for ${REF} (unsigned, wrong signer, or tampered); refusing to apply. For a deliberate rollback to a pre-signing release, re-run with --no-verify." 1
+  fi
+elif [ "${NO_VERIFY}" = "1" ] && [ "${DRY_RUN}" != "1" ]; then
+  warn verify "--no-verify set: skipping release signature verification for ${REF}"
+fi
+
 run git -C "${DIR}" reset --hard FETCH_HEAD
 [ "${DRY_RUN}" = "1" ] || ok update "updated ${DIR} to ${REF}"
 

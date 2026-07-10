@@ -97,6 +97,27 @@ your live `agent/settings.json` and `agent/models.json` are never touched.
 - **Release notes:** the update prints the GitHub Release URL for the target tag
   and the commit range since your previous version.
 
+## Verifying a release
+
+Release tags are **SSH-signed** and releases are **immutable** (their tag→commit
+binding is locked server-side). `update.sh` verifies the tag signature
+**fail-closed** before applying an update, and `install.sh` verifies it
+best-effort at first install — both need only `ssh-keygen` (ships with OpenSSH).
+
+To verify a tag yourself, add the published release-signer key to an
+allowed-signers file and run:
+
+```bash
+# key published in the release notes / this repo's scripts/lib/release-signers.txt
+echo 'pi-config-release ssh-ed25519 AAAA... pi-config-release' > /tmp/pi-signers
+git -C ~/pi-config -c gpg.format=ssh \
+    -c gpg.ssh.allowedSignersFile=/tmp/pi-signers verify-tag vX.Y.Z
+```
+
+A `Good "git" signature` result confirms the release was signed by the pi-config
+release key and its content is intact. See ADR-0087 for the trust model and its
+documented residual risks.
+
 ## First-party extensions
 
 Twelve pi extensions are distributed as standalone mirrors and installed by

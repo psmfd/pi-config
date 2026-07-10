@@ -674,6 +674,29 @@ else
   err "semver-classify: self-test failed (run: scripts/lib/semver-classify.sh --self-test)"
 fi
 
+# --- 6f-ter. Release-signer allowed-signers lockstep (ADR-0087) ------------
+# The release-tag verification key is embedded inline in install.sh (standalone,
+# cannot source a lib) AND tracked in scripts/lib/release-signers.txt (consumed
+# by update.sh). The two must not drift. Pre-rollout, both carry a placeholder;
+# the check WARNs (not errors) until the real key lands (#627).
+info "Validating release-signer allowed-signers lockstep (ADR-0087)"
+rs_file="scripts/lib/release-signers.txt"
+rs_embedded="$(grep -E "^RELEASE_SIGNER_ALLOWED_SIGNERS=" install.sh 2>/dev/null | sed -E "s/^RELEASE_SIGNER_ALLOWED_SIGNERS='(.*)'\$/\1/")"
+if [ -z "$rs_embedded" ]; then
+  err "release-signer: RELEASE_SIGNER_ALLOWED_SIGNERS not found in install.sh"
+elif [ ! -f "$rs_file" ]; then
+  err "release-signer: $rs_file is missing"
+elif printf '%s' "$rs_embedded" | grep -q "REPLACE_WITH_REAL_PUBLIC_KEY"; then
+  warn "release-signer: pre-rollout placeholder key; lockstep with $rs_file deferred until the real key lands (ADR-0087, #627)"
+else
+  rs_active="$(grep -vE '^[[:space:]]*(#|$)' "$rs_file")"
+  if printf '%s\n' "$rs_active" | grep -qxF "$rs_embedded"; then
+    ok "release-signer: install.sh embedded key matches an active signer in $rs_file"
+  else
+    err "release-signer: install.sh embedded key does NOT match an active signer line in $rs_file (lockstep drift)"
+  fi
+fi
+
 # --- 6f. sync-mirror version-bump self-test (ADR-0058) ---------------------
 # Network-free check of the Conventional-Commits bump helpers that compute an
 # extension mirror's next version (#415). Catches a regression in the

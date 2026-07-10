@@ -232,9 +232,9 @@ Properties:
   pair is skipped, and a partial state (tag pushed, Release missing) self-heals on
   re-run. A `replace` target with no `--release-version` is skipped, so an `--all
   --release` run never mis-releases the config mirror.
-- **Annotated tags.** The engine creates `git tag -a` + pushes it, then `gh
-  release create --verify-tag` — `gh release create` alone would make a
-  lightweight tag.
+- **Annotated tags.** The engine creates `git tag -a` (config mirror: `git tag
+  -s`, SSH-signed — see Release signing below) + pushes it, then `gh release
+  create --verify-tag` — `gh release create` alone would make a lightweight tag.
 - **Token scope.** Tag push and Release creation need **Contents: write** only
   (already held; see #412).
 - **Dashboard.** `psmfd/pi-ecosystem` auto-discovers each repo's latest release on
@@ -246,6 +246,35 @@ Properties:
   psmfd/pi-ecosystem` always refreshes it manually. Private repos
   (`pi_config`, `agent-expertise-api-infra`) render without a version — the
   dashboard's read token cannot see private releases (by design).
+
+### Release signing ([ADR-0087](../adrs/0087-config-mirror-release-signing.md))
+
+The **config-mirror** release tag is **SSH-signed** so consumers can verify
+origin authenticity on the `git clone`/`git fetch` path (`update.sh` fail-closed,
+`install.sh` best-effort). Extension mirrors stay unsigned — they are consumed via
+`pi install`, not verified by the install/update scripts.
+
+- **Signing key.** A dedicated ed25519 key. The **private** key is the
+  `mirror-production`-environment-gated secret `RELEASE_SIGNING_SSH_KEY` (isolated
+  from the App push token, so a token-only compromise cannot forge a signature).
+  `sync-mirror.sh`'s `create_release()` writes it to a temp file and signs the
+  config-mirror tag with `git tag -s` (`gpg.format=ssh`). Absent (local
+  `release.sh --tag-only` emergency path), it WARNs and cuts an **unsigned** tag
+  rather than block the release — so CI is the path that guarantees a signed tag.
+- **Public key** is pinned in two lockstepped places (a `validate.sh` gate keeps
+  them identical): inline in `install.sh` (standalone), and
+  `scripts/lib/release-signers.txt` (used by `update.sh`, which reads it from the
+  already-trusted clone — the correct trust anchor is the key you already have,
+  not the incoming content).
+- **Immutable Releases** is enabled on `psmfd/pi-config`: each release locks its
+  tag→commit binding server-side, preventing a force-repoint / same-version
+  content-substitution that the numeric anti-downgrade guard cannot catch.
+- **One-time setup:** generate the keypair, add the private key to the
+  `mirror-production` environment as `RELEASE_SIGNING_SSH_KEY`, publish the public
+  key into `install.sh` + `release-signers.txt`, and enable release immutability
+  in the mirror's Settings → General → Releases. **Key rotation/revocation**
+  (multi-key allowed-signers with validity windows) is tracked in
+  #634.
 
 ### How an extension version advances (ADR-0058)
 

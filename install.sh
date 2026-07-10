@@ -14,7 +14,16 @@
 # personalizations (provider/model/theme, identity pins) travel. Pass
 # --owner/--repo/--gh-login to also personalize the clone for your own fork.
 #
-# Per ADR-0051 (this installer) and ADR-0050 (the verified mirror it consumes).
+# The fetched release tag's SSH signature is verified BEST-EFFORT before the
+# working tree is materialized (ADR-0087): a present-but-invalid signature is
+# refused (tampering signal), while a missing verifier (ssh-keygen) or an
+# unsigned/old tag only warns — first-install trust is bounded by the fact that
+# install.sh itself arrives over an unauthenticated channel (pair with the
+# per-release install.sh checksums, #626, for end-to-end first-install assurance).
+# update.sh verifies FAIL-CLOSED once installed.
+#
+# Per ADR-0051 (this installer), ADR-0050 (the verified mirror it consumes),
+# ADR-0086 (release-tag default + update.sh), ADR-0087 (release signing).
 #
 # Usage:
 #   bash install.sh [--dir DIR] [--ref REF] [--skip-extensions]
@@ -121,6 +130,48 @@ resolve_latest_tag() {
   printf '%s\n' "${best}"
 }
 
+# --- Release-signer allowed-signers key (LOCKSTEP with -------------------------
+# scripts/lib/release-signers.txt; validate.sh enforces the match). install.sh is
+# standalone, so it embeds the pubkey inline. Its PRIVATE half is the
+# mirror-production secret RELEASE_SIGNING_SSH_KEY (see ADR-0087).
+RELEASE_SIGNER_ALLOWED_SIGNERS='pi-config-release ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILXgPGZmROYMRhfjy708Ip5bMpvTv8+ufXz2xC0N5kyR pi-config-release'
+
+# verify_release_tag <dir> <ref-or-FETCH_HEAD>: BEST-EFFORT signature check
+# (ADR-0087, install-side). Bootstrap paradox: install.sh arrives over an
+# unauthenticated channel, so first-install verification is advisory. Posture:
+#   - ssh-keygen missing OR tag unsigned  -> WARN + proceed (tooling/bootstrap gap)
+#   - present-but-INVALID signature       -> die (active-tampering signal)
+#   - valid signature                     -> ok
+# Returns 0 to proceed, or calls die() on a tampering signal.
+verify_release_tag() {
+  local dir="$1" target="$2" signers out rc
+  [ "${DRY_RUN}" = "1" ] && return 0
+  is_semver "${REF}" || return 0   # branch ref: no release tag to verify
+  case "${RELEASE_SIGNER_ALLOWED_SIGNERS}" in
+    *REPLACE_WITH_REAL_PUBLIC_KEY*)
+      warn verify "release-signer key not yet provisioned (pre-rollout build); skipping signature check"; return 0 ;;
+  esac
+  if ! command -v ssh-keygen >/dev/null 2>&1; then
+    warn verify "ssh-keygen not found; cannot verify ${REF} signature — proceeding (install openssh-client for verification)"; return 0
+  fi
+  signers="$(mktemp "${TMPDIR:-/tmp}/pi-config-allowed-signers.XXXXXX")" || { warn verify "could not create temp signers file; skipping verification"; return 0; }
+  printf '%s\n' "${RELEASE_SIGNER_ALLOWED_SIGNERS}" > "${signers}"; chmod 600 "${signers}"
+  # Capture rc via `|| rc=$?` so a failing verify does not trip `set -e`.
+  out="$(git -C "${dir}" -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="${signers}" verify-tag "${target}" 2>&1)" && rc=0 || rc=$?
+  if [ "${rc}" -eq 0 ]; then
+    rm -f "${signers}"; ok verify "release ${REF} signature verified"; return 0
+  fi
+  rm -f "${signers}"
+  # Distinguish "unsigned" (bootstrap/old release -> warn) from a bad/wrong
+  # signature (tampering -> refuse). git/ssh emit "no signature" for the former.
+  case "${out}" in
+    *"no signature"*|*"No signature"*|*"does not have"*)
+      warn verify "${REF} is unsigned (pre-signing release?); proceeding best-effort at install time"; return 0 ;;
+    *)
+      die verify "signature verification FAILED for ${REF} (present but invalid/wrong-signer — possible tampering); refusing" 1 ;;
+  esac
+}
+
 # --- Flags -----------------------------------------------------------------
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -162,6 +213,7 @@ if [ -d "${DIR}/.git" ]; then
       # fetch + reset is robust for BOTH a branch and a tag ref (a tag checkout
       # would otherwise leave a detached HEAD that `pull --ff-only` rejects).
       run git -C "${DIR}" fetch --depth 1 origin "${REF}"
+      verify_release_tag "${DIR}" FETCH_HEAD   # best-effort (ADR-0087)
       run git -C "${DIR}" reset --hard FETCH_HEAD
       [ "${DRY_RUN}" = "1" ] || ok clone "updated existing checkout at ${DIR}"
       ;;
@@ -173,7 +225,11 @@ elif [ -e "${DIR}" ]; then
   die clone "${DIR} already exists and is not a ${MIRROR_REPO} checkout; pass --dir to choose another path" 2
 else
   run mkdir -p "$(dirname "${DIR}")"
-  run git clone --branch "${REF}" "${MIRROR_URL}" "${DIR}"
+  # --no-checkout so the tag signature is verified BEFORE any working tree is
+  # materialized (ADR-0087). Best-effort at install time (bootstrap paradox).
+  run git clone --no-checkout --branch "${REF}" "${MIRROR_URL}" "${DIR}"
+  verify_release_tag "${DIR}" "${REF}"
+  run git -C "${DIR}" checkout "${REF}"
   [ "${DRY_RUN}" = "1" ] || ok clone "cloned ${MIRROR_REPO}@${REF} into ${DIR}"
 fi
 

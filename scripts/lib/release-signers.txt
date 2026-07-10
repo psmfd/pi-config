@@ -1,0 +1,15 @@
+# release-signers.txt — SSH allowed-signers for pi-config release-tag verification
+#
+# Consumed by `update.sh` (git -c gpg.ssh.allowedSignersFile=... verify-tag) to
+# verify the SSH signature on a fetched release tag before applying it, and kept
+# in LOCKSTEP with the pubkey embedded inline in install.sh (validate.sh checks
+# the two match — a standalone install.sh cannot source this file). See ADR-0087.
+#
+# Format: one signer per line — `<principal> [options] <key-type> <key>`.
+# The principal is the fixed identity `pi-config-release`. Multiple keys with
+# valid-after/valid-before windows support rotation (deferred: issue #634).
+#
+# This is the release-signer PUBLIC key. Its PRIVATE half is the
+# `mirror-production`-environment secret RELEASE_SIGNING_SSH_KEY (used by
+# sync-mirror.sh to `git tag -s` the config-mirror release).
+pi-config-release ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILXgPGZmROYMRhfjy708Ip5bMpvTv8+ufXz2xC0N5kyR pi-config-release
