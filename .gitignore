@@ -62,3 +62,6 @@ drafts/
 # a dev host where ~/.pi symlinks into the repo (pi_config#529); never wanted
 # in version control.
 /agent/git/
+
+# Operator-local GitHub identity guard configuration
+.pi/expected-identity

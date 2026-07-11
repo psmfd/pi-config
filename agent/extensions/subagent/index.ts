@@ -22,8 +22,11 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { type ExtensionAPI, CONFIG_DIR_NAME, getAgentDir, getMarkdownTheme, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { getCandidates, type Candidate } from "../shared/candidates.ts";
 import { clearCopilotCache, resolveCopilotFilter } from "../shared/copilot-discovery.ts";
+import { resolveCapabilityPick } from "../shared/model-ranking.ts";
 import { clearOmlxCache, resolveOmlxFilter } from "../shared/omlx-discovery.ts";
+import { loadRoutingMatrix, type RoutingMatrix } from "../shared/routing-matrix.ts";
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.ts";
 import {
 	collectCoalescedExpertise,
@@ -44,12 +47,68 @@ const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
 const COLLAPSED_ITEM_COUNT = 10;
 const PER_TASK_OUTPUT_CAP = 50 * 1024;
+const DEFAULT_LOCAL_SUBAGENT_MODEL = "omlx/coding-workhorse";
+const SUBAGENT_PROVIDER_TASK_TYPE = "agentic-loop";
 
 function formatTokens(count: number): string {
 	if (count < 1000) return count.toString();
 	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
 	if (count < 1000000) return `${Math.round(count / 1000)}k`;
 	return `${(count / 1000000).toFixed(1)}M`;
+}
+
+function modelCandidateKey(c: Candidate): string {
+	return `${c.provider}/${c.id}`;
+}
+
+function isLocalForbiddenAgent(agent: AgentConfig): boolean {
+	// Omitted tools means pi's default tool set applies; treat that as
+	// local-forbidden because defaults can include mutation-capable tools.
+	return agent.tools === undefined || agent.tools.includes("bash");
+}
+
+type SubagentPolicySelection =
+	| { model: string; note: string }
+	| { blockedReason: string };
+
+function selectSubagentPolicyModel(
+	agent: AgentConfig,
+	candidates: readonly Candidate[],
+	matrix: RoutingMatrix | null,
+): SubagentPolicySelection | null {
+	// Explicit wrapper pins remain authoritative; this seam covers unpinned
+	// wrappers and project-local agents so the parent chooses a concrete child
+	// model before spawn and keeps child auto-router processes inert.
+	if (agent.model) return null;
+
+	if (isLocalForbiddenAgent(agent)) {
+		const nonLocal = candidates.filter((c) => c.provider !== "omlx");
+		const pick = resolveCapabilityPick(nonLocal, SUBAGENT_PROVIDER_TASK_TYPE, matrix, new Set<string>(), null, {
+			preferLocal: false,
+		});
+		return pick
+			? {
+					model: modelCandidateKey(pick),
+					note: `subagent policy selected ${modelCandidateKey(pick)} from the provider matrix`,
+				}
+			: {
+					blockedReason:
+						"local-forbidden subagent has no non-local provider matrix pick; refusing to inherit a possibly-local session model",
+				};
+	}
+
+	if (candidates.some((c) => modelCandidateKey(c) === DEFAULT_LOCAL_SUBAGENT_MODEL)) {
+		return {
+			model: DEFAULT_LOCAL_SUBAGENT_MODEL,
+			note: `subagent policy selected local ${DEFAULT_LOCAL_SUBAGENT_MODEL}`,
+		};
+	}
+	return null;
+}
+
+function formatAgentModelLabel(result: { agent: string; model?: string; exitCode?: number }): string {
+	if (result.model) return `${result.agent} · ${result.model}`;
+	return result.exitCode === -1 ? `${result.agent} · model pending` : result.agent;
 }
 
 function formatUsageStats(
@@ -378,6 +437,8 @@ async function runSingleAgent(
 	availableModelIds: ReadonlySet<string> | null,
 	copilotFallback: CopilotFallback | undefined,
 	servedOmlxIds: ReadonlySet<string> | null,
+	policyCandidates: readonly Candidate[],
+	policyMatrix: RoutingMatrix | null,
 	agentName: string,
 	task: string,
 	cwd: string | undefined,
@@ -403,6 +464,22 @@ async function runSingleAgent(
 		};
 	}
 
+	const policyModel = selectSubagentPolicyModel(agent, policyCandidates, policyMatrix);
+	if (policyModel && "blockedReason" in policyModel) {
+		return {
+			agent: agentName,
+			agentSource: agent.source,
+			task,
+			exitCode: 1,
+			messages: [],
+			stderr: policyModel.blockedReason,
+			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+			stopReason: "policy-blocked",
+			step,
+		};
+	}
+	const requestedModel = policyModel?.model ?? agent.model;
+
 	// Spawn-time pin gate (#519): a slash-qualified pin only reaches argv when
 	// its exact provider/id is credentialed here — pi hard-exits a child whose
 	// --model names an unregistered provider (e.g. omlx on a host without the
@@ -411,7 +488,7 @@ async function runSingleAgent(
 	// absent here and takes the drop path. A dropped non-Copilot pin tries the
 	// Copilot fallback rung (#536, ADR-0080) before the session default;
 	// `servedOmlxIds` only shapes the note wording (server-down vs not-installed).
-	const pin = resolveModelPin(agent.model, availableModelIds, copilotFallback, servedOmlxIds);
+	const pin = resolveModelPin(requestedModel, availableModelIds, copilotFallback, servedOmlxIds);
 
 	const args: string[] = ["--mode", "json", "-p", "--no-session"];
 	if (pin.modelArg) args.push("--model", pin.modelArg);
@@ -431,7 +508,9 @@ async function runSingleAgent(
 		// When the pin was omitted, leave model unset so the child's actual
 		// model (from its message events) fills it in — honest reporting.
 		...(pin.modelArg ? { model: pin.modelArg } : {}),
-		...(pin.note ? { pinNote: pin.note } : {}),
+		...(pin.note || policyModel?.note
+			? { pinNote: [policyModel?.note, pin.note].filter((v): v is string => Boolean(v)).join("; ") }
+			: {}),
 		step,
 	};
 
@@ -697,6 +776,8 @@ export default function (pi: ExtensionAPI) {
 				effectiveAvailableIds,
 				signal,
 			);
+			const policyCandidates = await getCandidates(ctx, { omlxFilter: servedOmlxIds }).catch(() => []);
+			const policyMatrix = await loadRoutingMatrix();
 			const confirmProjectAgents = params.confirmProjectAgents ?? true;
 
 			const hasChain = (params.chain?.length ?? 0) > 0;
@@ -788,6 +869,8 @@ export default function (pi: ExtensionAPI) {
 						effectiveAvailableIds,
 						copilotFallback,
 						servedOmlxIds,
+						policyCandidates,
+						policyMatrix,
 						step.agent,
 						taskWithContext,
 						step.cwd,
@@ -869,6 +952,8 @@ export default function (pi: ExtensionAPI) {
 						effectiveAvailableIds,
 						copilotFallback,
 						servedOmlxIds,
+						policyCandidates,
+						policyMatrix,
 						t.agent,
 						t.task,
 						t.cwd,
@@ -896,7 +981,7 @@ export default function (pi: ExtensionAPI) {
 						? `failed${r.stopReason && r.stopReason !== "end" ? ` (${r.stopReason})` : ""}`
 						: "completed";
 					const note = r.pinNote ? `[note] ${r.pinNote}\n\n` : "";
-					return `### [${r.agent}] ${status}\n\n${note}${output}`;
+					return `### [${formatAgentModelLabel(r)}] ${status}\n\n${note}${output}`;
 				});
 				return {
 					content: [
@@ -916,6 +1001,8 @@ export default function (pi: ExtensionAPI) {
 					effectiveAvailableIds,
 					copilotFallback,
 					servedOmlxIds,
+					policyCandidates,
+					policyMatrix,
 					params.agent,
 					params.task,
 					params.cwd,
@@ -1028,7 +1115,7 @@ export default function (pi: ExtensionAPI) {
 
 				if (expanded) {
 					const container = new Container();
-					let header = `${icon} ${theme.fg("toolTitle", theme.bold(r.agent))}${theme.fg("muted", ` (${r.agentSource})`)}`;
+					let header = `${icon} ${theme.fg("toolTitle", theme.bold(formatAgentModelLabel(r)))}${theme.fg("muted", ` (${r.agentSource})`)}`;
 					if (isError && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 					container.addChild(new Text(header, 0, 0));
 					if (isError && r.errorMessage)
@@ -1064,7 +1151,7 @@ export default function (pi: ExtensionAPI) {
 					return container;
 				}
 
-				let text = `${icon} ${theme.fg("toolTitle", theme.bold(r.agent))}${theme.fg("muted", ` (${r.agentSource})`)}`;
+				let text = `${icon} ${theme.fg("toolTitle", theme.bold(formatAgentModelLabel(r)))}${theme.fg("muted", ` (${r.agentSource})`)}`;
 				if (isError && r.stopReason) text += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 				if (isError && r.errorMessage) text += `\n${theme.fg("error", `Error: ${r.errorMessage}`)}`;
 				else if (displayItems.length === 0) text += `\n${theme.fg("muted", "(no output)")}`;
@@ -1115,7 +1202,7 @@ export default function (pi: ExtensionAPI) {
 						container.addChild(new Spacer(1));
 						container.addChild(
 							new Text(
-								`${theme.fg("muted", `─── Step ${r.step}: `) + theme.fg("accent", r.agent)} ${rIcon}`,
+								`${theme.fg("muted", `─── Step ${r.step}: `) + theme.fg("accent", formatAgentModelLabel(r))} ${rIcon}`,
 								0,
 								0,
 							),
@@ -1162,7 +1249,7 @@ export default function (pi: ExtensionAPI) {
 				for (const r of details.results) {
 					const rIcon = r.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
 					const displayItems = getDisplayItems(r.messages);
-					text += `\n\n${theme.fg("muted", `─── Step ${r.step}: `)}${theme.fg("accent", r.agent)} ${rIcon}`;
+					text += `\n\n${theme.fg("muted", `─── Step ${r.step}: `)}${theme.fg("accent", formatAgentModelLabel(r))} ${rIcon}`;
 					if (displayItems.length === 0) text += `\n${theme.fg("muted", "(no output)")}`;
 					else text += `\n${renderDisplayItems(displayItems, 5)}`;
 				}
@@ -1203,7 +1290,7 @@ export default function (pi: ExtensionAPI) {
 
 						container.addChild(new Spacer(1));
 						container.addChild(
-							new Text(`${theme.fg("muted", "─── ") + theme.fg("accent", r.agent)} ${rIcon}`, 0, 0),
+							new Text(`${theme.fg("muted", "─── ") + theme.fg("accent", formatAgentModelLabel(r))} ${rIcon}`, 0, 0),
 						);
 						container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", r.task), 0, 0));
 
@@ -1248,7 +1335,7 @@ export default function (pi: ExtensionAPI) {
 								? theme.fg("error", "✗")
 								: theme.fg("success", "✓");
 					const displayItems = getDisplayItems(r.messages);
-					text += `\n\n${theme.fg("muted", "─── ")}${theme.fg("accent", r.agent)} ${rIcon}`;
+					text += `\n\n${theme.fg("muted", "─── ")}${theme.fg("accent", formatAgentModelLabel(r))} ${rIcon}`;
 					if (displayItems.length === 0)
 						text += `\n${theme.fg("muted", r.exitCode === -1 ? "(running...)" : "(no output)")}`;
 					else text += `\n${renderDisplayItems(displayItems, 5)}`;
