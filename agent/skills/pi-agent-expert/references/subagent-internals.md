@@ -74,9 +74,11 @@ const args = ["--mode", "json", "-p", "--no-session"];
 // #519/#536/#534 spawn-time gate (model-pin.ts, ADR-0076/ADR-0080/ADR-0081): a
 // slash-qualified pin reaches argv only when its exact provider/id is in
 // modelRegistry.getAvailable() AND (for omlx pins) the server is live — a
-// once-per-call probe (shared/omlx-discovery.ts) pre-filters down-omlx ids out
-// of availableModelIds via filterDownOmlxIds, so a dead-server pin is treated
-// as absent. A dropped non-Copilot pin then substitutes the Copilot fallback
+// once-per-call probe (shared/omlx-discovery.ts; explicit override /
+// OMLX_BASE_URL / configured provider baseUrl / localhost default, then
+// loopback-validated) pre-filters down-omlx ids out of availableModelIds via
+// filterDownOmlxIds, so a dead-server pin is treated as absent. A dropped
+// non-Copilot pin then substitutes the Copilot fallback
 // (registry-present + live-tier-enabled, shared/copilot-discovery.ts) before
 // --model is omitted entirely (child inherits the session default). servedOmlxIds
 // shapes only the note wording (server-down vs not-installed). The tool result

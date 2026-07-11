@@ -179,9 +179,11 @@ honest `[note]` line naming the rung the child actually ran on:
    (`shared/omlx-discovery.ts`, resolved once per tool call) drops a
    registered-but-down workhorse pin so it takes outcome 2 or 3 below, with a
    note distinguishing "the oMLX server appears to be down" (restart the
-   process) from "not available on this host" (registration/config). An
-   inconclusive probe (timeout, 5xx) fails open — the pin is kept, never
-   falsely dropped.
+   process) from "not available on this host" (registration/config). The probe
+   uses the configured oMLX provider `baseUrl` when available, while preserving
+   the loopback-only trust boundary; unsupported/non-loopback probe bases and
+   inconclusive probes (timeout, 5xx) fail open — the pin is kept, never falsely
+   dropped.
 2. **Pin dropped, Copilot fallback resolves** (#536): a non-`github-copilot`
    dropped pin substitutes the Copilot fallback model when it is
    registry-present AND not excluded by the live tier filter

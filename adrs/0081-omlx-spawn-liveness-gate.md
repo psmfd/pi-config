@@ -28,6 +28,8 @@ The #519 spawn gate checks **registry presence** only: a slash-qualified `omlx/c
 
 **Once per tool call, lazy.** `buildOmlxLiveness` probes a single time in `execute()` (never per child — a fan-out of up to 8 children at concurrency 4 must not thundering-herd the local server), and only when some `omlx/*` id is registry-present (a host with no oMLX block pays zero — no network call). Mirrors ADR-0080 Q3's once-per-call discipline for the Copilot probe. The subagent extension registers its own `session_start` `clearOmlxCache()` so freshness never depends on auto-router being loaded in the same process.
 
+**Clarification (#651):** the selected probe base follows the same local-only trust boundary while avoiding a duplicate localhost source of truth: explicit dependency override / `OMLX_BASE_URL` / configured `omlx` provider `baseUrl` / `http://localhost:8000/v1`, then loopback validation. A configured non-loopback provider URL remains out of scope and fails open (no probe) rather than probing default localhost and deriving a false "server down" signal for a different endpoint. True non-loopback oMLX support would require a separate ADR.
+
 ### Q4 — Module relocation
 
 `omlx-discovery.ts` and its test move `auto-router/` → `shared/` (its one non-builtin import, `FetchLike` from `copilot-discovery.ts`, is already in `shared/` post-#536, so the move is import-trivial); two auto-router import sites rewrite to `../shared/`; the `pi-auto-router` mirror `inline:` list gains `omlx-discovery`. The subagent extension ships via the replace-mode `pi-config` target and needs no mirror wiring (same conclusion ADR-0080 recorded for the Copilot rung).

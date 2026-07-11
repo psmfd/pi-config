@@ -14,6 +14,28 @@ import {
 const BASE = "http://localhost:8000/v1";
 const KEY = async (): Promise<string | null> => "test-key";
 
+function withoutOmlxBaseEnv<T>(fn: () => T): T {
+  const prev = process.env["OMLX_BASE_URL"];
+  delete process.env["OMLX_BASE_URL"];
+  try {
+    return fn();
+  } finally {
+    if (prev === undefined) delete process.env["OMLX_BASE_URL"];
+    else process.env["OMLX_BASE_URL"] = prev;
+  }
+}
+
+async function withoutOmlxBaseEnvAsync<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = process.env["OMLX_BASE_URL"];
+  delete process.env["OMLX_BASE_URL"];
+  try {
+    return await fn();
+  } finally {
+    if (prev === undefined) delete process.env["OMLX_BASE_URL"];
+    else process.env["OMLX_BASE_URL"] = prev;
+  }
+}
+
 function fetchReturning(status: number, body: string): FetchLike {
   return async () => ({ ok: status >= 200 && status < 300, status, text: async () => body });
 }
@@ -36,6 +58,14 @@ test("omlxBaseUrl accepts loopback only", () => {
   assert.equal(omlxBaseUrl("http://omlx.example.com/v1"), null);
   assert.equal(omlxBaseUrl("ftp://localhost/v1"), null);
   assert.equal(omlxBaseUrl("not a url"), null);
+});
+
+test("omlxBaseUrl uses configured provider baseUrl before localhost default", () => {
+  withoutOmlxBaseEnv(() => {
+    assert.equal(omlxBaseUrl(undefined, "http://127.0.0.1:9000/v1/"), "http://127.0.0.1:9000/v1");
+    assert.equal(omlxBaseUrl("http://localhost:8000/v1", "http://127.0.0.1:9000/v1"), "http://localhost:8000/v1");
+    assert.equal(omlxBaseUrl(undefined, "http://omlx.example.com/v1"), null);
+  });
 });
 
 test("parseServedModels: ids extracted; empty 200 list is authoritative; malformed is null", () => {
@@ -160,4 +190,75 @@ test("resolveOmlxFilter probes when an omlx model is registered", async () => {
   );
   assert.deepEqual(out, new Set(["coding-workhorse"]));
   clearOmlxCache();
+});
+
+test("resolveOmlxFilter probes the configured omlx baseUrl from the registry", async () => {
+  await withoutOmlxBaseEnvAsync(async () => {
+    clearOmlxCache();
+    let seenUrl = "";
+    const spy: FetchLike = async (url) => {
+      seenUrl = String(url);
+      return { ok: true, status: 200, text: async () => servedBody("coding-workhorse") };
+    };
+    const out = await resolveOmlxFilter(
+      {
+        modelRegistry: {
+          getAvailable: () => [
+            { provider: "omlx", id: "coding-workhorse", baseUrl: "http://127.0.0.1:9000/v1" },
+          ],
+        },
+      },
+      { fetchFn: spy, readKey: KEY },
+    );
+    assert.equal(seenUrl, "http://127.0.0.1:9000/v1/models");
+    assert.deepEqual(out, new Set(["coding-workhorse"]));
+    clearOmlxCache();
+  });
+});
+
+test("resolveOmlxFilter uses modelRegistry.find baseUrl when available", async () => {
+  await withoutOmlxBaseEnvAsync(async () => {
+    clearOmlxCache();
+    let seenUrl = "";
+    const spy: FetchLike = async (url) => {
+      seenUrl = String(url);
+      return { ok: true, status: 200, text: async () => servedBody("coding-workhorse") };
+    };
+    const out = await resolveOmlxFilter(
+      {
+        modelRegistry: {
+          getAvailable: () => [{ provider: "omlx", id: "coding-workhorse" }],
+          find: () => ({ provider: "omlx", id: "coding-workhorse", baseUrl: "http://127.0.0.1:9100/v1" }),
+        },
+      },
+      { fetchFn: spy, readKey: KEY },
+    );
+    assert.equal(seenUrl, "http://127.0.0.1:9100/v1/models");
+    assert.deepEqual(out, new Set(["coding-workhorse"]));
+    clearOmlxCache();
+  });
+});
+
+test("resolveOmlxFilter fails open for a configured non-loopback baseUrl instead of probing default localhost", async () => {
+  await withoutOmlxBaseEnvAsync(async () => {
+    clearOmlxCache();
+    let probed = 0;
+    const spy: FetchLike = async () => {
+      probed += 1;
+      throw new TypeError("default localhost should not be probed");
+    };
+    const out = await resolveOmlxFilter(
+      {
+        modelRegistry: {
+          getAvailable: () => [
+            { provider: "omlx", id: "coding-workhorse", baseUrl: "http://omlx.example.com/v1" },
+          ],
+        },
+      },
+      { fetchFn: spy, readKey: KEY },
+    );
+    assert.equal(out, null);
+    assert.equal(probed, 0);
+    clearOmlxCache();
+  });
 });
