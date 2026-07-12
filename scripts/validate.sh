@@ -42,6 +42,11 @@ err()  { echo "${RED}ERROR${RST} $*" >&2; errors=$((errors + 1)); }
 warn() { echo "${YLW}WARN${RST}  $*"; warnings=$((warnings + 1)); }
 ok()   { if [ "$VERBOSE" = "1" ]; then echo "${GRN}ok${RST}    $*"; fi; checks=$((checks + 1)); }
 info() { echo "${BLU}==>${RST} $*"; }
+# skip(): a check whose ABSENT environment is the expected state (today only
+# the expertise-audit stage — the loopback API is per-machine, #693). Counts
+# as a passed check; deliberately NOT a warn. Every sibling stage still
+# treats missing env as err() per the header philosophy.
+skip() { echo "${YLW}SKIP${RST}  $*"; checks=$((checks + 1)); }
 
 resolve_path_from() {
   local base_dir="$1" target="$2"
@@ -334,6 +339,35 @@ if [ -x scripts/validate-subagent-drift.sh ]; then
   fi
 else
   err "subagent drift: scripts/validate-subagent-drift.sh is missing or not executable"
+fi
+
+# --- 6a-bis. Expertise audit (#601, ADR-0095) -------------------------------
+# Runs AFTER the drift check (6a) so a manifest mismatch fails fast before
+# any network-touching work. Unlike every sibling stage, an absent loopback
+# agent-expertise-api or missing PR context is a SKIP, not an error — the
+# API is a per-machine local service no CI runner provisions yet (#693);
+# scripts/expertise-audit.sh documents the full skip-vs-fail discipline
+# (auth failures and telemetry inconsistencies still fail loud).
+info "Running expertise audit (#601)"
+if [ -x scripts/expertise-audit.sh ]; then
+  if ea_output="$(scripts/expertise-audit.sh 2>&1)"; then
+    printf '%s\n' "$ea_output" | grep -E "^(SKIP|WARN|canonical_blob_sha=)" || true
+    if printf '%s\n' "$ea_output" | grep -q "^SKIP"; then
+      skip "expertise-audit: skipped (see line above)"
+    else
+      ok "expertise-audit: passed"
+    fi
+  else
+    ea_status=$?
+    printf '%s\n' "$ea_output" >&2
+    if [ "$ea_status" -eq 2 ]; then
+      err "expertise-audit: environment failure with a reachable API (exit 2)"
+    else
+      err "expertise-audit: audit failed (exit $ea_status)"
+    fi
+  fi
+else
+  err "expertise-audit: scripts/expertise-audit.sh missing or not executable"
 fi
 
 # --- 6b. Secrets-guard SKIP_PATH_GLOBS smoke test --------------------------
@@ -1111,23 +1145,41 @@ MX_KEYS
     ok "routing-matrix: lastReviewed is $mx_age_days day(s) old (<=180)"
   fi
 
-  # Best-effort "known model" cross-reference against live agent pins (WARN).
-  mx_known_pins="$(for f in agent/agents/*.md; do
+  # ADR-0094/#656: wrapper `model:` pins are an escape hatch, not the routing
+  # mechanism — matrix rows are capability data consumed via the
+  # lever/tag/tier/matrix policy path, so the old pin cross-reference is
+  # retired. Two replacements: (a) tier values, when present, must be one of
+  # the recognized enum (ERROR — a typo'd tier silently degrades a row to
+  # untiered); (b) first-party wrappers should not carry `model:` pins (WARN —
+  # the escape hatch is for evals and bad-version dodges, not steady state).
+  mx_bad_tier=0
+  while IFS= read -r t; do
+    [ -n "$t" ] || continue
+    case "$t" in frontier|capable|fast) ;; *)
+      err "routing-matrix: unrecognized tier '$t' — must be frontier|capable|fast"
+      mx_bad_tier=1 ;;
+    esac
+  done <<MX_TIERS
+$(jq -r '.models[] | select(.tier != null) | .tier' "$MX" 2>/dev/null)
+MX_TIERS
+  [ "$mx_bad_tier" -eq 0 ] && ok "routing-matrix: all tier values are in the recognized enum"
+
+  # #660 refresh audit block: optional; when present, at/tool/source must be
+  # strings or the loader silently drops it (WARN so the author notices).
+  if jq -e '.refresh' "$MX" >/dev/null 2>&1; then
+    if jq -e '.refresh | (.at|type=="string") and (.tool|type=="string") and (.source|type=="string")' "$MX" >/dev/null 2>&1; then
+      ok "routing-matrix: refresh audit block shape valid"
+    else
+      warn "routing-matrix: refresh block present but malformed (at/tool/source must be strings) — the loader will drop it"
+    fi
+  fi
+
+  for f in agent/agents/*.md; do
     [ -f "$f" ] || continue
     fm="$(extract_frontmatter "$f")"
-    fm_value "$fm" model
-  done | sed '/^$/d' | sort -u)"
-  mx_unknown=0
-  while IFS= read -r k; do
-    [ -n "$k" ] || continue
-    if ! printf '%s\n' "$mx_known_pins" | grep -qxF "$k"; then
-      warn "routing-matrix: model key '$k' is not pinned by any agent frontmatter — confirm it is a real, currently-resolvable model id"
-      mx_unknown=1
-    fi
-  done <<MX_KEYS2
-$mx_keys
-MX_KEYS2
-  [ "$mx_unknown" -eq 0 ] && ok "routing-matrix: every model key matches a live agent frontmatter pin"
+    pin="$(fm_value "$fm" model)"
+    [ -n "$pin" ] && warn "agent $(basename "$f"): carries a model: pin ('$pin') — the escape hatch is discouraged for first-party wrappers; prefer capability-tier/local-llm (ADR-0094, #656)"
+  done
 fi
 
 # --- 9b-token-meter. token-meter test suite (ADR-0073) ---------------------
@@ -1212,6 +1264,27 @@ if [ -x scripts/test-expertise-indexer.sh ]; then
   fi
 else
   err "expertise-indexer: scripts/test-expertise-indexer.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-0-ter. expertise-fanout-gate test suite (#613, ADR-0095) ------------
+info "Running expertise-fanout-gate test suite"
+if [ -x scripts/test-expertise-fanout-gate.sh ]; then
+  if efg_output="$(scripts/test-expertise-fanout-gate.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$efg_output"
+    fi
+    ok "expertise-fanout-gate: tests passed"
+  else
+    efg_status=$?
+    printf '%s\n' "$efg_output" >&2
+    if [ "$efg_status" -eq 2 ]; then
+      err "expertise-fanout-gate: test environment unavailable (node/npx); required check skipped"
+    else
+      err "expertise-fanout-gate: test suite failed (exit $efg_status)"
+    fi
+  fi
+else
+  err "expertise-fanout-gate: scripts/test-expertise-fanout-gate.sh missing or not executable; required check skipped"
 fi
 
 # --- 9b-bis. gh-identity-guard test suite (ADR-0022) -----------------------

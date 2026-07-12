@@ -2,7 +2,8 @@
 name: pi-agent-expert
 description: pi (pi-coding-agent) internals specialist — the CLI and its modes (interactive, -p, --mode json, --mode rpc), JSON event stream contract, extension API (registerTool, events, ctx, pi.sendMessage, pi.events bus), agent and skill authoring conventions, prompt templates, settings.json precedence, our vendored subagent extension and its local patches, known defects, and the snapshot-bump workflow. Read-only advisor. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch
-model: omlx/coding-workhorse
+env-strict: true
+local-llm: true
 mode: read-only
 ---
 

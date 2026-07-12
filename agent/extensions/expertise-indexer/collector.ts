@@ -303,10 +303,38 @@ function capBody(body: string): string {
  * (unclosed header, malformed JSON, non-object payload) — a single
  * exception type across all invalid-structure cases so callers can
  * write one `catch (e) { if (e instanceof TypeError) … }` branch.
+ *
+ * PROVENANCE CONTRACT (#631): callers MUST pass only the generated
+ * artifact — the exact `renderCanonicalResultsBlock` output (equivalently
+ * the `expertiseInjection` string) — never a transcript, child stdout, or
+ * any buffer where untrusted content could precede the block. The parser
+ * enforces the enforceable half of that contract: the BEGIN marker must
+ * sit at the very start of the input (an optional BOM / leading
+ * whitespace is tolerated). A marker present anywhere else fails closed
+ * with `TypeError` — deliberately distinguishable from the benign
+ * "no block present" null, so an audit consumer (#601) sees a forged or
+ * displaced block as a failure, not a skip. Content after the first
+ * block is ignored, so a child echoing the block back (quoted or
+ * tampered) can never override the anchored one. The escape defense in
+ * `buildBlockString` protects bytes the generator emitted; this anchor
+ * protects against bytes upstream of it.
  */
 export function parseCanonicalResultsBlock(input: string): CanonicalResultsPayload | null {
-	const beginIdx = input.indexOf(CANONICAL_RESULTS_BEGIN_MARKER);
-	if (beginIdx < 0) return null;
+	// #631: anchor scan — skip an optional BOM/leading whitespace (JS `\s`
+	// matches U+FEFF), then require the marker exactly there.
+	let anchorIdx = 0;
+	while (anchorIdx < input.length && /\s/.test(input[anchorIdx])) anchorIdx += 1;
+
+	if (!input.startsWith(CANONICAL_RESULTS_BEGIN_MARKER, anchorIdx)) {
+		if (input.includes(CANONICAL_RESULTS_BEGIN_MARKER)) {
+			throw new TypeError(
+				"canonical results BEGIN marker is present but not at the start of the input — " +
+					"callers must pass only the generated artifact (provenance contract, #631)",
+			);
+		}
+		return null;
+	}
+	const beginIdx = anchorIdx;
 	const endMarkerIdx = input.indexOf(CANONICAL_RESULTS_END_MARKER, beginIdx);
 	if (endMarkerIdx < 0) return null;
 	// The opening marker line ends at the first `-->` after beginIdx.

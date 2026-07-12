@@ -2,7 +2,8 @@
 name: tauri-expert
 description: Tauri specialist — Tauri 2 desktop app authoring, tauri.conf.json schema, generate_context!() codegen behavior, build vs bundle phase distinction, capabilities v2, cross-platform icon pipeline, sidecar/externalBin mechanism with Rust target triples, official plugin ecosystem, frontend integration (Vite, Next.js static export, SvelteKit), Tauri CLI, GitHub Actions 3-OS matrix, and code signing. Read-only advisor. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch
-model: omlx/coding-workhorse
+env-strict: true
+local-llm: true
 mode: read-only
 ---
 

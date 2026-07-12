@@ -2,7 +2,8 @@
 name: vcluster-expert
 description: vCluster specialist — virtual cluster lifecycle, vcluster.yaml configuration, resource syncing, networking, deployment topologies, licensing tiers, platform management, and CLI usage. Read-only advisor. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch
-model: omlx/coding-workhorse
+env-strict: true
+local-llm: true
 mode: read-only
 ---
 

@@ -14,6 +14,10 @@
 # Usage:
 #   ./scripts/analyze-routing-matrix.sh                 default log location
 #   ./scripts/analyze-routing-matrix.sh --log <file> [--log <file> ...]
+#   ./scripts/analyze-routing-matrix.sh --suggest-refresh-metadata
+#                       print a `refresh` audit block (#660) for the human to
+#                       paste into routing-matrix.json alongside their reviewed
+#                       edit. PRINT-ONLY: this script never writes the matrix.
 #   ./scripts/analyze-routing-matrix.sh --self-test     run fixture self-test
 #   ./scripts/analyze-routing-matrix.sh -h | --help
 #
@@ -36,9 +40,11 @@ DEFAULT_LOG="${AUTO_ROUTER_TASK_TYPES_LOG:-${HOME}/.pi/agent/extensions/auto-rou
 
 LOG_FILES=()
 SELF_TEST=0
+SUGGEST_REFRESH=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --log)       LOG_FILES+=("${2:?--log requires a file}"); shift 2 ;;
+    --suggest-refresh-metadata) SUGGEST_REFRESH=1; shift ;;
     --self-test) SELF_TEST=1; shift ;;
     -h|--help)   sed -nE '/^# /{s/^# ?//;p;}; /^$/q' "$0"; exit 0 ;;
     *) err args "unknown argument: $1"; exit 2 ;;
@@ -80,6 +86,32 @@ render_matrix() { # render_matrix <header-line> <file...>
   ' "$@"
 }
 
+# #660: print the refresh audit block for the human to paste into
+# routing-matrix.json alongside their reviewed edit. Deliberately PRINT-ONLY —
+# no code path ever writes the matrix file; the never-auto-refresh discipline
+# is absolute (ADR-0090 point 6). No identity field: authorship is git blame /
+# PR metadata; this block answers when / with what tool / from what inputs.
+suggest_refresh_metadata() { # suggest_refresh_metadata <file...>
+  local now turns range hash
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  turns="$(cat "$@" | jq -Rrn '[inputs | fromjson? // empty] | length')"
+  range="$(cat "$@" | jq -Rrn '
+    [inputs | fromjson? // empty | .ts // empty] | sort
+    | if length == 0 then "no timestamps" else (.[0][:10]) + ".." + (.[-1][:10]) end')"
+  if command -v sha256sum >/dev/null 2>&1; then
+    hash="$(cat "$@" | sha256sum | awk '{print $1}')"
+  else
+    hash="$(cat "$@" | shasum -a 256 | awk '{print $1}')"
+  fi
+  info "paste into routing-matrix.json (top level, alongside lastReviewed):"
+  printf '  "refresh": {\n'
+  printf '    "at": "%s",\n' "$now"
+  printf '    "tool": "scripts/analyze-routing-matrix.sh",\n'
+  printf '    "source": "%s turn(s) from %s log(s), %s",\n' "$turns" "$#" "$range"
+  printf '    "inputsHash": "sha256:%s"\n' "$hash"
+  printf '  }\n'
+}
+
 if [ "$SELF_TEST" = "1" ]; then
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/routing-matrix-st.XXXXXX")"
   f="$tmp/task-types.jsonl"
@@ -108,6 +140,15 @@ if [ "$SELF_TEST" = "1" ]; then
     && ok self-test "unknown task type is a visible row" || { err self-test "unknown row wrong"; fails=1; }
   printf '%s' "$out" | grep -q 'TOTAL — 5 routed turn(s) across 3 task type(s)' \
     && ok self-test "grand total skips the corrupt line" || { err self-test "grand total wrong"; fails=1; }
+  # #660: --suggest-refresh-metadata prints a paste-ready audit block and
+  # never writes anything.
+  refresh_out="$(suggest_refresh_metadata "$f")"
+  printf '%s' "$refresh_out" | grep -q '"tool": "scripts/analyze-routing-matrix.sh"' \
+    && ok self-test "refresh block names the tool (#660)" || { err self-test "refresh tool line missing"; fails=1; }
+  printf '%s' "$refresh_out" | grep -q '"source": "5 turn(s) from 1 log(s), 2026-07-05..2026-07-06"' \
+    && ok self-test "refresh source counts turns and date range, skipping the corrupt line" || { err self-test "refresh source line wrong"; fails=1; }
+  printf '%s' "$refresh_out" | grep -Eq '"inputsHash": "sha256:[0-9a-f]{64}"' \
+    && ok self-test "refresh inputsHash is a sha256" || { err self-test "refresh inputsHash wrong"; fails=1; }
   rm -rf "$tmp"
   echo "=================================="
   if [ "$fails" -eq 0 ]; then echo "PASS — 0 errors, 0 warnings"; exit 0; fi
@@ -120,6 +161,11 @@ fi
 for f in "${LOG_FILES[@]}"; do
   [ -f "$f" ] || { err log "log not found: $f (is auto-router enabled and routing?)"; exit 1; }
 done
+
+if [ "$SUGGEST_REFRESH" = "1" ]; then
+  suggest_refresh_metadata "${LOG_FILES[@]}"
+  exit 0
+fi
 
 render_matrix "routing matrix across ${#LOG_FILES[@]} log(s)" "${LOG_FILES[@]}"
 exit 0

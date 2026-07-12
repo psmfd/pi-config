@@ -53,6 +53,8 @@ Files normally changed:
 - `agent/vendor/pi/CHECKSUMS`
 - `agent/vendor/pi/README.md` when version examples, platform notes, or consumption details change
 
+**Automated path (canonical since ADR-0092, #449):** `scripts/bump-pi-runtime.sh --tag "$NEW_TAG"` (or `--latest`) executes this entire procedure non-interactively — attestation-first fail-closed ordering, README pin-header rewrite, runtime-coupled pin fixes, and the subagent re-pair audit signal — and `.github/workflows/pi-runtime-bump.yml` runs it daily against `psmfd/pi`'s latest release, opening a bump PR on drift (human merge retained). Use `--dry-run` to exercise every verification gate with zero writes, `--check` for a report-only drift probe. The manual steps below remain the reference semantics (and the fallback if the script is unavailable); a plain upstream `vX.Y.Z` emergency-rollback pin is manual-only — the script refuses it by design.
+
 Procedure (PSMFD-attested releases per [ADR-0040](../adrs/0040-consume-psmfd-attested-pi-releases.md); PSMFD releases are cut via [`psmfd-pi-release-runbook.md`](psmfd-pi-release-runbook.md)):
 
 ```sh

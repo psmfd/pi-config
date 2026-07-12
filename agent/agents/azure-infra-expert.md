@@ -2,7 +2,8 @@
 name: azure-infra-expert
 description: Azure infrastructure specialist — Entra ID, Key Vault, Managed SignalR, Storage Accounts, networking (Private Endpoints, Private Link, ExpressRoute, custom DNS), and Log Analytics workspaces. Read-only advisor. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch
-model: omlx/coding-workhorse
+env-strict: true
+local-llm: true
 mode: read-only
 ---
 

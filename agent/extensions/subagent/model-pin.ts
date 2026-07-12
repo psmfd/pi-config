@@ -20,6 +20,8 @@
  * replicating that here would risk stripping pins that would have resolved.
  */
 
+import { isLocalModelKey, type LocalRole } from "../shared/local-role.ts";
+
 /** Which rung the child actually runs on (#536). */
 export type PinKind = "pinned" | "fallback" | "default";
 
@@ -109,6 +111,45 @@ export function filterDownOmlxIds(
     }
   }
   return filtered;
+}
+
+/** Result of {@link applyLocalRole}: possibly-cleared pin + filtered menu. */
+export interface LocalRoleGate {
+  readonly requestedModel: string | undefined;
+  readonly availableIds: ReadonlySet<string> | null;
+  /** Human-readable note when the lever dropped a local pin; absent otherwise. */
+  readonly note?: string;
+}
+
+/**
+ * ADR-0094 (#685) backstop for the pin path: when the global localLlm.role
+ * lever restricts local models, a LOCAL requested model (a wrapper
+ * `model: omlx/…` pin) is cleared outright — deliberately fail-closed even
+ * when the registry is unreadable (`availableIds === null`), unlike the
+ * liveness filter's fail-open posture: liveness answers "is it up?", the
+ * lever answers "is it allowed?", and an operator restriction must hold in
+ * indeterminate states. Local ids are also stripped from the available menu
+ * so nothing downstream re-admits one. Children never run the classifier
+ * side-call, so "classifier-only" and "off" behave identically here.
+ */
+export function applyLocalRole(
+  requestedModel: string | undefined,
+  availableIds: ReadonlySet<string> | null,
+  localRole: LocalRole,
+): LocalRoleGate {
+  if (localRole === "full") return { requestedModel, availableIds };
+  const filteredIds =
+    availableIds === null
+      ? null
+      : new Set([...availableIds].filter((id) => !isLocalModelKey(id)));
+  if (requestedModel !== undefined && isLocalModelKey(requestedModel)) {
+    return {
+      requestedModel: undefined,
+      availableIds: filteredIds,
+      note: `local pin ${requestedModel} dropped: extensionSettings.localLlm.role=${localRole}`,
+    };
+  }
+  return { requestedModel, availableIds: filteredIds };
 }
 
 /**

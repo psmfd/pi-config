@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -92,10 +93,24 @@ test("extractFormBRawPayloads: no blocks yields empty array", () => {
 	assert.deepEqual(extractFormBRawPayloads("just a normal answer, no candidates"), []);
 });
 
-test("extractFormBRawPayloads: Form A REPORT_FILE is detected but skipped (not read)", () => {
-	// Capture stderr to assert the warning fires and no throw / file open.
-	const path = "/tmp/subagent-expertise-code-review-expert-1751932800.candidates.json";
-	const output = `REPORT_FILE: ${path}\n`;
+test("extractFormBRawPayloads: valid Form A file is read through the hardened reader", () => {
+	// ADR-0095 (#600 closeout): Form A files that satisfy the constraint set
+	// (0600, own uid, regular file in canonical /tmp) now contribute payloads.
+	const path = `/tmp/subagent-expertise-code-review-expert-${Date.now()}.candidates.json`;
+	const payload = '{"schemaVersion":1,"candidates":[]}';
+	fs.writeFileSync(path, payload, { mode: 0o600 });
+	try {
+		const raw = extractFormBRawPayloads(`REPORT_FILE: ${path}\n`);
+		assert.deepEqual(raw, [payload]);
+	} finally {
+		fs.unlinkSync(path);
+	}
+});
+
+test("extractFormBRawPayloads: Form A constraint violation drops the payload with a warning", () => {
+	// Wrong permissions (0644) — the hardened reader rejects, wiring warns.
+	const path = `/tmp/subagent-expertise-code-review-expert-${Date.now() + 1}.candidates.json`;
+	fs.writeFileSync(path, '{"schemaVersion":1,"candidates":[]}', { mode: 0o644 });
 	const originalWrite = process.stderr.write.bind(process.stderr);
 	let captured = "";
 	process.stderr.write = ((chunk: string | Uint8Array): boolean => {
@@ -103,13 +118,17 @@ test("extractFormBRawPayloads: Form A REPORT_FILE is detected but skipped (not r
 		return true;
 	}) as typeof process.stderr.write;
 	try {
-		const raw = extractFormBRawPayloads(output);
-		assert.deepEqual(raw, [], "Form A must not contribute a rawJson payload");
+		const raw = extractFormBRawPayloads(`REPORT_FILE: ${path}\n`);
+		assert.deepEqual(raw, [], "a rejected Form A file must not contribute a payload");
 	} finally {
 		process.stderr.write = originalWrite;
+		fs.unlinkSync(path);
 	}
-	assert.match(captured, /Form A EXPERTISE_CANDIDATES REPORT_FILE detected but not yet read/);
-	assert.match(captured, new RegExp(path.replace(/[.]/g, "\\.")));
+	assert.match(captured, /Form A EXPERTISE_CANDIDATES rejected \(wrong-permissions/);
+	// Literal substring check — building a RegExp from the path with partial
+	// escaping was CodeQL js/incomplete-sanitization bait and fragile against
+	// future fixtures containing regex metacharacters (#630).
+	assert.ok(captured.includes(path));
 });
 
 // -----------------------------------------------------------------------------

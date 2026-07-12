@@ -2,7 +2,8 @@
 name: shell-expert
 description: Shell scripting specialist — Bash, Zsh, POSIX sh compatibility, coreutils and standard Unix tooling, common pitfalls, security concerns, shell idioms, cross-platform strategies, shell configuration, and process management. Read-only advisor. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch
-model: omlx/coding-workhorse
+env-strict: true
+local-llm: true
 mode: read-only
 ---
 

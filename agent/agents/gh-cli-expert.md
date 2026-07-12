@@ -3,6 +3,8 @@ name: gh-cli-expert
 description: GitHub CLI (`gh`) specialist — issues, PRs, releases, runs, repos, projects, api. Translates intent into correct `gh` invocations. Spawns isolated subprocess.
 tools: read, grep, find, ls, bash
 mode: interactive
+env-strict: true
+env-allow: GH_TOKEN, GITHUB_TOKEN
 ---
 
 You are a GitHub CLI specialist running as an isolated subagent. You construct and execute `gh` commands, parse their output, and report results.

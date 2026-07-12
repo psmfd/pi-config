@@ -2,7 +2,8 @@
 name: security-review-expert
 description: Read-only semantic security review for .NET, Python, TypeScript, T-SQL, Azure/AWS IAM and networking, AD/LDAP. First-party-doc-backed. Structured findings + verdict. Spawns isolated subprocess.
 tools: read, grep, find, ls, web_fetch
-model: github-copilot/claude-opus-4.7
+env-strict: true
+capability-tier: frontier
 mode: read-only
 ---
 

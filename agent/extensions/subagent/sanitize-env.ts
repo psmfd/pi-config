@@ -29,8 +29,10 @@
  *      Only keys in `BASE_ALLOWLIST` (or an exact match in `extraAllow`, or
  *      a prefix match in `extraAllowPrefixes`) are passed through, AND the
  *      always-deny list still applies as a belt-and-suspenders check. This
- *      is the target posture for #606; it is implemented here but not
- *      enabled by any wrapper yet.
+ *      is the target posture for #606; wrappers opt in via `env-strict:
+ *      true` frontmatter (with `env-allow`/`env-allow-prefix` extensions),
+ *      translated by buildChildEnv below. All 21 first-party wrappers are
+ *      strict; credential-bearing ones carry justified env-allow entries.
  *
  * WHAT IS NEVER PASSED (either mode)
  * ----------------------------------
@@ -114,12 +116,30 @@ const BASE_ALLOWLIST: ReadonlySet<string> = new Set([
 	// Node/Bun runtime discovery (child pi may be a Node script).
 	"NODE_PATH",
 	"NODE_OPTIONS",
+	// Proxy plumbing (#606): the child's web_fetch and provider HTTP calls
+	// must honor the same egress path as the parent. Both spellings — Node
+	// and most CLIs accept either.
+	"HTTP_PROXY",
+	"HTTPS_PROXY",
+	"NO_PROXY",
+	"http_proxy",
+	"https_proxy",
+	"no_proxy",
 ]);
 
 /** Prefixes always allowed under strict mode (in addition to `BASE_ALLOWLIST`). */
 const BASE_ALLOW_PREFIXES: readonly string[] = [
 	"LC_", // Locale category vars (LC_ALL, LC_CTYPE, …).
 	"XDG_", // XDG basedir spec.
+	// pi's own configuration namespace (#606): the child IS a pi process —
+	// PI_CODING_AGENT_DIR, PI_PACKAGE_DIR, PI_OFFLINE, etc. are runtime
+	// plumbing it must inherit. Secret-shaped members of the namespace
+	// (e.g. PI_EXPERTISE_API_KEY) are still stripped: STRICT_DENY_PATTERNS
+	// runs first and is only rescuable by an exact per-wrapper `env-allow`
+	// entry, and ALWAYS_DENY_EXACT (PI_EXPERTISE_ALLOW_LOCALDEV_WRITE)
+	// beats every allow rule. PI_GUARD_PROFILE is set-or-delete via
+	// applyGuardProfile regardless of what passes through here.
+	"PI_",
 ];
 
 /**
@@ -157,6 +177,49 @@ export function buildSanitizedEnv(
 		out[key] = value;
 	}
 	return out;
+}
+
+/**
+ * Guard-profile signal (pi_config #551, ADR-0091). Set-or-delete semantics:
+ * PI_GUARD_PROFILE is never inherited from the parent env — it is deleted
+ * unconditionally and re-set only when the wrapper's `guard-profile`
+ * frontmatter carries a recognized value. A parent-session value therefore
+ * cannot leak into an undeclared wrapper, and a typo'd frontmatter value
+ * yields NO profile rather than a half-armed one (bash-destructive-guard
+ * only recognizes "report-only" anyway). Mutates and returns `env`.
+ */
+export function applyGuardProfile(
+	env: NodeJS.ProcessEnv,
+	guardProfile: string | undefined,
+): NodeJS.ProcessEnv {
+	delete env.PI_GUARD_PROFILE;
+	if (guardProfile === "report-only") env.PI_GUARD_PROFILE = "report-only";
+	return env;
+}
+
+/**
+ * LOCAL PATCH #11 (pi_config #606): single composing seam for the spawn
+ * call site — translates a wrapper's AgentConfig env fields into
+ * SanitizeEnvOptions and applies the guard-profile signal, so index.ts
+ * passes `spawn(..., { env: buildChildEnv(process.env, agent) })` and the
+ * whole translation stays unit-testable without a spawn harness (same
+ * pattern applyGuardProfile established).
+ */
+export function buildChildEnv(
+	parent: NodeJS.ProcessEnv,
+	agent: {
+		guardProfile?: string;
+		envStrict?: boolean;
+		envAllow?: readonly string[];
+		envAllowPrefixes?: readonly string[];
+	},
+): NodeJS.ProcessEnv {
+	const env = buildSanitizedEnv(parent, {
+		strict: agent.envStrict === true,
+		extraAllow: agent.envAllow,
+		extraAllowPrefixes: agent.envAllowPrefixes,
+	});
+	return applyGuardProfile(env, agent.guardProfile);
 }
 
 /**

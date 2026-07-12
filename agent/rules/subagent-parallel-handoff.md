@@ -55,6 +55,34 @@ The orchestrator then:
 3. Synthesizes across the recovered reports.
 4. Aggregates verdicts using the most-severe-wins convention from [`structured-review-format.md`](structured-review-format.md).
 
+## EXPERTISE_CANDIDATES payloads (#600, ADR-0095)
+
+Subagents that surface **expertise candidates** during a fanout emit a second, expertise-specific payload alongside (never instead of) the report contract above. It reuses the Form A / Form B duality with **distinct sentinels and a distinct path shape** so parsers never confuse the two:
+
+### Form B — inline JSON (canonical / default)
+
+```text
+<!-- BEGIN EXPERTISE_CANDIDATES -->
+{"schemaVersion":1,"candidates":[ … ]}
+<!-- END EXPERTISE_CANDIDATES -->
+```
+
+Read-only agents (`code-review-expert`, `security-review-expert`, `checkmarx-expert`, `linter`, `docs-expert`) MUST use Form B. The schema is enforced by `acceptCandidates` (`agent/extensions/expertise-indexer/candidate-gate.ts`): required `domain`/`title`/`body`/`entryType`/`severity`/`proposedBy`/`dedupeQuery`/`canonical_blob_sha` (the anchor from the injected `CANONICAL_EXPERTISE_RESULTS` block), conditional `justification` (required iff `severity: Info`), optional `tags`/`source`/`sourceVersion`. Approval-state fields and prototype-poisoning keys are auto-rejected.
+
+### Form A — file handoff (large payloads, write-capable agents only)
+
+```text
+REPORT_FILE: /tmp/subagent-expertise-<agent-name>-<unix-ts>.candidates.json
+```
+
+**Deliberate `REPORT_FILE:` prefix overload:** the general report contract above and this expertise transport share the prefix and are disambiguated by **path shape** — general reports use `/tmp/subagent-<name>-<ts>.md`; expertise candidates use the exact allowlisted shape `/tmp/subagent-expertise-<name>-<ts>.candidates.json`. Parsers key on the path, not the prefix.
+
+Form A files are read through the hardened reader (`expertise-indexer/form-a-reader.ts`): the file MUST be a regular file in canonical `/tmp`, ≤ 512 KB, owned by the current user, **mode exactly 0600** (create it with 0600 — a 0644 file is dropped with a structured warning), no symlink at the leaf. Threshold: emit Form B up to 32 KB of JSON; switch to Form A above that.
+
+### Collection
+
+The subagent extension extracts and coalesces these payloads automatically (`SubagentDetails.expertiseCandidates`, LOCAL PATCH #6) and the `expertise-fanout-gate` extension surfaces coalesced groups for **interactive human approval** — subagents never call `expertise_create`, and the create gate blocks any create without a recorded approval (see [`expertise-canonical-fanout.md`](expertise-canonical-fanout.md)).
+
 ## When the rule does **not** apply
 
 - **Single mode** (`{ agent, task }`): full output is already returned by the extension. No handoff required.

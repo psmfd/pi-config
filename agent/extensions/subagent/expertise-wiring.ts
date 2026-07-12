@@ -27,12 +27,13 @@
  *   - `proposedBy` on `CoalesceInput` is sourced from the ORCHESTRATOR-
  *     supplied `SingleResult.agent` (not any candidate-payload field)
  *     so attribution cannot be forged by a subagent.
- *   - Form A (REPORT_FILE) payloads are DETECTED but the file is NOT
- *     opened here — deferred to a future patch that will provide an
- *     O_NOFOLLOW + fstat-inode-and-owner reader (security-review
- *     TOCTOU concern surfaced during #599). Current subagent catalog
- *     produces Form B only, so this is a no-op deferral in practice.
- *     A one-line stderr warning makes any Form A production visible.
+ *   - Form A (REPORT_FILE) payloads are read through the hardened
+ *     `expertise-indexer/form-a-reader.ts` (#600, ADR-0095): O_NOFOLLOW
+ *     open, fstat on the opened fd (regular file, ≤512 KB, own uid,
+ *     mode 0600), canonical parent == canonical /tmp. Any violation
+ *     drops the payload with a one-line stderr warning naming the
+ *     structured reason (fail-open at extraction, fail-closed at
+ *     ingestion — the closed #599 security-review TOCTOU deferral).
  */
 
 import {
@@ -41,6 +42,7 @@ import {
 	type CoalesceResult,
 	extractCandidatePayloads,
 } from "../expertise-indexer/collector.ts";
+import { readCandidatesFile } from "../expertise-indexer/form-a-reader.ts";
 
 /**
  * Build the child's task string with optional expertise-block prefix.
@@ -61,11 +63,12 @@ export function buildInjectedTaskArg(task: string, injection: string | undefined
 }
 
 /**
- * Extract Form B `EXPERTISE_CANDIDATES` payloads from a child's final
+ * Extract `EXPERTISE_CANDIDATES` payloads from a child's final
  * assistant output. Returns the raw JSON strings ready to feed to
- * `coalesceCandidates`. Form A payloads emit a one-line stderr
- * warning (deferred; see module docstring) and are dropped from the
- * return value.
+ * `coalesceCandidates`. Form B payloads are inline; Form A
+ * (`REPORT_FILE:`) payloads are read through the hardened reader —
+ * a validation failure drops that payload with a one-line stderr
+ * warning naming the structured reason.
  *
  * Fail-open: any error during extraction yields an empty array, so a
  * garbage-emitting subagent never blocks the fanout return.
@@ -82,12 +85,14 @@ export function extractFormBRawPayloads(childOutput: string): string[] {
 		if (p.form === "B") {
 			rawJson.push(p.rawJson);
 		} else {
-			// Form A path passed the strict allowlist regex but the
-			// hardened reader is not landed yet. Log once per detection
-			// so operators can see if the deferral becomes load-bearing.
-			process.stderr.write(
-				`[subagent] Form A EXPERTISE_CANDIDATES REPORT_FILE detected but not yet read (deferred; see agent/extensions/subagent/expertise-wiring.ts). Path: ${p.reportFile}\n`,
-			);
+			const read = readCandidatesFile(p.reportFile);
+			if (read.ok) {
+				rawJson.push(read.rawJson);
+			} else {
+				process.stderr.write(
+					`[subagent] Form A EXPERTISE_CANDIDATES rejected (${read.reason}${read.detail ? `: ${read.detail}` : ""}). Path: ${p.reportFile}\n`,
+				);
+			}
 		}
 	}
 	return rawJson;

@@ -24,10 +24,11 @@ import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { getCandidates, type Candidate } from "../shared/candidates.ts";
 import { clearCopilotCache, resolveCopilotFilter } from "../shared/copilot-discovery.ts";
-import { resolveCapabilityPick } from "../shared/model-ranking.ts";
+import { readLocalRole, type LocalRole } from "../shared/local-role.ts";
 import { clearOmlxCache, resolveOmlxFilter } from "../shared/omlx-discovery.ts";
 import { loadRoutingMatrix, type RoutingMatrix } from "../shared/routing-matrix.ts";
-import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.ts";
+import { type AgentConfig, type AgentScope, discoverAgents, evaluateShadowGate } from "./agents.ts";
+import { selectSubagentPolicyModel } from "./policy-model.ts";
 import {
 	collectCoalescedExpertise,
 	buildInjectedTaskArg,
@@ -35,75 +36,25 @@ import {
 	type ExtractedExpertise,
 } from "./expertise-wiring.ts";
 import {
+	applyLocalRole,
 	filterDownOmlxIds,
 	getAvailableModelIds,
 	resolveModelPin,
 	sanitizeFallbackModelId,
 	type CopilotFallback,
 } from "./model-pin.ts";
-import { buildSanitizedEnv } from "./sanitize-env.ts";
+import { buildChildEnv } from "./sanitize-env.ts";
 
 const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
 const COLLAPSED_ITEM_COUNT = 10;
 const PER_TASK_OUTPUT_CAP = 50 * 1024;
-const DEFAULT_LOCAL_SUBAGENT_MODEL = "omlx/coding-workhorse";
-const SUBAGENT_PROVIDER_TASK_TYPE = "agentic-loop";
 
 function formatTokens(count: number): string {
 	if (count < 1000) return count.toString();
 	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
 	if (count < 1000000) return `${Math.round(count / 1000)}k`;
 	return `${(count / 1000000).toFixed(1)}M`;
-}
-
-function modelCandidateKey(c: Candidate): string {
-	return `${c.provider}/${c.id}`;
-}
-
-function isLocalForbiddenAgent(agent: AgentConfig): boolean {
-	// Omitted tools means pi's default tool set applies; treat that as
-	// local-forbidden because defaults can include mutation-capable tools.
-	return agent.tools === undefined || agent.tools.includes("bash");
-}
-
-type SubagentPolicySelection =
-	| { model: string; note: string }
-	| { blockedReason: string };
-
-function selectSubagentPolicyModel(
-	agent: AgentConfig,
-	candidates: readonly Candidate[],
-	matrix: RoutingMatrix | null,
-): SubagentPolicySelection | null {
-	// Explicit wrapper pins remain authoritative; this seam covers unpinned
-	// wrappers and project-local agents so the parent chooses a concrete child
-	// model before spawn and keeps child auto-router processes inert.
-	if (agent.model) return null;
-
-	if (isLocalForbiddenAgent(agent)) {
-		const nonLocal = candidates.filter((c) => c.provider !== "omlx");
-		const pick = resolveCapabilityPick(nonLocal, SUBAGENT_PROVIDER_TASK_TYPE, matrix, new Set<string>(), null, {
-			preferLocal: false,
-		});
-		return pick
-			? {
-					model: modelCandidateKey(pick),
-					note: `subagent policy selected ${modelCandidateKey(pick)} from the provider matrix`,
-				}
-			: {
-					blockedReason:
-						"local-forbidden subagent has no non-local provider matrix pick; refusing to inherit a possibly-local session model",
-				};
-	}
-
-	if (candidates.some((c) => modelCandidateKey(c) === DEFAULT_LOCAL_SUBAGENT_MODEL)) {
-		return {
-			model: DEFAULT_LOCAL_SUBAGENT_MODEL,
-			note: `subagent policy selected local ${DEFAULT_LOCAL_SUBAGENT_MODEL}`,
-		};
-	}
-	return null;
 }
 
 function formatAgentModelLabel(result: { agent: string; model?: string; exitCode?: number }): string {
@@ -439,6 +390,7 @@ async function runSingleAgent(
 	servedOmlxIds: ReadonlySet<string> | null,
 	policyCandidates: readonly Candidate[],
 	policyMatrix: RoutingMatrix | null,
+	localRole: LocalRole,
 	agentName: string,
 	task: string,
 	cwd: string | undefined,
@@ -464,7 +416,7 @@ async function runSingleAgent(
 		};
 	}
 
-	const policyModel = selectSubagentPolicyModel(agent, policyCandidates, policyMatrix);
+	const policyModel = selectSubagentPolicyModel(agent, policyCandidates, policyMatrix, localRole);
 	if (policyModel && "blockedReason" in policyModel) {
 		return {
 			agent: agentName,
@@ -480,6 +432,11 @@ async function runSingleAgent(
 	}
 	const requestedModel = policyModel?.model ?? agent.model;
 
+	// ADR-0094 backstop: the lever drops a LOCAL requested model (a wrapper
+	// `model: omlx/…` pin — the policy seam already respects the lever) before
+	// the pin gate, regardless of registry/liveness state. Visible via a note.
+	const roleGate = applyLocalRole(requestedModel, availableModelIds, localRole);
+
 	// Spawn-time pin gate (#519): a slash-qualified pin only reaches argv when
 	// its exact provider/id is credentialed here — pi hard-exits a child whose
 	// --model names an unregistered provider (e.g. omlx on a host without the
@@ -488,7 +445,7 @@ async function runSingleAgent(
 	// absent here and takes the drop path. A dropped non-Copilot pin tries the
 	// Copilot fallback rung (#536, ADR-0080) before the session default;
 	// `servedOmlxIds` only shapes the note wording (server-down vs not-installed).
-	const pin = resolveModelPin(requestedModel, availableModelIds, copilotFallback, servedOmlxIds);
+	const pin = resolveModelPin(roleGate.requestedModel, roleGate.availableIds, copilotFallback, servedOmlxIds);
 
 	const args: string[] = ["--mode", "json", "-p", "--no-session"];
 	if (pin.modelArg) args.push("--model", pin.modelArg);
@@ -508,8 +465,12 @@ async function runSingleAgent(
 		// When the pin was omitted, leave model unset so the child's actual
 		// model (from its message events) fills it in — honest reporting.
 		...(pin.modelArg ? { model: pin.modelArg } : {}),
-		...(pin.note || policyModel?.note
-			? { pinNote: [policyModel?.note, pin.note].filter((v): v is string => Boolean(v)).join("; ") }
+		...(pin.note || policyModel?.note || roleGate.note
+			? {
+					pinNote: [policyModel?.note, roleGate.note, pin.note]
+						.filter((v): v is string => Boolean(v))
+						.join("; "),
+				}
 			: {}),
 		step,
 	};
@@ -554,14 +515,18 @@ async function runSingleAgent(
 			// env so `PI_EXPERTISE_ALLOW_LOCALDEV_WRITE` never reaches a spawned
 			// subagent — enforces the ADR-0028 "orchestrator-only
 			// expertise_create" trust boundary structurally rather than by
-			// convention. Default mode is passthrough-with-explicit-denies to
-			// avoid disturbing existing wrappers; per-wrapper strict-mode rollout
-			// tracked in pi_config issue #606.
+			// convention. Default mode is passthrough-with-explicit-denies.
+			// LOCAL PATCH #7 (pi_config #551, ADR-0091): guard-profile signal —
+			// set-or-delete semantics live in applyGuardProfile (sanitize-env.ts).
+			// LOCAL PATCH #11 (pi_config #606): per-wrapper strict allowlist mode
+			// via `env-strict`/`env-allow`/`env-allow-prefix` frontmatter; the
+			// translation is composed in buildChildEnv (sanitize-env.ts).
+			const childEnv = buildChildEnv(process.env, agent);
 			const proc = spawn(invocation.command, invocation.args, {
 				cwd: cwd ?? defaultCwd,
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
-				env: buildSanitizedEnv(process.env),
+				env: childEnv,
 			});
 			let buffer = "";
 
@@ -778,6 +743,11 @@ export default function (pi: ExtensionAPI) {
 			);
 			const policyCandidates = await getCandidates(ctx, { omlxFilter: servedOmlxIds }).catch(() => []);
 			const policyMatrix = await loadRoutingMatrix();
+			// ADR-0094 (#685): global local-LLM role lever, read per tool call
+			// from user-layer settings (shared/local-role.ts). Children never run
+			// the classifier, so any restricted value strips local from both the
+			// policy pool and the pin path.
+			const localRole = await readLocalRole();
 			const confirmProjectAgents = params.confirmProjectAgents ?? true;
 
 			const hasChain = (params.chain?.length ?? 0) > 0;
@@ -815,12 +785,44 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			if ((agentScope === "project" || agentScope === "both") && confirmProjectAgents && ctx.hasUI) {
-				const requestedAgentNames = new Set<string>();
-				if (params.chain) for (const step of params.chain) requestedAgentNames.add(step.agent);
-				if (params.tasks) for (const t of params.tasks) requestedAgentNames.add(t.agent);
-				if (params.agent) requestedAgentNames.add(params.agent);
+			const requestedAgentNames = new Set<string>();
+			if (params.chain) for (const step of params.chain) requestedAgentNames.add(step.agent);
+			if (params.tasks) for (const t of params.tasks) requestedAgentNames.add(t.agent);
+			if (params.agent) requestedAgentNames.add(params.agent);
 
+			// LOCAL PATCH #10 (pi_config #671, ADR-0093): fail-closed gate on
+			// project wrappers that shadow a guard-profiled user wrapper.
+			// Deliberately NOT gated on params.confirmProjectAgents — that flag
+			// is caller-controlled (the invoking model sets it), so it cannot be
+			// part of this trust boundary. Widening shadows are refused outright;
+			// profile-weakening shadows need an interactive confirm, after which
+			// the user wrapper's profile is inherited onto the project agent.
+			const gateMode = hasChain ? ("chain" as const) : hasTasks ? ("parallel" as const) : ("single" as const);
+			const shadowGate = evaluateShadowGate(
+				discovery.shadowedProfiledAgents,
+				requestedAgentNames,
+				Boolean(ctx.hasUI),
+			);
+			if (shadowGate.action === "refuse") {
+				return {
+					content: [{ type: "text", text: shadowGate.reason }],
+					details: makeDetails(gateMode)([]),
+				};
+			}
+			if (shadowGate.action === "confirm") {
+				const ok = await ctx.ui.confirm("Project agent would disable a guard profile", shadowGate.message);
+				if (!ok)
+					return {
+						content: [{ type: "text", text: "Canceled: guard-profile-shadowing project agents not approved." }],
+						details: makeDetails(gateMode)([]),
+					};
+				for (const shadow of shadowGate.shadows) {
+					const target = agents.find((a) => a.name === shadow.name);
+					if (target) target.guardProfile = shadow.userProfile;
+				}
+			}
+
+			if ((agentScope === "project" || agentScope === "both") && confirmProjectAgents && ctx.hasUI) {
 				const projectAgentsRequested = Array.from(requestedAgentNames)
 					.map((name) => agents.find((a) => a.name === name))
 					.filter((a): a is AgentConfig => a?.source === "project");
@@ -871,6 +873,7 @@ export default function (pi: ExtensionAPI) {
 						servedOmlxIds,
 						policyCandidates,
 						policyMatrix,
+						localRole,
 						step.agent,
 						taskWithContext,
 						step.cwd,
@@ -954,6 +957,7 @@ export default function (pi: ExtensionAPI) {
 						servedOmlxIds,
 						policyCandidates,
 						policyMatrix,
+						localRole,
 						t.agent,
 						t.task,
 						t.cwd,
@@ -1003,6 +1007,7 @@ export default function (pi: ExtensionAPI) {
 					servedOmlxIds,
 					policyCandidates,
 					policyMatrix,
+					localRole,
 					params.agent,
 					params.task,
 					params.cwd,

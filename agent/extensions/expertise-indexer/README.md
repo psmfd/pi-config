@@ -2,10 +2,10 @@
 
 Pure-library extension providing the deterministic **canonicalizer** used by every stage of the expertise-consumption pipeline (pi_config epic #595).
 
-- **Source rule (planned):** `agent/rules/expertise-consumption.md` — to be added by #603
-- **Tracking:** #598 — canonicalizer + cache & manifest
+- **Source rule:** [`agent/rules/expertise-canonical-fanout.md`](../../rules/expertise-canonical-fanout.md) (the rule #603 originally scoped as `expertise-consumption.md` shipped under this name)
+- **Tracking:** #598 — canonicalizer + cache & manifest, epic #595
 
-This extension does not register any pi tool. It exists only to hold pure library modules imported by the orchestrator collector (#599), the candidate-gate (#608), the CI expertise-audit stage (#601), and the pre-push hook (#604).
+This extension does not register any pi tool. It holds the pure library modules imported by the `expertise-fanout-gate` extension (ADR-0095), the vendored subagent's expertise wiring (#611), the candidate-gate (#608), and the CI expertise-audit stage (#601) — plus `audit-cli.ts`, the audit's tsx-invoked runner (not an extension entry point).
 
 ## Public API
 
@@ -84,6 +84,29 @@ Orchestrator-side building blocks for the canonical-fanout methodology described
 | `extractCandidatePayloads(childOutput)` | Extracts `EXPERTISE_CANDIDATES` transport payloads from a subagent's raw output blob per #600. Form B: fenced-block `rawJson` (caller feeds to `acceptCandidates`). Form A: validated `reportFile` path against the strict allowlist `^/tmp/subagent-expertise-[a-z0-9-]+-\d+\.candidates\.json$` (no `..`, no double-slash, no NUL, no non-ASCII). Duplicate Form A paths collapse at extraction. Multiple blocks per output supported; malformed blocks silently skipped (fail-open at extraction; fail-closed at ingestion). |
 | `coalesceCandidates(inputs)` | Gates each `{rawJson, proposedBy}` through `acceptCandidates`, then fingerprints accepted candidates by SHA-256 of the normalized `{domain, title}` pair (NFKC + lowercase + whitespace-collapsed). Identical fingerprints merge into one `CoalescedGroup` with `proposalCount`, order-independent `variantCount` (distinct concrete-shape count computed via a `Set`), sorted-deduplicated `proposedByList`, and — when `variantCount > 1` — a frozen prototype-less `bodyHashesByProposer` map so the approval UI can enforce per-proposer body inspection (defense against body-smuggling under merged provenance). Representative selection: longest-body wins; deterministic on tie. Group order: stable by first-seen fingerprint. Rejections carry `proposedBy` forward. `proposedByList` and `bodyHashesByProposer` are both sourced from the ORCHESTRATOR-supplied `CoalesceInput.proposedBy` (never the untrusted `candidate.proposedBy` field) so attribution cannot be forged by a subagent. |
 
+### Fanout derivation (`fanout-derive.ts`, #613 / ADR-0095)
+
+Pure derivation shared by the runtime trigger ([`expertise-fanout-gate/`](../expertise-fanout-gate/README.md)) and the CI audit (#601): given the exact `subagent` tool-call params, decide whether the fanout is research-shaped and derive the canonical query + blob inputs. **Determinism contract:** pure functions of the arguments only — no clock, I/O, env, or randomness — so the audit can recompute the expected `canonical_blob_sha` from the telemetry-recorded task list plus its own git state.
+
+| Export | Contract |
+|---|---|
+| `isResearchShapedFanout(tasks)` | Mechanical trigger: `tasks.length >= RESEARCH_FANOUT_MIN` (3, mirroring the divergence minimum in `research-parallelism.md`) AND not review-only. `REVIEW_ONLY_AGENTS` is the closed set `checkmarx-expert`/`code-review-expert`/`linter`/`security-review-expert` — a fanout composed entirely of those is the multi-reviewer `/review` shape, not research. |
+| `deriveQueryInputs(tasks)` | `{domain: sorted de-duplicated agent names, taskType: "research", goalOrSymptom: first task string}` — feeds `buildCanonicalQuery` unchanged. |
+| `deriveFanoutTaskString(tasks)` / `deriveFanoutCanonicalInputs(args)` | Canonical blob inputs for a live fanout: `<agent>: <task>` lines in caller order; `files` EMPTY by contract (a live fanout has no changed-set — the anchor is repo@HEAD + the exact task list); empty frontmatter. |
+| `projectSearchResults(text)` | Tolerant projection of the semantic endpoint's `{"results":[…]}` (or bare-array) body into `CanonicalResultEntry[]`; schema drift degrades to fewer results, never a throw into the (runtime-uncaught) `tool_call` hook. |
+
+### Approval binding (`approval.ts`, #605 / ADR-0095)
+
+The lever behind "the orchestrator writes it with approval": `computeApprovalHash(fields)` — SHA-256 over a byte-locked, fixed-key-order serialization of the CREATE-relevant field subset (domain/title/body/entryType/severity + optional source/tags/sourceVersion; tag order significant). A real `ctx.ui.confirm` approval records it in the gate's in-session ledger; the `expertise_create` tool-call gate recomputes it over the actual call params and blocks on anything but an exact single-use match. Deliberately NOT the `{domain,title}` coalesce fingerprint (body-smuggling vector), and deliberately excluding `justification` (a review field, not a create param — displayed at approval, never sent to the server). `approvalFieldsFromCandidate` / `approvalFieldsFromCreateInput` are the two projections; the round trip is test-pinned.
+
+### Hardened Form A reader (`form-a-reader.ts`, #600 / ADR-0095)
+
+`readCandidatesFile(path)` closes the deferred `REPORT_FILE:` read: O_NOFOLLOW open, `fstat` on the opened fd (regular file, ≤512 KB, own uid, mode exactly 0600 — children MUST create candidate files with 0600), canonical-parent == canonical `/tmp` (realpath both sides — macOS `/tmp` is a symlink). Structured `{ok:false, reason}` failures with stable codes; consumed by `subagent/expertise-wiring.ts`, which warns and drops on any violation.
+
+### Audit CLI (`audit-cli.ts`, #601 / ADR-0095)
+
+NOT an extension entry point (deliberately not `index.ts`); invoked by `scripts/expertise-audit.sh` (the validate.sh §6a-bis stage, and later the #604 pre-push hook). Three checks: (1) computes the PR-changed-set `canonical_blob_sha` from the checkout's OWN git state (never from artifact-embedded values) and prints it; (2) consistency-audits a supplied telemetry dir — JSON shape, sha formats, and the ADR-0095 cross-check that every approval-loop row's `candidateBlobSha` matches an earlier `inject` row in the same file (a mismatch is a forged/displaced anchor → hard fail); (3) runs ONE read-only search and writes `expertise-blob-<sha>.json.gz` + `expertise-audit-<sha>.json`. The artifact states what green PROVES: well-formed + internally consistent — NOT that a real fanout or human approval occurred (`canonical_blob_sha` is attacker-computable from public repo state). Skip-vs-fail: unreachable API → skip; 401/403 with a key → fail; 429 → WARN. Exit codes 0/1/2/3 (pass/fail/env/skip).
+
 #### Fingerprint byte shape (byte-locked)
 
 `fingerprintCandidate` serializes to `{"domain":<json-string>,"title":<json-string>}` in that fixed key order, then SHA-256 hashes the UTF-8 bytes. A test locks this against a known-input digest. Changing the shape is semver-breaking for the coalesce contract.
@@ -100,7 +123,7 @@ The collector primitives are wired into the vendored `subagent` extension's runt
 
 - prepends the orchestrator-supplied canonical block to each child's user-role `Task:` framing (via the `subagent` tool's `expertiseInjection` param) — the extension does **not** call `expertise_search` itself (autonomous search deferred to #613);
 - extracts Form B `EXPERTISE_CANDIDATES` payloads from each child return via `extractCandidatePayloads`, coalesces them via `coalesceCandidates` with `proposedBy` set to the orchestrator-attributed `SingleResult.agent`, and surfaces the result on `SubagentDetails.expertiseCandidates` (structured data, never merged into the tool-result text);
-- detects but does **not** open Form A (`REPORT_FILE`) payloads — a hardened `O_NOFOLLOW`+`fstat` reader is deferred (no catalog agent produces Form A today), and a one-line stderr warning fires if one is ever seen.
+- reads Form A (`REPORT_FILE`) payloads through the hardened `form-a-reader.ts` (ADR-0095 closed the earlier deferral); a constraint violation drops the payload with a one-line stderr warning naming the structured reason.
 
 ## Secret-scan reuse
 
