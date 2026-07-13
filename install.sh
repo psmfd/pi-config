@@ -71,17 +71,17 @@ EXT_REF=""
 # pin-drift-check.yml, which open per-extension bump PRs.
 EXT_MIRRORS=(
   pi-secrets-guard@v0.2.0
-  pi-bash-destructive-guard@v0.2.0
+  pi-bash-destructive-guard@v0.4.0
   pi-artifact-handoff@v0.1.1
   pi-web-fetch@v0.1.1
   pi-cache-meter@v0.1.1
   pi-token-meter@v0.2.0
   pi-gh-identity-guard@v0.1.1
   pi-compaction-optimizer@v0.1.1
-  pi-expertise-client@v0.3.2
+  pi-expertise-client@v0.4.0
   pi-indexing@v0.1.2
   pi-context-manager@v0.1.2
-  pi-auto-router@v0.6.0
+  pi-auto-router@v0.7.1
 )
 
 DIR="${HOME}/projects/pi-config"

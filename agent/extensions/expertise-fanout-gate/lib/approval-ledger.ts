@@ -21,7 +21,7 @@ import { join } from "node:path";
 
 import type { CoalescedGroup } from "../../expertise-indexer/collector.ts";
 import { stateDir } from "../../shared/state.ts";
-import { TELEMETRY_NAMESPACE } from "./telemetry.ts";
+import { sanitizeField, TELEMETRY_NAMESPACE } from "./telemetry.ts";
 
 export interface ApprovalLedger {
 	/** Record a human approval for the given approval hash. */
@@ -56,7 +56,7 @@ export function pendingDir(agentDir?: string): string {
  * Best-effort (a queue write failure must not fail the fanout return);
  * returns true when the write landed.
  */
-export type PendingReason = "headless" | "divergent-variants" | "secret-detected" | "declined";
+export type PendingReason = "headless" | "divergent-variants" | "secret-detected";
 
 export function queuePending(
 	groups: readonly CoalescedGroup[],
@@ -74,7 +74,12 @@ export function queuePending(
 					ts: now.toISOString(),
 					reason,
 					fingerprint: g.fingerprint,
-					candidate: g.candidate,
+					// A secret-detected group must not persist the very content the
+					// pre-display scan refused to show (review finding, ADR-0095) —
+					// queue a field-wise redacted copy; the fingerprint + body
+					// hashes still identify it for the later manual review.
+					candidate:
+						reason === "secret-detected" ? redactCandidate(g.candidate) : g.candidate,
 					proposedByList: g.proposedByList,
 					proposalCount: g.proposalCount,
 					variantCount: g.variantCount,
@@ -87,4 +92,19 @@ export function queuePending(
 	} catch {
 		return false;
 	}
+}
+
+/** Field-wise redaction of a candidate's free-text values (secret-detected
+ * queue path only — every string runs through the shared pattern scan). */
+function redactCandidate(candidate: CoalescedGroup["candidate"]): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(candidate)) {
+		if (typeof value === "string") out[key] = sanitizeField(value);
+		else if (Array.isArray(value))
+			out[key] = (value as unknown[]).map((v): unknown =>
+				typeof v === "string" ? sanitizeField(v) : v,
+			);
+		else out[key] = value;
+	}
+	return out;
 }

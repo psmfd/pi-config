@@ -335,6 +335,42 @@ test("a throwing dependency is swallowed (tool_call handlers are uncaught upstre
 	});
 });
 
+test("overlapping fanouts never double-spend the one-search budget", async (tc) => {
+	let resolveFetch: ((r: Response) => void) | undefined;
+	let fetchCount = 0;
+	const gatedFetch = (() => {
+		fetchCount += 1;
+		return new Promise<Response>((resolve) => {
+			resolveFetch = resolve;
+		});
+	}) as unknown as typeof fetch;
+	const h = await makeHarness({ fetchImpl: gatedFetch });
+	tc.after(() => rm(h.dir, { recursive: true, force: true }));
+
+	const first = h.handler({ toolName: "subagent", input: researchInput() }, h.ctx);
+	// Give the first invocation time to reach the in-flight search.
+	await new Promise((r) => setImmediate(r));
+	const secondInput = researchInput();
+	await h.handler({ toolName: "subagent", input: secondInput }, h.ctx);
+	assert.equal(fetchCount, 1, "second overlapping fanout must not fire a search");
+	assert.equal(
+		(secondInput.tasks as Record<string, unknown>[])[0].expertiseInjection,
+		undefined,
+	);
+	resolveFetch?.(
+		new Response(JSON.stringify({ results: [API_ROW] }), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		}),
+	);
+	await first;
+	const reasons = telemetryLines(h.agentDir).map(
+		(r) => `${String(r.event)}:${typeof r.reason === "string" ? r.reason : ""}`,
+	);
+	assert.ok(reasons.includes("skip:concurrent-fanout"));
+	assert.ok(reasons.includes("inject:"));
+});
+
 test("malformed tasks arrays are left for the tool's own validation", async (tc) => {
 	const h = await makeHarness({});
 	tc.after(() => rm(h.dir, { recursive: true, force: true }));

@@ -13,6 +13,7 @@
 #   ih_ensure_yq                   Install mikefarah/yq from agent/vendor/yq/ pin (ADR-0011).
 #   ih_ensure_shellcheck           Install shellcheck from agent/vendor/shellcheck/ pin (ADR-0011).
 #   ih_ensure_gitleaks             Install gitleaks from agent/vendor/gitleaks/ pin (ADR-0037).
+#   ih_ensure_bash_parser          Install pi-bash-parser from agent/vendor/bash-parser/ pin (#506).
 #   ih_ensure_jq                   Install jq via distro (apt/dnf/brew); gated on PI_ALLOW_SUDO_*.
 #   ih_ensure_yamllint             Install yamllint via distro or pipx fallback.
 #   ih_ensure_markdownlint_cli2    Install via nvm-managed npm (no sudo).
@@ -613,6 +614,45 @@ ih_ensure_gitleaks() {
   return 0
 }
 
+# Install pi-bash-parser from the agent/vendor/bash-parser/ pin (pi_config
+# #506). First-party attested release (ADR-0040 posture); the tarball is named
+# with the full tag (pi-bash-parser-<os>-<arch>-vX.Y.Z.tar.gz) and contains the
+# `pi-bash-parser` binary. Linked to ~/.local/bin so the bash-destructive-guard
+# extension can spawn it by name.
+ih_ensure_bash_parser() {
+  local vendor_dir tag os arch asset sha cache_dir bin_path
+  vendor_dir="$(_ih_vendor_dir bash-parser)" || return 1
+  tag="$(tr -d '[:space:]' < "$vendor_dir/VERSION")" || { _ih_error "cannot read $vendor_dir/VERSION"; return 1; }
+  os="$(pd_os)" || return $?
+  arch="$(pd_arch)" || return $?
+
+  # Host triple maps 1:1 to the release asset naming (linux/darwin × amd64/arm64).
+  case "${os}-${arch}" in
+    linux-amd64 | linux-arm64 | darwin-amd64 | darwin-arm64)
+      asset="pi-bash-parser-${os}-${arch}-${tag}.tar.gz" ;;
+    *) _ih_error "unsupported host triple for pi-bash-parser: ${os}-${arch}"; return 2 ;;
+  esac
+
+  # Already at the pinned version? (the binary carries no --version arg beyond a
+  # static string, so re-fetch is cheap and idempotent via the cache.)
+  sha="$(_ih_vendor_sha_for_asset bash-parser "$asset")" || return 1
+  cache_dir="$(_ih_vendor_fetch_extract bash-parser "$tag" 'https://github.com/psmfd/pi-bash-parser/releases/download' "$asset" "$sha")" || return 1
+
+  if [ "$__IH_DRY_RUN" = "1" ]; then
+    _ih_info "[dry-run] symlink ~/.local/bin/pi-bash-parser -> $cache_dir/pi-bash-parser"
+    return 0
+  fi
+
+  bin_path="$(find "$cache_dir" -maxdepth 2 -type f -name pi-bash-parser 2>/dev/null | head -n1)"
+  if [ -z "$bin_path" ] || [ ! -x "$bin_path" ]; then
+    _ih_error "pi-bash-parser binary not found under $cache_dir after extract"
+    return 1
+  fi
+  _ih_link_local_bin "$bin_path" pi-bash-parser || return 1
+  _ih_ok "pi-bash-parser installed ($tag): $("$bin_path" --version 2>/dev/null | head -n1)"
+  return 0
+}
+
 # --- Internal: distro package install via apt/dnf/brew ---------------------
 # Args: tool name, apt-pkg, dnf-pkg, brew-pkg (use '-' to disable a channel).
 # Honors PI_ALLOW_SUDO_APT / PI_ALLOW_SUDO_DNF (off by default).
@@ -744,12 +784,12 @@ _ih_self_test() {
   fi
 
   _ih_info "self-test: _ih_vendor_dir lookups"
-  for v in pi nvm gh yq shellcheck gitleaks; do
+  for v in pi nvm gh yq shellcheck gitleaks bash-parser; do
     local vdir
     vdir="$(_ih_vendor_dir "$v")" || { _ih_error "_ih_vendor_dir $v failed"; return 1; }
     [ -d "$vdir" ] || { _ih_error "_ih_vendor_dir $v: $vdir does not exist"; return 1; }
   done
-  _ih_ok "_ih_vendor_dir resolves all six vendor pins"
+  _ih_ok "_ih_vendor_dir resolves all seven vendor pins"
 
   _ih_info "self-test: _ih_vendor_sha_for_asset (lookup only, no fetch)"
   local sha
@@ -779,6 +819,12 @@ _ih_self_test() {
   _ih_info "self-test: ih_ensure_gitleaks (dry-run)"
   if ! ih_ensure_gitleaks; then
     _ih_error "ih_ensure_gitleaks failed in dry-run mode"
+    return 1
+  fi
+
+  _ih_info "self-test: ih_ensure_bash_parser (dry-run)"
+  if ! ih_ensure_bash_parser; then
+    _ih_error "ih_ensure_bash_parser failed in dry-run mode"
     return 1
   fi
 

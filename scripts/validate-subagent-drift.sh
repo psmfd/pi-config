@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 # scripts/validate-subagent-drift.sh
 #
-# Diff-signature manifest check for the vendored subagent extension source.
+# Content-hash manifest check for the vendored subagent extension source.
 # Fails when agent/extensions/subagent/{index,agents}.ts drifts from the
 # upstream pi 0.80.2 snapshot in a way not recorded in
 # agent/extensions/subagent/PATCH_MANIFEST.json.
+#
+# Manifest v2 (#680): hashes the CR-normalised CONTENT of the upstream and
+# local files (upstreamSha256/localSha256) instead of the raw `diff -u`
+# text. Diff output is not byte-stable across implementations (Apple/FreeBSD
+# diff constructs different — semantically identical — hunks than GNU diff),
+# so a v1 manifest regenerated on macOS failed the Linux CI check. Content
+# hashes are platform-stable; hunks/netLines remain informational fields.
 #
 # Design rationale — pi_config #582 (design review in pi_config #582
 # design fan-out); closes the audit trap that let patches #4a–d
@@ -30,7 +37,7 @@
 # setup.sh (which populates ~/.cache/pi_config/pi-<VERSION>/) before
 # validate.sh can complete.
 #
-# Manifest format (v1): see agent/extensions/subagent/PATCH_MANIFEST.json.
+# Manifest format (v2): see agent/extensions/subagent/PATCH_MANIFEST.json.
 
 set -eu
 
@@ -43,7 +50,7 @@ the upstream pi snapshot only in ways recorded in
 agent/extensions/subagent/PATCH_MANIFEST.json.
 
 Options:
-  --regenerate   Recompute manifest hashes from current diffs and rewrite
+  --regenerate   Recompute manifest content hashes and rewrite
                  the manifest file. Use this after intentionally adding a
                  new local patch (and updating the README patch table in
                  the same PR) or after a re-pair to a new upstream pi.
@@ -128,8 +135,17 @@ sha256_stream() {
 	fi
 }
 
-# Compute diff-signature for one tracked file.
-# Prints "<sha256> <hunks> <net_added_lines>".
+# sha256 of a file's CR-normalised content (same CRLF tolerance the v1
+# `diff -u --strip-trailing-cr` signature had). Platform-stable, unlike
+# hashing diff text (#680).
+sha256_content() {
+	sed -e 's/\r$//' "$1" | sha256_stream
+}
+
+# Compute the signature for one tracked file.
+# Prints "<upstream_sha256> <local_sha256> <hunks> <net_added_lines>".
+# hunks/netLines are informational only (diff-implementation-dependent);
+# check mode compares the content hashes exclusively.
 compute_signature() {
 	local rel="$1"
 	local upstream="$UPSTREAM_DIR/$rel"
@@ -144,24 +160,25 @@ compute_signature() {
 		return 1
 	fi
 
-	# `diff -u --strip-trailing-cr` normalises CRLF; --label neutralises the
-	# absolute-path header so the hash is stable across machines.
+	local upstream_sha local_sha
+	upstream_sha="$(sha256_content "$upstream")"
+	local_sha="$(sha256_content "$local_file")"
+
 	local diff_out
 	diff_out="$(diff -u --strip-trailing-cr \
 		--label "upstream/$rel" --label "local/$rel" \
 		"$upstream" "$local_file" || true)"
 
-	local diff_sha hunks net
-	diff_sha="$(printf '%s' "$diff_out" | sha256_stream)"
+	local hunks
 	hunks="$(printf '%s' "$diff_out" | grep -c '^@@' || true)"
 	# Net added lines: '+' lines (excluding the '+++' header) minus '-' lines
 	# (excluding the '---' header).
-	local added removed
+	local added removed net
 	added="$(printf '%s\n' "$diff_out" | awk 'BEGIN{c=0} /^\+[^+]/{c++} /^\+$/{c++} END{print c}')"
 	removed="$(printf '%s\n' "$diff_out" | awk 'BEGIN{c=0} /^-[^-]/{c++} /^-$/{c++} END{print c}')"
 	net=$((added - removed))
 
-	printf '%s %s %s\n' "$diff_sha" "$hunks" "$net"
+	printf '%s %s %s %s\n' "$upstream_sha" "$local_sha" "$hunks" "$net"
 }
 
 # Extract a JSON field value for a tracked file from the manifest.
@@ -182,9 +199,10 @@ manifest_get() {
 	' "$MANIFEST"
 }
 
-manifest_get_pinned() {
-	awk '
-		/"pinnedPiVersion"[[:space:]]*:/ {
+manifest_get_toplevel() {
+	local field="$1"
+	awk -v field="\"$field\"" '
+		$0 ~ field {
 			sub(/^[^:]*:[[:space:]]*/, "")
 			sub(/,[[:space:]]*$/, "")
 			gsub(/"/, "")
@@ -200,7 +218,7 @@ if [ "$MODE" = "regenerate" ]; then
 	tmp="$MANIFEST.tmp.$$"
 	{
 		printf '{\n'
-		printf '  "manifestVersion": 1,\n'
+		printf '  "manifestVersion": 2,\n'
 		printf '  "pinnedPiVersion": "%s",\n' "$PINNED_PI"
 		printf '  "upstreamRelativePath": "examples/extensions/subagent",\n'
 		printf '  "trackedFiles": {\n'
@@ -215,12 +233,14 @@ if [ "$MODE" = "regenerate" ]; then
 				rm -f "$tmp"
 				exit 1
 			}
-			sha="$(echo "$sig" | awk '{print $1}')"
-			hunks="$(echo "$sig" | awk '{print $2}')"
-			net="$(echo "$sig" | awk '{print $3}')"
+			upstream_sha="$(echo "$sig" | awk '{print $1}')"
+			local_sha="$(echo "$sig" | awk '{print $2}')"
+			hunks="$(echo "$sig" | awk '{print $3}')"
+			net="$(echo "$sig" | awk '{print $4}')"
 			if [ $first -eq 0 ]; then printf ',\n'; fi
 			printf '    "%s": {\n' "$rel"
-			printf '      "diffSha256": "%s",\n' "$sha"
+			printf '      "upstreamSha256": "%s",\n' "$upstream_sha"
+			printf '      "localSha256": "%s",\n' "$local_sha"
 			printf '      "hunks": %s,\n' "$hunks"
 			printf '      "netLines": %s\n' "$net"
 			printf '    }'
@@ -245,7 +265,15 @@ if [ ! -f "$MANIFEST" ]; then
 	exit 1
 fi
 
-stored_pinned="$(manifest_get_pinned)"
+stored_version="$(manifest_get_toplevel "manifestVersion")"
+if [ "$stored_version" != "2" ]; then
+	err "manifest manifestVersion ('$stored_version') != 2 — v1 diff-text hashes are not platform-stable (#680)"
+	err "  regenerate: scripts/validate-subagent-drift.sh --regenerate"
+	echo "FAIL — $errors error(s)"
+	exit 1
+fi
+
+stored_pinned="$(manifest_get_toplevel "pinnedPiVersion")"
 if [ "$stored_pinned" != "$PINNED_PI" ]; then
 	err "manifest pinnedPiVersion ('$stored_pinned') != agent/vendor/pi/VERSION ('$PINNED_PI')"
 	err "  a runtime bump must regenerate the manifest AND update the patch table in the same PR"
@@ -257,28 +285,38 @@ set -- $TRACKED_FILES
 while [ $# -gt 0 ]; do
 	rel="$1"
 	shift
-	stored_sha="$(manifest_get "$rel" "diffSha256")"
-	if [ -z "$stored_sha" ]; then
+	stored_upstream_sha="$(manifest_get "$rel" "upstreamSha256")"
+	stored_local_sha="$(manifest_get "$rel" "localSha256")"
+	if [ -z "$stored_upstream_sha" ] || [ -z "$stored_local_sha" ]; then
 		err "manifest missing entry for tracked file: $rel"
 		continue
 	fi
 	sig="$(compute_signature "$rel")" || continue
-	computed_sha="$(echo "$sig" | awk '{print $1}')"
-	computed_hunks="$(echo "$sig" | awk '{print $2}')"
-	computed_net="$(echo "$sig" | awk '{print $3}')"
-	if [ "$computed_sha" = "$stored_sha" ]; then
+	computed_upstream_sha="$(echo "$sig" | awk '{print $1}')"
+	computed_local_sha="$(echo "$sig" | awk '{print $2}')"
+	computed_hunks="$(echo "$sig" | awk '{print $3}')"
+	computed_net="$(echo "$sig" | awk '{print $4}')"
+	if [ "$computed_upstream_sha" = "$stored_upstream_sha" ] && [ "$computed_local_sha" = "$stored_local_sha" ]; then
 		ok "$rel: manifest matches (hunks=$computed_hunks, netLines=$computed_net)"
-	else
-		err "$rel: diff-signature drift"
-		err "  stored diffSha256:   $stored_sha"
-		err "  computed diffSha256: $computed_sha"
-		err "  computed hunks=$computed_hunks netLines=$computed_net"
-		err "  remediation:"
-		err "    1. Inspect the drift: diff -u '$UPSTREAM_DIR/$rel' '$LOCAL_DIR/$rel'"
-		err "    2. Register any new local patches in $LOCAL_DIR/README.md 'Local patches' table"
-		err "    3. Regenerate manifest: scripts/validate-subagent-drift.sh --regenerate"
-		err "    4. Commit README, source, and manifest together"
+		continue
 	fi
+	err "$rel: content-hash drift"
+	if [ "$computed_upstream_sha" != "$stored_upstream_sha" ]; then
+		err "  upstream snapshot changed under the same pin:"
+		err "    stored upstreamSha256:   $stored_upstream_sha"
+		err "    computed upstreamSha256: $computed_upstream_sha"
+	fi
+	if [ "$computed_local_sha" != "$stored_local_sha" ]; then
+		err "  local vendored source changed:"
+		err "    stored localSha256:   $stored_local_sha"
+		err "    computed localSha256: $computed_local_sha"
+	fi
+	err "  computed hunks=$computed_hunks netLines=$computed_net (informational)"
+	err "  remediation:"
+	err "    1. Inspect the drift: diff -u '$UPSTREAM_DIR/$rel' '$LOCAL_DIR/$rel'"
+	err "    2. Register any new local patches in $LOCAL_DIR/README.md 'Local patches' table"
+	err "    3. Regenerate manifest: scripts/validate-subagent-drift.sh --regenerate"
+	err "    4. Commit README, source, and manifest together"
 done
 
 if [ $errors -gt 0 ]; then

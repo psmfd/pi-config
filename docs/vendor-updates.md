@@ -14,6 +14,7 @@ This guide is the canonical maintainer runbook for checking, bumping, validating
 | yq | `agent/vendor/yq/` | Release asset version and checksum metadata | [ADR-0011](../adrs/0011-toolchain-install-strategy.md) |
 | ShellCheck | `agent/vendor/shellcheck/` | Release asset version and checksum metadata | [ADR-0011](../adrs/0011-toolchain-install-strategy.md) |
 | Gitleaks | `agent/vendor/gitleaks/` | Release asset version and checksum metadata | [ADR-0037](../adrs/0037-secret-scanner-tooling-strategy.md) |
+| pi-bash-parser | `agent/vendor/bash-parser/` | Release asset version and checksum metadata (first-party, attestation-verified). Bump procedure in the vendor dir's `README.md`. | [ADR-0099](../adrs/0099-reusable-release-workflows-and-parser-vendor.md), [ADR-0040](../adrs/0040-consume-psmfd-attested-pi-releases.md) |
 | Subagent extension | `agent/extensions/subagent/` | Vendored source snapshot with local patch table | [ADR-0001](../adrs/0001-subagent-orchestration-substrate.md) |
 | Extension SDK pin | `scripts/lib/extension-deps.sh` | `EXTENSION_DEPS_PI_AGENT_VERSION` — the `@earendil-works/pi-*` pin used by `typecheck-extensions.sh` / `lint-extensions.sh`. **Runtime-coupled**: policy is `EXTENSION_DEPS_PI_AGENT_VERSION` == `agent/vendor/pi/VERSION` (stripped to X.Y.Z). Automated by `pin-drift-check.yml` (#566). | [ADR-0021](../adrs/0021-extension-type-checking-and-linting.md), [ADR-0069](../adrs/0069-ext-ref-pin-drift-automation.md) |
 | Changelog toast baseline | `agent/settings.example.json` | `lastChangelogVersion` — the version pi's changelog-toast compares against on session start. **Runtime-coupled** the same way. Automated by `pin-drift-check.yml` (#566). | [ADR-0069](../adrs/0069-ext-ref-pin-drift-automation.md) |
@@ -318,7 +319,7 @@ Steps:
 
 #### The snapshot manifest — `agent/extensions/subagent/PATCH_MANIFEST.json`
 
-A v1 JSON manifest keyed by `trackedFiles` (`index.ts`, `agents.ts`). Each entry stores a `diffSha256` (sha256 of `diff -u --strip-trailing-cr upstream/<file> local/<file>` with the abs-path headers neutralised), a hunk count, and net-line count. The pinned pi version is stored at the top level and cross-checked against `agent/vendor/pi/VERSION` on every run.
+A v2 JSON manifest keyed by `trackedFiles` (`index.ts`, `agents.ts`). Each entry stores `upstreamSha256` and `localSha256` (sha256 of each file's CR-normalised content — platform-stable, unlike the v1 hash of raw `diff -u` text, which differed between Apple/FreeBSD and GNU diff and made macOS-regenerated manifests fail the Linux CI check, #680), plus an informational hunk count and net-line count. The pinned pi version is stored at the top level and cross-checked against `agent/vendor/pi/VERSION` on every run; a v1 manifest is rejected with a regenerate hint.
 
 Commands:
 

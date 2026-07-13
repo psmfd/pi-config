@@ -82,6 +82,11 @@ export const CANONICAL_SEARCH_LIMIT = 5;
  * 10/min, so one bucket window). */
 export const DEFAULT_RATE_LIMIT_BACKOFF_MS = 60_000;
 
+/** Per-session budget for the create gate's inline interactive fallback —
+ * the approval-fatigue guard (post-arc security review, ADR-0095). Fanout
+ * approvals are unaffected; this caps only ledger-miss direct creates. */
+export const MAX_INLINE_CONFIRMS_PER_SESSION = 3;
+
 export interface GateDeps {
 	readonly fetchImpl?: typeof fetch;
 	readonly gitExec?: GitExecutor;
@@ -131,11 +136,18 @@ export function hasCallerInjection(input: Record<string, unknown>): boolean {
 export default function (pi: ExtensionAPI, deps: GateDeps = {}) {
 	// Session-scoped 429 backoff: epoch ms before which no search is attempted.
 	let rateLimitedUntil = 0;
+	// One search in flight at a time: overlapping concurrent fanouts must not
+	// double-spend the one-search budget (post-arc review finding).
+	let searchInFlight = false;
 	// Notify a missing/invalid config once per session, not once per fanout.
 	let configNotified = false;
 	// In-session approval ledger (#605): populated ONLY by real
 	// ctx.ui.confirm resolutions; consumed single-use by the create gate.
 	const ledger = makeLedger();
+	// Approval-fatigue guard on the inline create confirm (post-arc security
+	// review): a looping model must not be able to spam dialogs until the
+	// operator reflexively approves one.
+	let inlineConfirmsUsed = 0;
 
 	const now = deps.now ?? Date.now;
 
@@ -177,6 +189,12 @@ export default function (pi: ExtensionAPI, deps: GateDeps = {}) {
 				record({ event: "skip", reason: "rate-limited", ...base });
 				return undefined;
 			}
+			if (searchInFlight) {
+				// Overlapping fanout while another's search is mid-flight:
+				// skip rather than double-spend the one-search budget.
+				record({ event: "skip", reason: "concurrent-fanout", ...base });
+				return undefined;
+			}
 
 			const cfg = buildClientConfig(
 				process.env,
@@ -213,11 +231,17 @@ export default function (pi: ExtensionAPI, deps: GateDeps = {}) {
 				deriveFanoutCanonicalInputs({ repoOrigin: git.origin, headSha: git.headSha, tasks }),
 			);
 
-			const search = await searchExpertise(
-				cfg.config,
-				{ query, limit: CANONICAL_SEARCH_LIMIT },
-				deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {},
-			);
+			searchInFlight = true;
+			let search: Awaited<ReturnType<typeof searchExpertise>>;
+			try {
+				search = await searchExpertise(
+					cfg.config,
+					{ query, limit: CANONICAL_SEARCH_LIMIT },
+					deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {},
+				);
+			} finally {
+				searchInFlight = false;
+			}
 			if (!search.ok) {
 				if (search.rateLimited) {
 					const backoffMs =
@@ -414,8 +438,22 @@ export default function (pi: ExtensionAPI, deps: GateDeps = {}) {
 			}
 			// No ledger entry. Interactive fallback: a direct, operator-driven
 			// create (outside the fanout flow) is still human-gated — the gate
-			// ITSELF asks. Headless: hard block.
+			// ITSELF asks. Headless: hard block. Capped per session
+			// (approval-fatigue guard, post-arc security review): a looping
+			// model must not spam dialogs until one gets a reflexive yes.
 			if (ctx.hasUI) {
+				if (inlineConfirmsUsed >= MAX_INLINE_CONFIRMS_PER_SESSION) {
+					record({ event: "create-block", reason: "inline-confirm-cap" });
+					return {
+						block: true,
+						reason:
+							`expertise_create blocked: the per-session inline-approval budget ` +
+							`(${MAX_INLINE_CONFIRMS_PER_SESSION}) is exhausted (ADR-0095 approval-fatigue guard). ` +
+							`Surface further candidates through a research fanout, or ask the operator ` +
+							`to restart the session if more direct creates are genuinely intended.`,
+					};
+				}
+				inlineConfirmsUsed += 1;
 				const paramsJson = JSON.stringify(fields, null, 2);
 				if (scanRawString(paramsJson).length > 0) {
 					record({ event: "create-block", reason: "secret-detected" });

@@ -47,8 +47,9 @@ actual call params: ledger match → allow (consumed); anything else →
 **block, fail-closed** — including internal gate errors. Interactive
 sessions get an inline fallback: a direct create with no prior fanout
 approval triggers its own `ctx.ui.confirm` over the exact params (secret-
-scanned before display). Headless sessions never approve: candidate
-groups queue to
+scanned before display), **capped at 3 per session** (approval-fatigue
+guard — a looping model cannot spam dialogs until one gets a reflexive
+yes). Headless sessions never approve: candidate groups queue to
 `~/.pi/agent/extensions/expertise-fanout-gate/pending/<date>.jsonl`, and
 creates without a ledger match are blocked outright.
 

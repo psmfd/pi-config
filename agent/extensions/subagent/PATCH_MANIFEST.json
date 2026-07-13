@@ -1,19 +1,21 @@
 {
-  "manifestVersion": 1,
+  "manifestVersion": 2,
   "pinnedPiVersion": "v0.80.6-psmfd.1",
   "upstreamRelativePath": "examples/extensions/subagent",
   "trackedFiles": {
     "index.ts": {
-      "diffSha256": "0468be94de1b1e067ca1c05b7de1fad84d613a2168e22db8f1a836ca371209ca",
+      "upstreamSha256": "d7f717bcdc6d335363ea3719dcb3fcfc0b5ee791eae81e3f803af2ff0d0d22a4",
+      "localSha256": "0d0ca7a71da1c829b4dce59882628cb9fd37fb3c4cee5170acec5f7756924014",
       "hunks": 32,
       "netLines": 345
     },
     "agents.ts": {
-      "diffSha256": "745e3a9e4f49265b045cc7d3fcbdd654f63b685afad0596daaa2b8063446b9c2",
+      "upstreamSha256": "e1ab7addbd4c0dcd11a2acd11ad21e1aef8b91d61c0a2216f8b6c29a0bfde904",
+      "localSha256": "55f659282443c271727b11b6271a7f9f2680c8c59f8623baca3db5ba1cb7dfad",
       "hunks": 6,
       "netLines": 204
     }
   },
-  "generatedAt": "2026-07-12T13:18:00Z",
+  "generatedAt": "2026-07-12T20:11:53Z",
   "note": "See agent/extensions/subagent/README.md for the patch table. Regenerate with: scripts/validate-subagent-drift.sh --regenerate"
 }

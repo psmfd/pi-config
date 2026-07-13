@@ -26,6 +26,11 @@
  * Failures return a structured `{ok: false, reason}` with a stable code —
  * the consumer logs it and drops the payload (fail-open at extraction,
  * fail-closed at ingestion, matching the wiring's existing posture).
+ *
+ * Platform note: the ownership leg (uid compare) is inert on Windows —
+ * `process.getuid` does not exist there, so only the O_NOFOLLOW, size,
+ * mode, and canonical-parent checks apply. Consistent with this repo's
+ * macOS/Linux operator base; do not assume full parity across platforms.
  */
 
 import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync } from "node:fs";

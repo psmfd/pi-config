@@ -44,6 +44,13 @@ fi
 
 TSX_VERSION="${TSX_VERSION:-4.19.2}"
 
+# Hermetic default: point the AST second pass at a nonexistent parser so the
+# pre-existing bypass/report-only suites (which contain benign `$(...)` ALLOW
+# cases that now trip astPassApplies) never spawn a real ~/.local/bin binary
+# a developer may have installed. ast-second-pass.test.ts overrides this
+# per-case with its own fake parser. (#506 review follow-up.)
+export PI_BASH_PARSER_BIN="${PI_BASH_PARSER_BIN:-/nonexistent/pi-bash-parser}"
+
 set +e
 if [ "$VERBOSE" = "1" ]; then
   npx --yes "tsx@${TSX_VERSION}" --test "${test_files[@]}"

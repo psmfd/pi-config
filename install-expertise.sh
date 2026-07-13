@@ -67,7 +67,7 @@ set -euo pipefail
 API_REPO="psmfd/agent-expertise-api"
 API_URL="https://github.com/${API_REPO}.git"
 EXT_MIRROR="psmfd/pi-expertise-client"
-EXT_REF="v0.3.2"
+EXT_REF="v0.4.0"
 
 DIR=""
 API_DIR="${HOME}/projects/agent-expertise-api"
@@ -477,6 +477,26 @@ else
     ok linkage "configured local ApiKey auth in secrets.env (key not shown)"
   fi
 
+  # Update semantics (#625): a re-run on a host with a LIVE expertise-api fails
+  # the upstream installer's port-free preflight ("port already in use") and
+  # rolls back. When something is listening on the bind address, stop the
+  # existing unit first — the health-gated restart below brings the new install
+  # up afterwards. Done immediately before delegating (not earlier) to keep the
+  # service-down window minimal. If the port is occupied by something that is
+  # NOT expertise-api, the stop is a no-op and the upstream preflight still
+  # fails with its own message — no worse than before.
+  stopped_live_service=0
+  if [ "${DRY_RUN}" = "1" ]; then
+    info "[dry-run] probe ${BIND_ADDR}; stop the running expertise-api service first if it is listening"
+  elif (exec 3<>"/dev/tcp/${bind_host}/${bind_port}") 2>/dev/null; then
+    info "${BIND_ADDR} is in use — stopping the existing expertise-api service before (re)install"
+    [ -x "${API_DIR}/scripts/expertise-apictl" ] || die api "control wrapper missing/not executable at ${API_DIR}/scripts/expertise-apictl; stop the service occupying ${BIND_ADDR} manually and re-run"
+    if ! EXPERTISE_API_URL="http://${BIND_ADDR}" "${API_DIR}/scripts/expertise-apictl" stop; then
+      die api "could not stop the service occupying ${BIND_ADDR}; stop it manually (${API_DIR}/scripts/expertise-apictl stop) and re-run"
+    fi
+    stopped_live_service=1
+  fi
+
   # Delegate to the upstream signed installer. --install-deps bootstraps .NET 10,
   # PostgreSQL 17, pgvector and the expertise role/DB via Homebrew, and appends the
   # generated connection string to secrets.env (mode 600, preserved — see above).
@@ -486,6 +506,18 @@ else
     info "[dry-run] (cd '${API_DIR}' && scripts/install.sh --from-release --version '${API_VERSION}' --install-deps --bind '${BIND_ADDR}')"
   else
     if ! ( cd "${API_DIR}" && scripts/install.sh --from-release --version "${API_VERSION}" --install-deps --bind "${BIND_ADDR}" ); then
+      # Rescue path: we took a serving install down above — bring it back so a
+      # failed update does not leave the host with no API at all. The previous
+      # install's unit/binaries are untouched by a preflight-or-later failure
+      # (upstream rolls its own staging back).
+      if [ "${stopped_live_service}" = "1" ]; then
+        warn api "install failed — restarting the PREVIOUS expertise-api install so it keeps serving"
+        if EXPERTISE_API_URL="http://${BIND_ADDR}" "${API_DIR}/scripts/expertise-apictl" restart; then
+          warn api "previous install restarted and healthy at http://${BIND_ADDR}"
+        else
+          warn api "rescue restart failed; check: ${API_DIR}/scripts/expertise-apictl status"
+        fi
+      fi
       die api "upstream scripts/install.sh failed (see its ERROR lines above)"
     fi
   fi

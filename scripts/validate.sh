@@ -649,6 +649,22 @@ else
   err "gitleaks vendor: scripts/validate-gitleaks-vendor.sh is missing or not executable"
 fi
 
+# --- 6e-bash-parser. bash-parser vendor pin (agent/vendor/bash-parser/) ----
+# Per ADR-0040 (attestation trust posture) / ADR-0099 (#506). First-party
+# attested release consumed by bash-destructive-guard; same sha256-pinned
+# GitHub release-asset pattern as gitleaks, validated separately under its own
+# governing ADRs.
+info "Validating agent/vendor/bash-parser/ (#506, ADR-0040)"
+if [ -x scripts/validate-bash-parser-vendor.sh ]; then
+  if scripts/validate-bash-parser-vendor.sh; then
+    ok "bash-parser vendor: structurally consistent"
+  else
+    err "bash-parser vendor: structural validation failed (see ERROR lines above)"
+  fi
+else
+  err "bash-parser vendor: scripts/validate-bash-parser-vendor.sh is missing or not executable"
+fi
+
 # --- 6e-quater. scan-secrets self-test (ADR-0048) --------------------------
 # The repo-agnostic secret scanner ships hermetic assertions (range / null-SHA
 # parsing) that need neither gitleaks nor a repo. Gate them so a regression in
@@ -977,6 +993,27 @@ if [ -x scripts/test-subagent.sh ]; then
   fi
 else
   err "subagent: scripts/test-subagent.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-bash-sandbox. pi-bash-sandbox wrapper test suite (#507, ADR-0097) --
+info "Running bash-sandbox wrapper test suite"
+if [ -x scripts/test-bash-sandbox.sh ]; then
+  if bs_output="$(scripts/test-bash-sandbox.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$bs_output"
+    fi
+    ok "bash-sandbox: tests passed"
+  else
+    bs_status=$?
+    printf '%s\n' "$bs_output" >&2
+    if [ "$bs_status" -eq 2 ]; then
+      err "bash-sandbox: test environment unavailable; required check skipped"
+    else
+      err "bash-sandbox: test suite failed (exit $bs_status)"
+    fi
+  fi
+else
+  err "bash-sandbox: scripts/test-bash-sandbox.sh missing or not executable; required check skipped"
 fi
 
 # --- 9b-context-manager. context-manager test suite (#331/#334, ADR-0032) --

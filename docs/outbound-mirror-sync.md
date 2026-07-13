@@ -226,6 +226,32 @@ Each mirror gets an **annotated tag + GitHub Release**, created idempotently by
   (#492). `scripts/check-ext-ref-drift.sh --fix` + the weekly `pin-drift-check.yml`
   bump each stale pin to its mirror's latest release via an automated PR.
 
+### Release-time pin consistency (ADR-0098)
+
+The CI `sync` job above cuts the extension-mirror releases on the **post-merge**
+push — the same instant `release.yml` cuts the config release — so a naively-cut
+release ships `install.sh` pins that are one cycle behind the mirror releases the
+same promotion just created (the #704 defect). To close this, `scripts/release.sh`
+runs a **pre-promotion Phase 1.5** ([ADR-0098](../adrs/0098-release-time-mirror-pin-sync.md))
+*before* opening the promotion PR:
+
+1. **Pre-release the changed extension mirrors from dev** —
+   `sync-mirror.sh --all --overlay-only --changed --push --release`. The
+   `--overlay-only` filter excludes the replace-mode config mirror from the
+   target set entirely — necessary because the content push is unconditional
+   (only the config mirror's *release* is gated on `--release-version`, not its
+   push), so it must not be resolved at all here. The config mirror is still cut
+   post-merge by `release.yml` / Phase 6. Idempotent (`--changed`).
+2. **Reconcile pins, fail-closed** — `check-ext-ref-drift.sh`; if pins drift
+   behind the just-cut releases, `release.sh` opens a `chore/release-pin-sync-<VERSION>`
+   PR to dev (it cannot push to protected dev directly) and **stops**. Merge it,
+   `git pull`, and re-run — the re-run finds the mirrors already released and the
+   pins clean, and proceeds. The promoted snapshot then carries pins matching the
+   mirror releases.
+
+The post-merge `sync` job is unchanged and becomes an idempotent no-op for the
+already-released mirrors. `--tag-only` and `--no-mirror-release` skip Phase 1.5.
+
 Properties:
 
 - **Idempotent.** Tag and Release existence are probed independently; an existing

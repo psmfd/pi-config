@@ -283,6 +283,57 @@ test("create gate: inline interactive fallback is a real confirm", async (tc) =>
 	assert.match(blocked.reason, /operator declined/);
 });
 
+test("secret-bearing group queues a REDACTED candidate copy, never a dialog", async (tc) => {
+	const h = await makeHarness();
+	tc.after(() => rm(h.dir, { recursive: true, force: true }));
+	const { ctx, confirms } = makeCtx({ hasUI: true, confirmResponses: [true] });
+
+	const secret = `AKIA${"A".repeat(16)}`;
+	const leaky = group({
+		candidate: { ...CANDIDATE, body: `use this key: ${secret}` },
+	});
+	await h.toolResult(subagentResult([leaky]), ctx);
+	assert.equal(confirms.length, 0, "secret content never reaches the dialog");
+	const rows = pendingLines(h.agentDir);
+	assert.equal(rows.length, 1);
+	assert.equal(rows[0].reason, "secret-detected");
+	const queuedBody = (rows[0].candidate as { body: string }).body;
+	assert.ok(!queuedBody.includes(secret), "pending queue must not persist the secret");
+	assert.match(queuedBody, /^\[redacted:/);
+});
+
+test("create gate: inline confirms are capped per session (approval-fatigue guard)", async (tc) => {
+	const h = await makeHarness();
+	tc.after(() => rm(h.dir, { recursive: true, force: true }));
+
+	// Three declined inline confirms consume the whole budget…
+	for (let i = 0; i < 3; i += 1) {
+		const c = makeCtx({ hasUI: true, confirmResponses: [false] });
+		const blocked = (await h.createGate(
+			{ toolName: "expertise_create", input: { ...APPROVED_FIELDS, title: `attempt ${i}` } },
+			c.ctx,
+		)) as { block: boolean };
+		assert.equal(blocked.block, true);
+		assert.equal(c.confirms.length, 1);
+	}
+	// …the fourth attempt blocks WITHOUT raising a dialog.
+	const fourth = makeCtx({ hasUI: true, confirmResponses: [true] });
+	const capped = (await h.createGate(
+		{ toolName: "expertise_create", input: { ...APPROVED_FIELDS, title: "attempt 4" } },
+		fourth.ctx,
+	)) as { block: boolean; reason: string };
+	assert.equal(capped.block, true);
+	assert.equal(fourth.confirms.length, 0, "no dialog past the cap");
+	assert.match(capped.reason, /inline-approval budget/);
+	// Fanout-ledger approvals are unaffected by the cap.
+	await h.toolResult(subagentResult([group()]), makeCtx({ hasUI: true, confirmResponses: [true] }).ctx);
+	const allow = await h.createGate(
+		{ toolName: "expertise_create", input: { ...APPROVED_FIELDS } },
+		makeCtx({ hasUI: false }).ctx,
+	);
+	assert.equal(allow, undefined);
+});
+
 test("create gate: sanity — approval hash in the note matches computeApprovalHash", async (tc) => {
 	const h = await makeHarness();
 	tc.after(() => rm(h.dir, { recursive: true, force: true }));

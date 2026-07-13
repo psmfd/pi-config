@@ -300,6 +300,29 @@ else
   else
     warn toolchain "failed to install scan-secrets to ~/.local/bin"
   fi
+  # Install the opt-in bash-tool $HOME-scoping wrapper as
+  # ~/.local/bin/pi-bash-sandbox (symlink to the live repo file, so `git pull`
+  # keeps it current). NOT wired into settings by default — redirecting $HOME
+  # breaks the agent's gh/git/npm auth; enabling it is a deliberate per-host
+  # choice (`"shellPath": "~/.local/bin/pi-bash-sandbox"`). #507 Phase 1, ADR-0097.
+  if _ih_link_local_bin "${REPO_DIR}/scripts/pi-bash-sandbox.sh" pi-bash-sandbox; then
+    ok toolchain "pi-bash-sandbox installed to ~/.local/bin/pi-bash-sandbox (opt-in; set shellPath to enable)"
+  else
+    warn toolchain "failed to install pi-bash-sandbox to ~/.local/bin"
+  fi
+  # Install pi-bash-parser (the bash-destructive-guard's AST second-opinion
+  # binary) from its attested vendor pin. A runtime dependency of the guard
+  # extension, not a dev toolchain tool — a fetch (not a symlink), so it runs
+  # here rather than in the toolchain loop above. #506, ADR-0099.
+  set +e
+  ih_ensure_bash_parser
+  bp_rc=$?
+  set -e
+  case $bp_rc in
+    0) : ;;
+    2) warn toolchain "pi-bash-parser: unsupported host triple; bash-destructive-guard AST second pass will be unavailable" ;;
+    *) warn toolchain "pi-bash-parser install failed (rc=$bp_rc); bash-destructive-guard AST second pass will be unavailable" ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------

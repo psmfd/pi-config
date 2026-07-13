@@ -39,6 +39,7 @@ import {
 } from "../shared/expertise-api-config.ts";
 import { checkReady } from "../shared/expertise-api-health.ts";
 import { searchExpertise } from "../shared/expertise-api-search.ts";
+import { scanRawString } from "../shared/secret-scan.ts";
 import { computeCanonicalBlob, isValidGitSha, type CanonicalFileEntry } from "./canonicalize.ts";
 import { buildCanonicalQuery } from "./collector.ts";
 
@@ -266,8 +267,19 @@ async function main(): Promise<number> {
 					headSha: args.headSha,
 					query,
 					fileCount: entries.length,
+					// Defense-in-depth: the corpus is secret-scanned at ingestion and
+					// create time, but this artifact is a 14-day CI upload — redact
+					// rather than trust upstream scans (post-arc review finding).
 					search: search.ok
-						? { ok: true, status: search.status, truncated: search.truncated, body: search.text }
+						? {
+								ok: true,
+								status: search.status,
+								truncated: search.truncated,
+								body:
+									scanRawString(search.text).length > 0
+										? `[redacted:${scanRawString(search.text).join(",")}]`
+										: search.text,
+							}
 						: { ok: false, reason: search.reason },
 					proves:
 						"artifact well-formed + internally consistent against this checkout; NOT proof a fanout or human approval occurred",

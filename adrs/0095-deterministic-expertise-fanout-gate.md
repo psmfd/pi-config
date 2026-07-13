@@ -142,3 +142,19 @@ rejected as model-spoofable / heaviest-weight respectively.
   `$PI_CODING_AGENT_DIR/expertise-telemetry/` — one convention, not two.
 - `SearchResult`'s failure variant gains `rateLimited`/`retryAfterSeconds`
   (additive) so programmatic callers stop sniffing prose.
+- **Scope of the create-gate invariant (post-arc review amendment):** the
+  code-enforced approval holds only where this gate extension is loaded.
+  The standalone `pi-expertise-client` mirror ships no gate — an install
+  of just that extension falls back to the ADR-0028 guards (write opt-in +
+  secret scan) and prompt discipline. Accepted: the mirror's charter is
+  the client tool surface; bundling the gate would drag the subagent/
+  indexer dependency graph into it. The rule doc carries the same caveat.
+- **Post-arc review hardening (same PR):** one-search-in-flight guard
+  (concurrent fanouts skip rather than double-spend the budget); telemetry
+  `agents` values sanitized like every other free-text field; the
+  `secret-detected` pending-queue path persists a field-wise REDACTED
+  candidate copy (fingerprint + body hashes still identify it); the
+  create gate's inline confirm is capped at 3 per session
+  (approval-fatigue guard); the CI audit artifact's embedded search body
+  is redaction-scanned; the workflow scopes `PI_EXPERTISE_API_KEY` to the
+  dedicated audit step instead of the whole validator process tree.

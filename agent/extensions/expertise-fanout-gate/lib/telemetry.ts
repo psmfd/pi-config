@@ -99,7 +99,9 @@ export function appendTelemetry(
 		if (record.query !== undefined) line.query = sanitizeField(record.query);
 		if (record.canonicalBlobSha !== undefined) line.canonicalBlobSha = record.canonicalBlobSha;
 		if (record.resultCount !== undefined) line.resultCount = record.resultCount;
-		if (record.agents !== undefined) line.agents = [...record.agents];
+		// Agent names originate from model-controlled tasks[].agent strings —
+		// sanitize like every other free-text field (review finding, ADR-0095).
+		if (record.agents !== undefined) line.agents = record.agents.map(sanitizeField);
 		if (record.taskCount !== undefined) line.taskCount = record.taskCount;
 		if (record.detail !== undefined) line.detail = sanitizeField(record.detail);
 		appendFileSync(join(dir, `${day}.jsonl`), `${JSON.stringify(line)}\n`, { mode: 0o600 });
