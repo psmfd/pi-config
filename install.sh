@@ -81,7 +81,7 @@ EXT_MIRRORS=(
   pi-expertise-client@v0.4.0
   pi-indexing@v0.1.2
   pi-context-manager@v0.1.2
-  pi-auto-router@v0.7.1
+  pi-auto-router@v0.8.1
 )
 
 DIR="${HOME}/projects/pi-config"

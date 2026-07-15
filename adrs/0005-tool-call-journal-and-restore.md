@@ -1,6 +1,6 @@
 # ADR-0005: Tool-call journal and `restore` tool — file rollback for write/edit/destructive-bash operations
 
-**Status:** Proposed
+**Status:** Deprecated — triaged 2026-07-15 (#213): never actioned; no implementation appetite. Pre-flight guards (secrets-guard, bash-destructive-guard) plus the OS-level sandbox track (#507, ADR-0097) now own the damage-control story; a rollback capability would need a fresh ADR, not a revival of this design
 **Date:** 2026-05-19
 **Companion to:** [ADR-0001](0001-subagent-orchestration-substrate.md), [ADR-0002](0002-agent-to-agent-channel.md)
 **Tracking issue:** #69 (Phase C deferred-capability)

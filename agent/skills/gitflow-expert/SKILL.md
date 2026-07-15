@@ -10,6 +10,45 @@ Read-only reference for Git workflow guidance — branching strategies, merge st
 
 Scope: branching strategy selection, branch naming conventions, merge strategies, commit message formatting, release and hotfix mechanics, and SemVer tagging. Out of scope: work item creation, issue triage, backlog management, sprint planning, and linking commits to issues or work items — route those to `work-item-management-expert`.
 
+## This Repo's Binding Policy (pi_config)
+
+> **Read this before advising on pi_config's own branches.** Everything below
+> this section is generic, repo-agnostic background for comparing workflow
+> models across projects. It is not this repo's policy, and where the two
+> conflict, the binding rule wins.
+
+pi_config follows the two-branch model recorded in
+[ADR-0036](../../../adrs/0036-dev-integration-main-stable-branch-model.md),
+amended by
+[ADR-0101](../../../adrs/0101-bounded-stable-hotfix-carveout.md):
+
+- `dev` is the integration branch: normal topic branches start from and
+  target `dev`.
+- `main` is the stable release branch, advanced by `dev` → `main` promotion
+  PRs opened by `scripts/release.sh`. Every merge to `main` is a release
+  boundary that auto-publishes.
+- A PR targeting `main` with a head other than `dev` is prohibited except
+  under the bounded `stable-hotfix` carve-out (ADR-0101): explicit maintainer
+  authorization, the `stable-hotfix` label, production-breaking/security
+  eligibility only, and same-working-day back-propagation to `dev`. An agent
+  must never infer urgency or self-classify work as a stable hotfix — absent
+  explicit authorization, use the normal `dev`-first flow. Before merging a
+  `stable-hotfix` PR, run `scripts/check-mirror-alerts.sh` manually — a
+  hotfix merge bypasses `release.sh`'s Phase 0 code-scanning gate.
+- Merge methods are stated policy: `dev` → `main` promotion PRs and
+  `stable-hotfix` PRs use a **merge commit** (shared-SHA ancestry keeps
+  `release.sh`'s version-range math correct); never squash or rebase a PR
+  targeting `main`. Ordinary topic PRs to `dev` use the merge method
+  permitted by the repository's current protection/settings.
+- The binding rule text is
+  [`agent/rules/github-flow.md`](../../rules/github-flow.md). Advice about
+  this repo restates that rule; it never substitutes a generic model below
+  for it.
+
+Note the deliberate deviation: canonical "GitHub Flow" (next section) is a
+single-branch model; pi_config's variant integrates on `dev` and promotes to
+`main`.
+
 ## Branching Strategies
 
 ### GitFlow
@@ -21,6 +60,9 @@ Five branch types: `main` (production-tagged), `develop` (integration target), `
 **Avoid when:** Continuous deployment, single production version, small teams — the overhead provides no benefit.
 
 ### GitHub Flow
+
+pi_config deviates from this canonical form — see
+[This Repo's Binding Policy](#this-repos-binding-policy-pi_config).
 
 Single long-lived branch (`main`, always deployable). All work happens in short-lived feature branches merged via PR. Merge triggers deployment.
 
@@ -65,6 +107,10 @@ All developers commit to `main` at least daily. Branches live at most 1-2 days. 
 | Rebase merge | Linear, all commits preserved | Yes (granular) | Easy per-commit revert | Linear log, solo/small team work |
 
 ### The Golden Rule of Rebase
+
+For pi_config, substitute `dev` for `main` throughout this section and the
+next — the integration branch topic branches sync against is `dev`
+(see [This Repo's Binding Policy](#this-repos-binding-policy-pi_config)).
 
 Never rewrite history that has been shared. This is a correctness constraint, not a preference. Rebasing a branch that others have pulled creates divergent repositories.
 
@@ -126,6 +172,10 @@ One logical change per commit. If a refactor is needed to implement a feature, t
 4. If a release branch is active when a hotfix is needed, merge hotfix into the release branch — it flows to `develop` when the release closes
 
 ### Universal Hotfix Pattern
+
+For pi_config itself, the bounded `stable-hotfix` carve-out in
+[This Repo's Binding Policy](#this-repos-binding-policy-pi_config) applies
+instead of this generic pattern.
 
 1. Branch from the tagged production commit on `main`, not from `develop`
 2. Name: `hotfix/<issue-id>` or `hotfix/x.y.z+1`

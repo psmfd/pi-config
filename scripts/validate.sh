@@ -226,6 +226,76 @@ for f in agent/rules/*.md; do
   ok "rules: $rname"
 done
 
+# --- 4a. Active GitHub Flow policy consistency -----------------------------
+# ADR-0036 makes `dev` the normal integration target and `main` the stable
+# promotion target. PR #720 reached `main` because the always-loaded AGENTS
+# synopsis and github-flow rule still described the superseded single-branch
+# model. Guard the two active instruction surfaces against that regression.
+info "Validating active GitHub Flow policy (ADR-0036)"
+gf_rule="agent/rules/github-flow.md"
+gf_agents="agent/AGENTS.md"
+gf_skill="agent/skills/gitflow-expert/SKILL.md"
+gf_bad=0
+# Each surface is checked independently: `grep -q` across both files would
+# pass when EITHER file carries a phrase, so a partial revert of one surface
+# could slip through the union check (recovery review of #720).
+# shellcheck disable=SC2016 # Backticks are literal Markdown in policy text.
+for gf_required in \
+  '`dev`** is the integration branch' \
+  '`main`** is the stable release branch' \
+  '`dev` → `main` promotion PR' \
+  'Carve-out: `stable-hotfix`-labeled urgent fixes' \
+  'must never infer urgency'; do
+  if ! grep -qF "$gf_required" "$gf_rule"; then
+    err "github-flow: $gf_rule missing required ADR-0036 statement: $gf_required"
+    gf_bad=1
+  fi
+done
+# shellcheck disable=SC2016 # Backticks are literal Markdown in policy text.
+for gf_required in \
+  '`dev` is the protected integration branch' \
+  'normal topic branches start from and target `dev`' \
+  '`dev` → `main` promotion PRs' \
+  '`stable-hotfix` label'; do
+  if ! grep -qF "$gf_required" "$gf_agents"; then
+    err "github-flow: $gf_agents missing required ADR-0036 statement: $gf_required"
+    gf_bad=1
+  fi
+done
+# The gitflow-expert skill is mostly repo-agnostic background, but its
+# binding-policy section (issue #724) must keep naming this repo's actual
+# model so the skill never again teaches only the canonical single-main flow.
+# Positive presence only — the generic sections legitimately describe other
+# models, so this surface is deliberately excluded from the stale-phrase scan
+# below.
+# shellcheck disable=SC2016 # Backticks are literal Markdown in policy text.
+for gf_required in \
+  '`dev` is the integration branch' \
+  '`stable-hotfix` carve-out' \
+  'ADR-0036' \
+  'ADR-0101'; do
+  if ! grep -qF "$gf_required" "$gf_skill"; then
+    err "github-flow: $gf_skill missing required ADR-0036 statement: $gf_required"
+    gf_bad=1
+  fi
+done
+# shellcheck disable=SC2016 # Backticks are literal Markdown in policy text.
+for gf_stale in \
+  '`main`** is both the integration branch and the stable branch' \
+  'Feature branches target `main`' \
+  'Create from `main`' \
+  'All PRs squash-merge to `main`' \
+  'urgent stable fix that is immediately propagated' \
+  'propagate back to `dev` immediately'; do
+  if grep -qF "$gf_stale" "$gf_rule" "$gf_agents"; then
+    err "github-flow: active guidance contains superseded single-branch policy: $gf_stale"
+    gf_bad=1
+  fi
+done
+if [ "$gf_bad" -eq 0 ]; then
+  ok "github-flow: active guidance matches dev-integration/main-promotion policy"
+fi
+
 # --- 5. AGENTS.md catalog sync --------------------------------------------
 info "Validating agent/AGENTS.md catalog"
 AGENTS_MD="agent/AGENTS.md"
@@ -1170,16 +1240,23 @@ MX_KEYS
 
   # lastReviewed: malformed is a structural FAIL; stale-but-valid is a WARN.
   # jq's strptime/mktime/now avoid GNU-vs-BSD `date` portability entirely.
+  # The staleness threshold is single-sourced from the matrix's own
+  # staleAfterDays field (#686) — auto-router's `(stale)` flag reads the same
+  # field — so this gate FAILs if the field is missing or non-numeric rather
+  # than silently reintroducing a duplicated literal.
+  mx_stale_days="$(jq -r '.staleAfterDays // empty' "$MX" 2>/dev/null)"
   mx_age_days="$(jq -r '
     ((.lastReviewed | strptime("%Y-%m-%d") | mktime)) as $reviewed
     | ((now - $reviewed) / 86400 | floor)
   ' "$MX" 2>/dev/null)"
-  if [ -z "$mx_age_days" ]; then
+  if ! [[ "$mx_stale_days" =~ ^[0-9]+$ ]]; then
+    err "routing-matrix: staleAfterDays in $MX is missing or not a positive integer (single source of the staleness threshold, #686)"
+  elif [ -z "$mx_age_days" ]; then
     err "routing-matrix: lastReviewed in $MX is missing or not a valid YYYY-MM-DD date"
-  elif [ "$mx_age_days" -gt 180 ]; then
-    warn "routing-matrix: lastReviewed is $mx_age_days day(s) old (>180); re-review the capability floor and bump lastReviewed with a rationale"
+  elif [ "$mx_age_days" -gt "$mx_stale_days" ]; then
+    warn "routing-matrix: lastReviewed is $mx_age_days day(s) old (>$mx_stale_days); re-review the capability floor and bump lastReviewed with a rationale"
   else
-    ok "routing-matrix: lastReviewed is $mx_age_days day(s) old (<=180)"
+    ok "routing-matrix: lastReviewed is $mx_age_days day(s) old (<=$mx_stale_days)"
   fi
 
   # ADR-0094/#656: wrapper `model:` pins are an escape hatch, not the routing

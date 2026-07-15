@@ -7,6 +7,7 @@ date: 2026-06-25
 
 **Status:** Accepted
 **Date:** 2026-06-25
+**Superseded (in part) by:** [ADR-0102](0102-repository-rulesets-migration.md) — the classic-branch-protection mechanism record is replaced by repository rulesets; the `verify` required-check decision remains live and carries forward unchanged
 **Closes:** #398 (register the sync-mirrors `verify` gate as a required check)
 **Related:** [ADR-0036](0036-dev-integration-main-stable-branch-model.md) (the dev/main branch model whose enforcement this records), [ADR-0050](0050-outbound-distribution-mirror-sync.md) (the sync engine whose `verify` job this gates on). **Follow-up:** #420 (evaluate migrating to repository rulesets).
 

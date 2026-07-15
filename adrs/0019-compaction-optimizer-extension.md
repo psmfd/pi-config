@@ -357,7 +357,7 @@ Unanimous verdict: **PASS_WITH_WARNINGS** with ~85% finding overlap and three un
 
 ### Filed during ADR-0019 self-review (not held)
 
-- Upstream proposal for schema-registered extension settings API — tracked locally at #210, filed upstream as [`earendil-works/pi#4981`](https://github.com/earendil-works/pi/issues/4981) (auto-closed by new-contributor bot per repo convention; awaiting maintainer reopen).
+- Upstream proposal for schema-registered extension settings API — tracked locally at #210, filed upstream as [`earendil-works/pi#4981`](https://github.com/earendil-works/pi/issues/4981) (auto-closed by new-contributor bot; never formally reopened — a collaborator confirmed 2026-05-26 the need will be addressed "in the refactor," and a contributor bump on 2026-07-02 went unanswered; watching the settings refactor, not a reopen).
 - Contribution request to document `undefined`-return fall-through in `docs/compaction.md` — tracked at #211; upstream filing pending re-review of `earendil-works/pi` contribution docs (procedure documented in #211).
 
 ### Self-review (Agent Efficacy)

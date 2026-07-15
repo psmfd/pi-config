@@ -14,7 +14,7 @@ Free-text description of what the PR does and **why**. The "why" is mandatory; t
 
 ### Type of Change
 
-Implicit in the PR title (`<type>(<scope>): ...`) — see [`conventional-commits.md`](conventional-commits.md). A separate checklist is not required; the PR title is the source of truth and is also enforced by the squash-merge commit message.
+Implicit in the PR title (`<type>(<scope>): ...`) — see [`conventional-commits.md`](conventional-commits.md). A separate checklist is not required; the PR title is the source of truth for the change classification.
 
 ### Test Plan
 
@@ -40,7 +40,7 @@ Include when applicable. Delete when not.
 
 ## PR Title
 
-The PR title is a valid Conventional Commits message: `<type>(<scope>): <description>`. It becomes the squash-merge commit message on `main`, so the same constraints apply (imperative, lowercase, no period, no leading punctuation per the semantic-PR-linter constraint in [`conventional-commits.md`](conventional-commits.md)).
+The PR title is a valid Conventional Commits message: `<type>(<scope>): <description>`. The same constraints apply to normal PRs targeting `dev` and release-promotion PRs targeting `main` (imperative, lowercase, no period, no leading punctuation per the semantic-PR-linter constraint in [`conventional-commits.md`](conventional-commits.md)).
 
 ## When This Rule Does Not Apply
 

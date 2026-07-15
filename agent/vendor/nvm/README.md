@@ -1,6 +1,6 @@
 # pi_config nvm pin
 
-Pinned to **nvm v0.40.4** (released 2026-01-29).
+> **Pinned to nvm `v0.40.4`** (source: GitHub Releases on [`nvm-sh/nvm`](https://github.com/nvm-sh/nvm/releases)).
 
 Per [ADR-0010](../../../adrs/0010-setup-install-trust-posture.md). The companion runtime-binary pin for pi lives in [`../pi/`](../pi/) per [ADR-0009](../../../adrs/0009-pi-runtime-acquisition-strategy.md); the two follow the same layout and bump procedure.
 

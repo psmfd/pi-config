@@ -3,7 +3,7 @@ status: Accepted
 date: 2026-06-14
 ---
 
-# ADR-0042: Upstream documentation as the security-reporting gate
+# ADR-0043: Upstream documentation as the security-reporting gate
 
 **Status:** Accepted
 **Date:** 2026-06-14

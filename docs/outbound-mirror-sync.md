@@ -199,6 +199,43 @@ package as a real `dependencies` entry (not a peerDependency).
 
 Leaf extensions keep `inline: []` and are unaffected.
 
+## Mirror repo requirements (drift prevention)
+
+Requirements every **overlay** extension mirror must satisfy, codified from the
+2026-07-15 #468 close-out sweep (three mirrors sat a pi-train minor behind with
+CI that could never pass) and #736. These are operational requirements implied
+by the mirror CI and release machinery above, written down so new mirrors start
+compliant and existing ones are auditable. Mechanical enforcement is tracked in
+#737.
+
+1. **Committed lockfile.** The mirror commits `package-lock.json` alongside its
+   mirror-owned `package.json`. The mirror `check` workflow runs `npm ci`,
+   which hard-fails without one, and Dependabot alert scanning is only real
+   with a lockfile. Whenever a dependency changes, regenerate the lockfile in
+   the same PR (`npm install --package-lock-only`).
+2. **Exact pi-train alignment.** `@earendil-works/pi-coding-agent` (devDep)
+   and any runtime `@earendil-works/*` dependency are exact-pinned — no
+   ranges — and kept on the same release train across **all** extension
+   mirrors. Bump them as one sweep, not per-repo as convenient (#468 is what
+   per-repo convenience decays into).
+3. **Declare every direct import.** Any package the mirrored source or tests
+   import by bare specifier must be a declared dependency of the mirror.
+   Never rely on transitive hoisting: the 0.79.3 → 0.80.3 bump stopped
+   hoisting `@earendil-works/pi-agent-core` (compaction-optimizer) and
+   `typebox` (expertise-client), breaking typecheck in repos that had silently
+   depended on it. pi_config's own `scripts/lib/extension-deps.sh` declares
+   these explicitly; mirrors must match.
+4. **Layout-agnostic runtime paths.** The sync engine rewrites `shared/`
+   **import specifiers** (fail-closed, § above) — but it does **not** rewrite
+   runtime file paths built from `import.meta.url` / `fileURLToPath` (e.g.
+   loading `shared/routing-matrix.json` as data). Source and tests must
+   resolve data files in a way that works at both nesting depths
+   (`agent/extensions/<ext>/` in pi_config, repo root in the mirror), or the
+   target needs an explicit sanitize transform. The pi-auto-router
+   routing-matrix tests failed on the mirror for exactly this reason (#736,
+   fixed by resolving the matrix via shared/routing-matrix.ts's module-adjacent
+   `defaultMatrixPath()`).
+
 ## Releases (ADR-0055)
 
 Each mirror gets an **annotated tag + GitHub Release**, created idempotently by

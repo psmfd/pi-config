@@ -8,6 +8,7 @@ date: 2026-06-12
 **Status:** Accepted
 **Date:** 2026-06-12
 **Tracking issue:** none — adopted via decision PR
+**Amended by:** [ADR-0101](0101-bounded-stable-hotfix-carveout.md) — bounds § Hotfix handling (authorization, `stable-hotfix` label, eligibility, back-propagation deadline)
 **Related:** [`agent/rules/github-flow.md`](../agent/rules/github-flow.md), [`agent/AGENTS.md`](../agent/AGENTS.md), [ADR-0012](0012-vendored-pi-default.md) (stable vendored-default posture), [`README.md`](../README.md), [`.github/workflows/validate.yml`](../.github/workflows/validate.yml)
 
 ## Context and Problem Statement
@@ -62,6 +63,11 @@ This repo is not a packaged library with a formal release train; it is primarily
 - `dev` is an integration channel, not a release/stable channel.
 
 ### Hotfix handling
+
+> **Amended by [ADR-0101](0101-bounded-stable-hotfix-carveout.md):** invoking
+> this path now additionally requires explicit maintainer authorization, the
+> `stable-hotfix` label, narrow eligibility, and same-working-day
+> back-propagation. Read ADR-0101 before invoking this section.
 
 - Urgent fixes required on the stable branch start from **`main`**, not `dev`.
 - The branch naming convention remains the existing `<type>/kebab-case-description` format; urgent fixes are distinguished by **their base and target branch**, not by a separate mandatory prefix.
