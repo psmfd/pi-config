@@ -136,7 +136,13 @@ Twelve pi extensions are distributed as standalone mirrors and installed by
 | [`pi-expertise-client`](https://github.com/psmfd/pi-expertise-client) | Local loopback client for a developer's agent-expertise-api (search + create) |
 | [`pi-indexing`](https://github.com/psmfd/pi-indexing) | Semantic codebase search (cocoindex-code) with idle-gated background re-indexing |
 | [`pi-context-manager`](https://github.com/psmfd/pi-context-manager) | Cache-safe, zero-token context pruning of oversized tool results |
-| [`pi-auto-router`](https://github.com/psmfd/pi-auto-router) | Per-prompt model selection via a cheap classifier (`before_agent_start`) |
+| [`pi-auto-router`](https://github.com/psmfd/pi-auto-router) | Per-prompt model selection plus deterministic matrix status, review, and explicit refresh |
+
+Capability policy remains human-reviewed and is never written by routing. The
+standalone auto-router mirror publishes the complete
+[matrix lifecycle and JSON v1 contract](https://github.com/psmfd/pi-auto-router/blob/main/MATRIX_LIFECYCLE_V1.md),
+including snapshot hashes/generations, inert rows, registry reload guidance,
+review proposals, and source-control validation.
 
 ## Provenance and trust
 

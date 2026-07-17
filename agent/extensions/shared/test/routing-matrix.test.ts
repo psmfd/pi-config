@@ -1,145 +1,229 @@
 import assert from "node:assert/strict";
-import { promises as fs } from "node:fs";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { defaultMatrixPath, loadRoutingMatrix } from "../routing-matrix.ts";
-
-// Loader behavior only (#352) — the committed file's schema/taxonomy checks
-// live in auto-router/test/routing-matrix.test.ts (they need TASK_TYPES,
-// which shared/ must not import).
+import {
+  defaultMatrixPath,
+  gardenMatrix,
+  loadRoutingMatrix,
+  loadRoutingMatrixResult,
+} from "../routing-matrix.ts";
 
 async function withFile(content: string, fn: (path: string) => Promise<void>): Promise<void> {
-  const dir = await fs.mkdtemp(join(tmpdir(), "routing-matrix-"));
+  const dir = await mkdtemp(join(tmpdir(), "routing-matrix-"));
   const path = join(dir, "routing-matrix.json");
   try {
-    await fs.writeFile(path, content, "utf8");
+    await writeFile(path, content, "utf8");
     await fn(path);
   } finally {
-    await fs.rm(dir, { recursive: true, force: true });
+    await chmod(path, 0o600).catch(() => undefined);
+    await rm(dir, { recursive: true, force: true });
   }
 }
 
-test("loads a well-formed matrix", async () => {
-  await withFile(
-    JSON.stringify({
-      v: 1,
-      lastReviewed: "2026-07-06",
-      models: { "omlx/workhorse": { capable: ["code-edit"], rationale: "r" } },
-    }),
-    async (path) => {
-      const m = await loadRoutingMatrix(path);
-      assert.deepEqual(m, {
-        v: 1,
-        lastReviewed: "2026-07-06",
-        models: { "omlx/workhorse": { capable: ["code-edit"] } },
-      });
+function validMatrix(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    v: 1,
+    lastReviewed: "2026-07-06",
+    staleAfterDays: 180,
+    models: {
+      "omlx/workhorse": {
+        capable: ["code-edit"],
+        tier: "fast",
+        rationale: "fixture evidence",
+      },
     },
-  );
-});
+    ...overrides,
+  });
+}
 
-test("missing file, malformed JSON, and non-object models all yield null (fail-soft)", async () => {
-  assert.equal(await loadRoutingMatrix("/nonexistent/routing-matrix.json"), null);
-  await withFile("{not json", async (path) => {
-    assert.equal(await loadRoutingMatrix(path), null);
-  });
-  await withFile('{"v":1,"models":[]}', async (path) => {
-    assert.equal(await loadRoutingMatrix(path), null);
-  });
-  await withFile('{"v":1,"lastReviewed":"2026-07-06"}', async (path) => {
-    assert.equal(await loadRoutingMatrix(path), null);
-  });
-});
-
-test("drops malformed rows and non-string capable entries, keeps the rest", async () => {
+test("loads and retains every runtime matrix metadata field", async () => {
   await withFile(
-    JSON.stringify({
-      v: 1,
-      lastReviewed: "2026-07-06",
-      models: {
-        "good/model": { capable: ["simple-qa", 42, "code-edit", null] },
-        "bad/no-capable": { rationale: "no capable array" },
-        "bad/capable-not-array": { capable: "simple-qa" },
+    validMatrix({
+      refresh: {
+        at: "2026-07-12T11:00:00Z",
+        tool: "scripts/analyze-routing-matrix.sh",
+        source: "214 routed turns",
+        inputsHash: "sha256:abc",
       },
     }),
     async (path) => {
-      const m = await loadRoutingMatrix(path);
-      assert.deepEqual(m?.models, { "good/model": { capable: ["simple-qa", "code-edit"] } });
+      const result = await loadRoutingMatrixResult(path, new Date("2026-07-16T00:00:00Z"));
+      assert.equal(result.ok, true);
+      if (!result.ok) assert.fail("expected a loaded matrix");
+      assert.deepEqual(result.matrix, {
+        v: 1,
+        lastReviewed: "2026-07-06",
+        staleAfterDays: 180,
+        refresh: {
+          at: "2026-07-12T11:00:00Z",
+          tool: "scripts/analyze-routing-matrix.sh",
+          source: "214 routed turns",
+          inputsHash: "sha256:abc",
+        },
+        models: {
+          "omlx/workhorse": {
+            capable: ["code-edit"],
+            tier: "fast",
+            rationale: "fixture evidence",
+          },
+        },
+      });
+      assert.deepEqual(result.diagnostics, []);
     },
   );
+});
+
+test("canonicalizes model and capability order independently of JSON insertion order", async () => {
+  const reverseModels = {
+    "provider-z/zed": {
+      capable: ["creative", "simple-qa"],
+      rationale: "z evidence",
+    },
+    "provider-a/alpha": {
+      capable: ["code-review", "code-edit"],
+      rationale: "a evidence",
+    },
+  };
+  await withFile(validMatrix({ models: reverseModels }), async (path) => {
+    const result = await loadRoutingMatrixResult(path, new Date("2026-07-16T00:00:00Z"));
+    if (!result.ok) assert.fail("expected a loaded matrix");
+    assert.deepEqual(Object.keys(result.matrix.models), ["provider-a/alpha", "provider-z/zed"]);
+    assert.deepEqual(result.matrix.models["provider-a/alpha"]?.capable, ["code-edit", "code-review"]);
+    assert.equal(result.matrix.models["provider-a/alpha"]?.rationale, "a evidence");
+    assert.deepEqual(result.matrix.models["provider-z/zed"]?.capable, ["simple-qa", "creative"]);
+    assert.equal(result.matrix.models["provider-z/zed"]?.rationale, "z evidence");
+  });
+});
+
+test("distinguishes missing, unreadable, and malformed files with stable codes", async () => {
+  const missing = await loadRoutingMatrixResult("/nonexistent/routing-matrix.json");
+  assert.equal(missing.ok, false);
+  assert.equal(missing.diagnostics[0]?.code, "missing");
+
+  await withFile(validMatrix(), async (path) => {
+    await chmod(path, 0o000);
+    const unreadable = await loadRoutingMatrixResult(path);
+    assert.equal(unreadable.ok, false);
+    assert.equal(unreadable.diagnostics[0]?.code, "unreadable");
+  });
+
+  await withFile("{not json", async (path) => {
+    const malformed = await loadRoutingMatrixResult(path);
+    assert.equal(malformed.ok, false);
+    assert.equal(malformed.diagnostics[0]?.code, "invalid-json");
+  });
+});
+
+test("rejects unsupported versions separately from schema failures", async () => {
+  await withFile(validMatrix({ v: 2 }), async (path) => {
+    const result = await loadRoutingMatrixResult(path);
+    assert.equal(result.ok, false);
+    assert.equal(result.diagnostics[0]?.code, "unsupported-version");
+  });
+
+  await withFile(validMatrix({ models: [] }), async (path) => {
+    const result = await loadRoutingMatrixResult(path);
+    assert.equal(result.ok, false);
+    assert.equal(result.diagnostics[0]?.code, "invalid-schema");
+  });
+});
+
+test("strictly validates metadata, keys, rows, task types, tiers, and refresh shape", async () => {
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ["lastReviewed", { lastReviewed: "2026-02-30" }],
+    ["future lastReviewed", { lastReviewed: "2099-01-01" }],
+    ["staleAfterDays", { staleAfterDays: 0 }],
+    ["model key", { models: { invalid: { capable: ["code-edit"], rationale: "r" } } }],
+    ["row shape", { models: { "good/model": null } }],
+    ["capable", { models: { "good/model": { capable: [], rationale: "r" } } }],
+    ["task type", { models: { "good/model": { capable: ["invented"], rationale: "r" } } }],
+    ["tier", { models: { "good/model": { capable: ["code-edit"], tier: "premium", rationale: "r" } } }],
+    ["rationale", { models: { "good/model": { capable: ["code-edit"], rationale: "" } } }],
+    ["refresh", { refresh: { at: 42, tool: null, source: "x" } }],
+  ];
+
+  for (const [name, overrides] of cases) {
+    await withFile(validMatrix(overrides), async (path) => {
+      const result = await loadRoutingMatrixResult(path);
+      assert.equal(result.ok, false, name);
+      assert.equal(result.diagnostics[0]?.code, "invalid-schema", name);
+    });
+  }
+});
+
+test("row schema diagnostics retain structured capability/rationale/tier context", async () => {
+  const cases: Array<[Record<string, unknown>, string]> = [
+    [{ models: { "good/model": { capable: [], rationale: "r" } } }, "capable"],
+    [{ models: { "good/model": { capable: ["code-edit"], rationale: "" } } }, "rationale"],
+    [{ models: { "good/model": { capable: ["code-edit"], tier: "premium", rationale: "r" } } }, "tier"],
+  ];
+  for (const [overrides, field] of cases) {
+    await withFile(validMatrix(overrides), async (path) => {
+      const result = await loadRoutingMatrixResult(path);
+      assert.equal(result.ok, false);
+      assert.equal(result.diagnostics[0]?.row, "good/model");
+      assert.equal(result.diagnostics[0]?.field, field);
+    });
+  }
+});
+
+test("refresh diagnostics identify the invalid field and reject non-UTC or future timestamps", async () => {
+  const cases: Array<[Record<string, unknown>, RegExp]> = [
+    [{ refresh: { at: "2026-07-12", tool: "tool", source: "source" } }, /refresh\.at must be an ISO/],
+    [{ refresh: { at: "2099-01-01T00:00:00Z", tool: "tool", source: "source" } }, /refresh\.at must not be in the future/],
+    [{ refresh: { at: "2026-07-12T00:00:00Z", tool: "", source: "source" } }, /refresh\.tool/],
+    [{ refresh: { at: "2026-07-12T00:00:00Z", tool: "tool", source: "" } }, /refresh\.source/],
+    [{ refresh: { at: "2026-07-12T00:00:00Z", tool: "tool", source: "source", inputsHash: "" } }, /refresh\.inputsHash/],
+  ];
+  for (const [overrides, message] of cases) {
+    await withFile(validMatrix(overrides), async (path) => {
+      const result = await loadRoutingMatrixResult(path, new Date("2026-07-16T00:00:00Z"));
+      assert.equal(result.ok, false);
+      assert.match(result.diagnostics[0]?.message ?? "", message);
+    });
+  }
+});
+
+test("reports stale policy as a warning while keeping the matrix usable", async () => {
+  await withFile(
+    validMatrix({ lastReviewed: "2026-01-01", staleAfterDays: 30 }),
+    async (path) => {
+      const result = await loadRoutingMatrixResult(path, new Date("2026-07-16T00:00:00Z"));
+      assert.equal(result.ok, true);
+      if (!result.ok) assert.fail("stale policy must remain loadable");
+      assert.equal(result.diagnostics[0]?.code, "stale");
+      assert.equal(result.diagnostics[0]?.severity, "warning");
+      assert.equal(result.matrix.staleAfterDays, 30);
+    },
+  );
+});
+
+test("legacy fail-soft adapter returns null for typed load failures", async () => {
+  assert.equal(await loadRoutingMatrix("/nonexistent/routing-matrix.json"), null);
+  await withFile(validMatrix(), async (path) => {
+    assert.notEqual(await loadRoutingMatrix(path), null);
+  });
 });
 
 test("defaultMatrixPath resolves next to the shared module and loads the committed file", async () => {
   assert.match(defaultMatrixPath(), /agent\/extensions\/shared\/routing-matrix\.json$/);
-  const m = await loadRoutingMatrix();
-  assert.notEqual(m, null);
-  assert.equal(m!.v, 1);
-  assert.equal(Object.keys(m!.models).length > 0, true);
+  const result = await loadRoutingMatrixResult();
+  if (!result.ok) assert.fail(result.diagnostics.map((d) => d.message).join("; "));
+  assert.equal(result.ok, true);
+  assert.equal(result.matrix.v, 1);
+  assert.equal(Object.keys(result.matrix.models).length > 0, true);
 });
 
-// --- #660: refresh audit block ---
-
-test("parses a valid refresh block; inputsHash optional", async () => {
-  await withFile(
-    JSON.stringify({
-      v: 1,
-      lastReviewed: "2026-07-06",
-      refresh: {
-        at: "2026-07-12T11:00:00Z",
-        tool: "scripts/analyze-routing-matrix.sh",
-        source: "214 turn(s) from 1 log(s), 2026-06-01..2026-07-10",
-        inputsHash: "sha256:abc",
-      },
-      models: { "good/model": { capable: ["simple-qa"] } },
-    }),
-    async (path) => {
-      const m = await loadRoutingMatrix(path);
-      assert.deepEqual(m?.refresh, {
-        at: "2026-07-12T11:00:00Z",
-        tool: "scripts/analyze-routing-matrix.sh",
-        source: "214 turn(s) from 1 log(s), 2026-06-01..2026-07-10",
-        inputsHash: "sha256:abc",
-      });
-    },
-  );
-});
-
-test("absent or malformed refresh block is dropped; matrix still loads", async () => {
-  await withFile(
-    JSON.stringify({ v: 1, lastReviewed: "2026-07-06", models: { "a/b": { capable: ["simple-qa"] } } }),
-    async (path) => {
-      const m = await loadRoutingMatrix(path);
-      assert.equal(m?.refresh, undefined);
-      assert.equal(Object.keys(m!.models).length, 1);
-    },
-  );
-  await withFile(
-    JSON.stringify({
-      v: 1,
-      lastReviewed: "2026-07-06",
-      refresh: { at: 42, tool: null },
-      models: { "a/b": { capable: ["simple-qa"] } },
-    }),
-    async (path) => {
-      const m = await loadRoutingMatrix(path);
-      assert.equal(m?.refresh, undefined);
-      assert.equal(Object.keys(m!.models).length, 1);
-    },
-  );
-});
-
-test("no-write invariant (#660): the loader module exposes no write API", async () => {
-  // The never-auto-refresh discipline is structural: routing-matrix.ts must
-  // never gain a write path. Pins the module source itself.
+test("no-write invariant: the loader module exposes no write API", async () => {
   const { readFile } = await import("node:fs/promises");
   const src = await readFile(new URL("../routing-matrix.ts", import.meta.url), "utf8");
   assert.equal(/writeFile|appendFile|createWriteStream/.test(src), false);
 });
 
-// --- matrix gardening (#656 follow-through) ---
-
-test("gardenMatrix: dangling rows flagged only for onboarded providers", async () => {
+test("gardenMatrix flags dangling rows only for onboarded providers", () => {
   const synthetic = {
     v: 1,
     lastReviewed: "2026-07-12",
@@ -149,16 +233,12 @@ test("gardenMatrix: dangling rows flagged only for onboarded providers", async (
       "openai-codex/gpt-5.6-sol": { capable: ["simple-qa"] },
     },
   };
-  const { gardenMatrix } = await import("../routing-matrix.ts");
   const g = gardenMatrix(synthetic, new Set(["copilot/live", "copilot/other"]));
-  // copilot/retired: provider onboarded, id gone → dangling.
-  // openai-codex row: provider not onboarded at all → inert, NOT dangling.
   assert.deepEqual(g.danglingRows, ["copilot/retired"]);
   assert.deepEqual(g.unlistedByProvider, { copilot: 1 });
 });
 
-test("gardenMatrix: clean matrix yields empty report", async () => {
-  const { gardenMatrix } = await import("../routing-matrix.ts");
+test("gardenMatrix returns an empty report for a clean matrix", () => {
   const synthetic = {
     v: 1,
     lastReviewed: "2026-07-12",

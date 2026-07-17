@@ -7,7 +7,7 @@ date: 2026-07-11
 
 **Status:** Accepted
 **Date:** 2026-07-11
-**Related:** [ADR-0078](0078-matrix-routing-task-type-override.md), [ADR-0079](0079-matrix-routing-default-on.md), [ADR-0083](0083-orchestrator-subagent-model-policy-split.md), [ADR-0084](0084-auto-router-prefer-local-classifier.md), [ADR-0085](0085-mutation-heavy-agents-stick-to-primary.md), #655, #656, #657, #658, #659, #660, #661
+**Related:** [ADR-0078](0078-matrix-routing-task-type-override.md), [ADR-0079](0079-matrix-routing-default-on.md), [ADR-0083](0083-orchestrator-subagent-model-policy-split.md), [ADR-0084](0084-auto-router-prefer-local-classifier.md), [ADR-0085](0085-mutation-heavy-agents-stick-to-primary.md), [ADR-0094](0094-local-llm-role-lever.md), [ADR-0104](0104-deterministic-model-availability-snapshots.md), #655, #656, #657, #658, #659, #660, #661, #746
 
 ## Context and Problem Statement
 
@@ -63,8 +63,9 @@ Adopt a stable-router/subagent policy with these terms and invariants:
    as matrix rows/config permit.
 6. **User-invoked matrix freshness.** Routing never silently refreshes or
    rewrites the capability/provider matrix during prompt classification or
-   subagent spawn. Operators invoke status/review/refresh workflows explicitly,
-   review the diff/metadata, and land updates through normal validation.
+   subagent spawn. Operators invoke status/review/refresh workflows explicitly.
+   Those workflows report or replace memory evidence only; a human separately
+   edits policy and lands it through reviewed source control and validation.
 
 ## Considered Options
 
@@ -99,8 +100,35 @@ Adopt a stable-router/subagent policy with these terms and invariants:
 - More policy surfaces exist: exact orchestrator lock state, subagent local
   eligibility, provider matrix rows, and matrix review commands. These require
   tests and documentation.
-- Automatic freshness is deliberately not provided. Operators must run an
-  explicit review/refresh process when they want to update capability metadata.
+- Automatic freshness is deliberately not provided. Operators explicitly
+  refresh availability evidence, inspect review proposals, and then make any
+  capability-policy change manually through source control.
+
+## Implementation Clarification (2026-07-16)
+
+This clarification records the completed #746 implementation without changing
+the accepted decision. It is an amendment rather than a successor because no
+policy boundary changed: ADR-0104 already owns the canonical-snapshot
+architecture, while ADR-0090 still owns explicit freshness and human-only
+capability-policy mutation.
+
+- `/auto matrix status [--json]` builds or reuses ADR-0104's canonical snapshot
+  and reports typed matrix, generation/hash, filter, coverage, and policy inputs.
+- `/auto matrix review [--json]` peeks only at an existing snapshot and emits
+  deterministic facts, observations, and human-action proposals. It has no
+  apply mode and cannot grant capability or choose a tier.
+- `/auto matrix refresh [--retry-unavailable]` is explicit and memory-only: it
+  reloads reviewed policy, clears provider/snapshot/decision caches, and builds
+  one replacement generation. The transient unavailable set is preserved unless
+  retry is requested.
+- Parent and subagent policy consume the same frozen Copilot/Anthropic/oMLX
+  evidence. Concrete first-party child models are matrix-selected from
+  `local-llm` eligibility and optional `capability-tier`; exact wrapper pins
+  remain supported but are not used by current first-party wrappers.
+- Pi v0.80.6 reloads edited `models.json` through `/model`; operators open that
+  picker before refresh when registry configuration changed.
+- The maintained schema and side-effect contract is
+  [the standalone matrix lifecycle v1 reference](https://github.com/psmfd/pi-auto-router/blob/main/MATRIX_LIFECYCLE_V1.md).
 
 ## Implementation Notes
 
@@ -108,6 +136,6 @@ Adopt a stable-router/subagent policy with these terms and invariants:
   ordering, and capability-pick resolution.
 - `agent/extensions/auto-router/policy.ts` delegates matrix picks to the shared
   ranking primitive while preserving its public exports for existing tests.
-- Follow-up implementation issues add the exact orchestrator lock, subagent
-  local-eligibility/provider-matrix routing, effective-model display, and
-  user-invoked matrix review/refresh commands.
+- Exact orchestrator locking, subagent local-eligibility/provider-matrix
+  routing, effective-model display, typed status, explicit refresh, and
+  deterministic review proposals are implemented by #655–#661 and #746–#751.

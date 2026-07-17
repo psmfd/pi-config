@@ -103,6 +103,7 @@ function researchInput(): Record<string, unknown> {
 interface Harness {
 	dir: string;
 	envPath: string;
+	upstreamEnvPath: string;
 	agentDir: string;
 	calls: string[];
 	handler: Handler;
@@ -114,6 +115,7 @@ async function makeHarness(opts: {
 	git?: GitExecutor;
 	fetchImpl?: typeof fetch;
 	envContent?: string | null;
+	upstreamEnvContent?: string | null;
 	calls?: string[];
 }): Promise<Harness> {
 	const dir = await mkdtemp(join(tmpdir(), "fanout-gate-"));
@@ -125,6 +127,10 @@ async function makeHarness(opts: {
 				"PI_EXPERTISE_API_BASE_URL=http://127.0.0.1:8080\nPI_EXPERTISE_API_KEY=test-key\n",
 		);
 	}
+	const upstreamEnvPath = join(dir, "secrets.env");
+	if (opts.upstreamEnvContent !== undefined && opts.upstreamEnvContent !== null) {
+		writeFileSync(upstreamEnvPath, opts.upstreamEnvContent);
+	}
 	const agentDir = join(dir, "agent");
 	const calls = opts.calls ?? [];
 	const nowValue = { ms: 1_750_000_000_000 };
@@ -133,12 +139,22 @@ async function makeHarness(opts: {
 		fetchImpl: opts.fetchImpl ?? okFetch(calls),
 		gitExec: opts.git ?? okGit,
 		envPath,
+		upstreamEnvPath,
 		agentDir,
 		now: () => nowValue.ms,
 	});
 	const handler = pi.handlers.tool_call?.[0];
 	assert.ok(handler, "tool_call handler registered");
-	return { dir, envPath, agentDir, calls, handler, ctx: makeCtx(dir), nowValue };
+	return {
+		dir,
+		envPath,
+		upstreamEnvPath,
+		agentDir,
+		calls,
+		handler,
+		ctx: makeCtx(dir),
+		nowValue,
+	};
 }
 
 function telemetryLines(agentDir: string): Record<string, unknown>[] {
@@ -164,6 +180,9 @@ const ENV_KEYS = [
 	"PI_EXPERTISE_API_BASE_URL",
 	"PI_EXPERTISE_API_KEY",
 	"PI_EXPERTISE_ALLOW_LOCALDEV_WRITE",
+	"EXPERTISE_API_BASE_URL",
+	"EXPERTISE_API_TOKEN",
+	"EXPERTISE_API_SECRETS_FILE",
 ];
 const savedEnv: Record<string, string | undefined> = {};
 for (const k of ENV_KEYS) {
@@ -177,6 +196,20 @@ process.on("exit", () => {
 });
 
 // --- tests -------------------------------------------------------------------
+
+test("installed client env path follows PI_CODING_AGENT_DIR package layout", () => {
+	assert.equal(
+		mod.resolveInstalledClientEnvPath({ PI_CODING_AGENT_DIR: "/tmp/pi-agent" }),
+		join(
+			"/tmp/pi-agent",
+			"git",
+			"github.com",
+			"psmfd",
+			"pi-expertise-client",
+			".env.local",
+		),
+	);
+});
 
 test("research fanout gets the canonical block injected into every task", async (tc) => {
 	const h = await makeHarness({});
@@ -215,6 +248,52 @@ test("research fanout gets the canonical block injected into every task", async 
 	assert.equal(rows.length, 1);
 	assert.equal(rows[0].event, "inject");
 	assert.equal(rows[0].canonicalBlobSha, expected);
+});
+
+test("upstream static-OIDC config injects over HTTPS with agent headers", async (tc) => {
+	const seen: { url?: string; headers?: Record<string, string> } = {};
+	const fetchImpl = ((url: unknown, init?: RequestInit) => {
+		seen.url = String(url);
+		seen.headers = init?.headers as Record<string, string>;
+		return Promise.resolve(
+			new Response(
+				JSON.stringify({
+					results: [
+						{
+							...API_ROW,
+							title: { contentClass: "user-supplied-free-text", value: API_ROW.title },
+							body: { contentClass: "user-supplied-free-text", value: API_ROW.body },
+						},
+					],
+				}),
+				{ status: 200 },
+			),
+		);
+	}) as typeof fetch;
+	const h = await makeHarness({
+		envContent: null,
+		upstreamEnvContent:
+			"EXPERTISE_API_BASE_URL=https://expertise.lan.example\n" +
+			"EXPERTISE_API_TOKEN=header.payload.signature\n",
+		fetchImpl,
+	});
+	tc.after(() => rm(h.dir, { recursive: true, force: true }));
+
+	const input = researchInput();
+	await h.handler({ toolName: "subagent", input }, h.ctx);
+	assert.match(seen.url ?? "", /^https:\/\/expertise\.lan\.example\//);
+	assert.equal(seen.headers?.authorization, "Bearer header.payload.signature");
+	assert.equal(seen.headers?.["x-actor-class"], "agent");
+	assert.match(seen.headers?.["user-agent"] ?? "", /pi-coding-agent/);
+	assert.ok(
+		(input.tasks as Record<string, unknown>[]).every(
+			(t) => typeof t.expertiseInjection === "string",
+		),
+	);
+	const block = (input.tasks as Record<string, unknown>[])[0]
+		.expertiseInjection as string;
+	const payload = parseCanonicalResultsBlock(block);
+	assert.equal(payload?.results[0]?.title, API_ROW.title);
 });
 
 test("non-subagent tools, single mode, small and review-only fanouts pass through", async (tc) => {

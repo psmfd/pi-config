@@ -7,8 +7,14 @@ import { __testing, buildSanitizedEnv } from "../sanitize-env.ts";
 // Load-bearing invariants (guard against accidental drift in the denylist).
 // -----------------------------------------------------------------------------
 
-test("ALWAYS_DENY_EXACT includes the ADR-0028 write gate", () => {
-  assert.equal(__testing.ALWAYS_DENY_EXACT.has("PI_EXPERTISE_ALLOW_LOCALDEV_WRITE"), true);
+test("ALWAYS_DENY_EXACT includes expertise write and upstream bearer controls", () => {
+  for (const key of [
+    "PI_EXPERTISE_ALLOW_LOCALDEV_WRITE",
+    "EXPERTISE_API_TOKEN",
+    "EXPERTISE_API_SECRETS_FILE",
+  ]) {
+    assert.equal(__testing.ALWAYS_DENY_EXACT.has(key), true, `${key} missing`);
+  }
 });
 
 test("BASE_ALLOWLIST is minimum-viable (POSIX + locale + terminal)", () => {
@@ -30,6 +36,21 @@ test("default mode: PI_EXPERTISE_ALLOW_LOCALDEV_WRITE is stripped even when set"
   assert.equal(out.PI_EXPERTISE_ALLOW_LOCALDEV_WRITE, undefined);
 });
 
+test("default mode: upstream bearer is stripped and secrets discovery is blocked", () => {
+  const out = buildSanitizedEnv({
+    PATH: "/usr/bin",
+    EXPERTISE_API_BASE_URL: "https://expertise.lan.example",
+    EXPERTISE_API_TOKEN: "header.payload.signature",
+    EXPERTISE_API_SECRETS_FILE: "/home/tester/.config/expertise-api/secrets.env",
+  });
+  assert.equal(out.EXPERTISE_API_BASE_URL, "https://expertise.lan.example");
+  assert.equal(out.EXPERTISE_API_TOKEN, undefined);
+  assert.equal(
+    out.EXPERTISE_API_SECRETS_FILE,
+    __testing.BLOCKED_EXPERTISE_SECRETS_FILE,
+  );
+});
+
 test("default mode: unrelated vars pass through unchanged", () => {
   const parent = {
     PATH: "/usr/bin:/bin",
@@ -44,6 +65,11 @@ test("default mode: unrelated vars pass through unchanged", () => {
   for (const key of Object.keys(parent)) {
     assert.equal(out[key], parent[key as keyof typeof parent], `${key} not passed through`);
   }
+  assert.equal(
+    out.EXPERTISE_API_SECRETS_FILE,
+    __testing.BLOCKED_EXPERTISE_SECRETS_FILE,
+    "sentinel must be present even when the parent had no override",
+  );
 });
 
 test("default mode: undefined values are dropped (not serialized)", () => {
@@ -177,15 +203,26 @@ test("strict mode: ALWAYS_DENY beats every allowlist rule", () => {
     {
       PATH: "/usr/bin",
       PI_EXPERTISE_ALLOW_LOCALDEV_WRITE: "1",
+      EXPERTISE_API_TOKEN: "header.payload.signature",
+      EXPERTISE_API_SECRETS_FILE: "/tmp/secret.env",
     },
     {
       strict: true,
-      extraAllow: ["PI_EXPERTISE_ALLOW_LOCALDEV_WRITE"], // hostile caller
-      extraAllowPrefixes: ["PI_"], // hostile caller
+      extraAllow: [
+        "PI_EXPERTISE_ALLOW_LOCALDEV_WRITE",
+        "EXPERTISE_API_TOKEN",
+        "EXPERTISE_API_SECRETS_FILE",
+      ], // hostile caller
+      extraAllowPrefixes: ["PI_", "EXPERTISE_"], // hostile caller
     },
   );
   assert.equal(out.PATH, "/usr/bin");
   assert.equal(out.PI_EXPERTISE_ALLOW_LOCALDEV_WRITE, undefined);
+  assert.equal(out.EXPERTISE_API_TOKEN, undefined);
+  assert.equal(
+    out.EXPERTISE_API_SECRETS_FILE,
+    __testing.BLOCKED_EXPERTISE_SECRETS_FILE,
+  );
 });
 
 test("strict mode: extraAllow re-enables a secret-suffix even against the pattern", () => {

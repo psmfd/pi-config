@@ -45,6 +45,8 @@ export interface CopilotFallback {
   /** Qualified `github-copilot/<id>` to substitute for a dropped pin. */
   readonly modelId: string;
   readonly liveEnabledIds?: ReadonlySet<string> | null;
+  /** Static registry presence before live filtering (ADR-0104 diagnostics). */
+  readonly registryAvailable?: boolean;
 }
 
 /** The slice of `ExtensionContext.modelRegistry` the gate reads. */
@@ -191,10 +193,11 @@ function pinAbsenceReason(pin: string, servedOmlxIds?: ReadonlySet<string> | nul
  *   registry-present AND the live tier filter does not exclude it. Otherwise
  *   the session default, with a note naming why each rung was skipped.
  *
- * `availableIds` is the caller's EFFECTIVE set — the registry set already
- * narrowed by {@link filterDownOmlxIds} (#534), so a down-oMLX pin arrives here
- * as "absent" and takes the drop path with no special-casing. `servedOmlxIds`
- * is passed through to the note wording ONLY (it never affects the decision).
+ * `availableIds` is the caller's EFFECTIVE live-filtered set (ADR-0104), so a
+ * down oMLX, tier-gated Copilot, or retired Anthropic pin arrives as absent and
+ * takes the drop path. `fallback.registryAvailable` preserves the distinction
+ * between a registry-absent and live-tier-gated Copilot fallback.
+ * `servedOmlxIds` affects note wording only.
  */
 export function resolveModelPin(
   pin: string | undefined,
@@ -210,20 +213,21 @@ export function resolveModelPin(
   const pinProvider = pin.slice(0, pin.indexOf("/"));
   const fb = fallback && isQualifiedPin(fallback.modelId) ? fallback : undefined;
   if (fb && pinProvider !== "github-copilot") {
-    if (availableIds.has(fb.modelId)) {
-      const bareId = fb.modelId.slice(fb.modelId.indexOf("/") + 1);
-      const live = fb.liveEnabledIds;
-      if (live == null || live.has(bareId)) {
-        return {
-          modelArg: fb.modelId,
-          note: `${reason}; the subagent ran on the Copilot fallback "${fb.modelId}" instead of the session default`,
-          kind: "fallback",
-        };
-      }
+    const bareId = fb.modelId.slice(fb.modelId.indexOf("/") + 1);
+    const live = fb.liveEnabledIds;
+    const registryAvailable = fb.registryAvailable ?? availableIds.has(fb.modelId);
+    if (registryAvailable && live != null && !live.has(bareId)) {
       return {
         modelArg: null,
         note: `${reason}, and the Copilot fallback "${fb.modelId}" is tier-gated on this subscription; the subagent ran on the session default model`,
         kind: "default",
+      };
+    }
+    if (registryAvailable && availableIds.has(fb.modelId)) {
+      return {
+        modelArg: fb.modelId,
+        note: `${reason}; the subagent ran on the Copilot fallback "${fb.modelId}" instead of the session default`,
+        kind: "fallback",
       };
     }
     return {

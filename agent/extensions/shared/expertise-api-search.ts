@@ -1,5 +1,5 @@
 /**
- * expertise-client — read-side `expertise_search` (ADR-0028).
+ * expertise-client — read-side `expertise_search` (ADR-0103).
  *
  * Targets the SEMANTIC search endpoint of agent-expertise-api
  * (`GET /expertise/search/semantic`), verified against the live API and the
@@ -12,7 +12,10 @@
  * (`/expertise/search`, `q` + `includeDeprecated`), which is also unexposed.
  */
 
-import type { ClientConfig } from "./expertise-api-config.ts";
+import {
+  authFailureGuidance,
+  type ClientConfig,
+} from "./expertise-api-config.ts";
 import { apiGet, errorDetail } from "./expertise-api-http.ts";
 
 export const SEARCH_PATH = "/expertise/search/semantic";
@@ -85,7 +88,8 @@ export async function searchExpertise(
         ok: false,
         reason:
           `expertise search returned HTTP ${res.status} ${res.statusText}` +
-          errorDetail(res.text),
+          (res.status === 401 ? authFailureGuidance(config) : "") +
+          errorDetail(res.text, 500, [config.bearerToken]),
       };
     }
     return {

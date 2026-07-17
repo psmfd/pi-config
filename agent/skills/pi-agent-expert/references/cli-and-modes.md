@@ -12,7 +12,7 @@ Authoritative source: `docs/usage.md`, `docs/json.md`, `docs/rpc.md` in the inst
 | `--mode rpc` | Bidirectional stdio JSON-RPC. See `docs/rpc.md`. | No |
 | `--export <in> [out]` | Export a session to HTML | No |
 
-`-p` and `--mode json` compose: `pi --mode json -p "prompt"` emits the JSON event stream for a single non-interactive run, then exits. This is the exact invocation our `subagent` extension uses (`agent/extensions/subagent/index.ts:265` — `["--mode", "json", "-p", "--no-session"]`).
+`-p` and `--mode json` compose: `pi --mode json -p "prompt"` emits the JSON event stream for a single non-interactive run, then exits. Our subagent base argv is `--mode json -p --no-session`.
 
 In `-p` mode pi also reads piped stdin and merges it into the initial prompt. Our extension does not pipe stdin (subprocess opens with `stdio: ["ignore", "pipe", "pipe"]`), so the entire prompt must be on argv.
 
@@ -20,7 +20,7 @@ In `-p` mode pi also reads piped stdin and merges it into the initial prompt. Ou
 
 | Flag | Argument | Used by us | Notes |
 |---|---|---|---|
-| `--model` | `provider/id` or pattern with optional `:<thinking>` (e.g. `sonnet:high`) | Optional, per-agent | If unset, child inherits pi's resolved default model. Slash-qualified frontmatter pins pass a spawn-time registry gate first (#519/ADR-0076, `model-pin.ts`) — pi hard-exits when the named provider has no registered models; a dropped non-Copilot pin tries the Copilot fallback rung (#536/ADR-0080, live-tier-checked) before the session default. An explicit `--model` also makes auto-router inert for the process (the precedence guard, `argv-guard.ts`). |
+| `--model` | `provider/id` or pattern with optional `:<thinking>` (e.g. `sonnet:high`) | Optional, explicit or policy-selected | Unpinned wrappers first ask matrix policy for a concrete model. Local-forbidden wrappers fail closed without a non-local pick; only eligible no-pick cases omit the flag and inherit pi's resolved default. Qualified selections pass the registry/live gate; a dropped non-Copilot explicit pin can try the ADR-0080 Copilot fallback. Any explicit child `--model` makes child auto-router inert. |
 | `--thinking` | `off`/`minimal`/`low`/`medium`/`high`/`xhigh` | **Not yet** — candidate for migration | Clamped to model capabilities; non-reasoning models always use `off`. |
 | `--tools`, `-t` | comma-separated allowlist of built-in + extension + custom tool names | Yes, when `tools:` frontmatter is set | Built-ins: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`. |
 | `--no-builtin-tools`, `-nbt` | (none) | No | Keeps extension/custom tools, disables built-ins |
@@ -30,24 +30,26 @@ In `-p` mode pi also reads piped stdin and merges it into the initial prompt. Ou
 | `--no-skills` | (none) | No | Children inherit skills. Explicit `--skill <path>` still loads even with `--no-skills`. |
 | `--no-prompt-templates` | (none) | No | |
 | `--no-context-files`, `-nc` | (none) | No | Disables `AGENTS.md` and `CLAUDE.md` discovery. |
-| `--system-prompt <text>` | string | Effectively yes (via prompt body) | Replaces the default prompt; context files and skills still appended. |
-| `--append-system-prompt <text>` | string | No | |
+| `--system-prompt <text>` | string | No | Replaces the default prompt. |
+| `--append-system-prompt <path>` | prompt-file path | **Yes** | The wrapper body is written to a mode-0600 temporary file; only its path enters argv. Context files and skills still append normally. |
 | `-e`, `--extension <source>` | path / npm / git ref | No | Repeatable. |
 | `--skill <path>` | path | No | Repeatable; bypasses `--no-skills`. |
 | `--list-models [search]` | optional pattern | No | Useful when verifying model availability before changing an agent. |
 | `--verbose` | (none) | No | Forces verbose startup; noisy in JSON mode. |
 
-Subagent argv assembled by `index.ts:265-281`:
+Subagent argv shape:
 
 ```text
 pi --mode json -p --no-session
    [--model <model>]
    [--tools <csv>]
-   --system-prompt <agent-body-from-md-file>
-   <task-string>
+   --append-system-prompt <mode-0600-temp-file>
+   "Task: <task-string>"
 ```
 
-The agent's `.md` body becomes `--system-prompt`. The user's task is the positional prompt.
+The wrapper body is stored in the temporary prompt file and appended to the
+child system prompt. The user task (plus optional canonical expertise block) is
+the positional user-role prompt. The temp tree is removed after child exit.
 
 ## Environment variables
 
@@ -62,7 +64,12 @@ The agent's `.md` body becomes `--system-prompt`. The user's task is the positio
 | `PI_CACHE_RETENTION=long` | Extended prompt cache where supported. |
 | `VISUAL`, `EDITOR` | Editor for Ctrl+G. |
 
-Pi inherits the full parent env when our extension spawns a child subprocess. Treat env as part of the blast radius.
+Our extension never passes the parent environment verbatim. `buildChildEnv()`
+always removes protected expertise credentials; all first-party wrappers enable
+`env-strict: true`, which sends an allowlist-only environment plus explicitly
+justified per-wrapper additions. Third-party wrappers without strict mode use
+passthrough-with-always-denied keys. Treat every allowlist extension as a
+security-boundary change.
 
 ## JSON event stream
 
@@ -74,7 +81,7 @@ The stream is JSON-Lines on stdout (one event per line, `\n`-terminated). The fi
 {"type":"session","version":3,"id":"<uuid>","timestamp":"...","cwd":"/path"}
 ```
 
-After that, events appear in temporal order until process exit. Our extension's parser (`index.ts:300-348`) splits on `\n` and `JSON.parse` each line, ignoring lines that fail to parse — defensive against partial-line buffering.
+After that, events appear in temporal order until process exit. Our extension splits stdout on `\n` and parses each complete line as JSON, ignoring malformed lines defensively.
 
 ### Event categories (current pi version verified against installed `dist/`)
 
@@ -84,7 +91,7 @@ After that, events appear in temporal order until process exit. Our extension's 
 | Agent lifecycle | `agent_start`, `agent_end` | `agent_end` carries final `messages` array. |
 | Turn | `turn_start`, `turn_end` | `turn_end.message` is the assistant turn; `toolResults` is the tool results from that turn. |
 | Message | `message_start`, `message_update`, `message_end` | `message_end` is what our extension keys on for usage accounting. |
-| Tool execution (observational) | `tool_execution_start`, `tool_execution_update`, `tool_execution_end` | Current event names (re-verified during the pi 0.78.0 re-audit). The upstream `subagent` extension still listens for the historical name `tool_result_end`; our vendored copy carries one active local patch to refresh the UI on the current event names (pi_config #46; see `agent/extensions/subagent/README.md`). |
+| Tool execution (observational) | `tool_execution_start`, `tool_execution_update`, `tool_execution_end` | Current event names re-verified at v0.80.6. Upstream's subagent example still carries the historical `tool_result_end`; local patch #3 refreshes UI on all three current edges (see `agent/extensions/subagent/README.md`). |
 | Tool gate (interceptable, in-process only) | `tool_call`, `tool_result` | Extension-side events; not present in the JSON stream. |
 | Queue + retry + compaction | `queue_update`, `auto_retry_start`, `auto_retry_end`, `compaction_start`, `compaction_end` | Useful for debugging stuck child runs. |
 

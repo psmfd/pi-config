@@ -6,14 +6,12 @@
 # the opt-in pre-push hook (#604, later).
 #
 # Skip philosophy (documented deviation from validate.sh's "missing env is
-# an error" rule): the loopback agent-expertise-api is a per-machine local
-# service that no CI runner provisions today (#693), so its ABSENCE is the
-# expected state — a clean SKIP, not a failure. A present-but-broken state
-# (401/403 with a key set, telemetry inconsistency) fails loud.
+# an error" rule): expertise-api is an operator-provisioned service (local or
+# upstream static-OIDC) that no CI runner provisions today (#693), so absent
+# config is a clean SKIP. A configured-but-broken auth state fails loud.
 #
-# Secret handling: PI_EXPERTISE_API_KEY travels via the environment only —
-# never argv (visible in `ps`), never echoed, never in artifacts. The
-# reachability probe hits the UNAUTHENTICATED /health/ready with no key.
+# Secret handling: the API key/JWT travels only through process env or the
+# fixed operator-owned config files — never argv, output, or artifacts.
 #
 # Exit codes: 0 pass/skip (SKIP lines mark skips), 1 audit failure,
 # 2 environment failure.
@@ -22,8 +20,9 @@
 #   EXPERTISE_AUDIT_BASE_SHA   PR base sha (unset → SKIP: not a PR context)
 #   EXPERTISE_AUDIT_HEAD_SHA   head sha (default: git rev-parse HEAD)
 #   EXPERTISE_AUDIT_TELEMETRY_DIR  optional telemetry dir to consistency-check
-#   PI_EXPERTISE_API_BASE_URL  API base (default http://127.0.0.1:8080)
-#   PI_EXPERTISE_API_KEY       API key (unset → SKIP past reachability)
+#   PI_EXPERTISE_API_BASE_URL / PI_EXPERTISE_API_KEY  legacy local profile
+#   EXPERTISE_API_BASE_URL / EXPERTISE_API_TOKEN      upstream bearer profile
+#   EXPERTISE_API_SECRETS_FILE optional upstream secrets-file override
 
 set -uo pipefail
 
@@ -56,24 +55,17 @@ if [ -z "$CHANGED" ]; then
   exit 0
 fi
 
-# --- 3. Reachability probe — unauthenticated, no key ever in argv ------------
-BASE_URL="${PI_EXPERTISE_API_BASE_URL:-http://127.0.0.1:8080}"
-if ! command -v curl >/dev/null 2>&1; then
-  skipline "curl unavailable for the reachability probe"
-  exit 0
-fi
-if ! curl -fsS --max-time 3 "${BASE_URL%/}/health/ready" >/dev/null 2>&1; then
-  skipline "agent-expertise-api not reachable at ${BASE_URL%/}/health/ready (#693 tracks CI provisioning)"
-  exit 0
-fi
-
-# --- 4. Key presence (past this point a broken auth FAILS, not skips) --------
-if [ -z "${PI_EXPERTISE_API_KEY:-}" ] && [ ! -f agent/extensions/expertise-client/.env.local ]; then
-  skipline "loopback API reachable but no PI_EXPERTISE_API_KEY and no client .env.local"
+# --- 3. Credential-source presence -------------------------------------------
+UPSTREAM_SECRETS_FILE="${EXPERTISE_API_SECRETS_FILE:-${HOME:-}/.config/expertise-api/secrets.env}"
+if [ -z "${PI_EXPERTISE_API_KEY:-}" ] && \
+   [ -z "${EXPERTISE_API_TOKEN:-}" ] && \
+   [ ! -f agent/extensions/expertise-client/.env.local ] && \
+   { [ -z "$UPSTREAM_SECRETS_FILE" ] || [ ! -f "$UPSTREAM_SECRETS_FILE" ]; }; then
+  skipline "no local API key or upstream bearer-token configuration"
   exit 0
 fi
 
-# --- 5. Toolchain (a reachable API makes the audit a required check) ---------
+# --- 4. Toolchain (configured clients make the audit a required check) -------
 if ! command -v node >/dev/null 2>&1 || ! command -v npx >/dev/null 2>&1; then
   echo "ERROR expertise-audit: node/npx required once the API is reachable" >&2
   exit 2
@@ -85,7 +77,7 @@ if ! ensure_extension_deps; then
   exit 2
 fi
 
-# --- 6. Delegate to the TS runner (key via env only) -------------------------
+# --- 5. Delegate to the TS runner (credential never enters argv) -------------
 TSX_VERSION="${TSX_VERSION:-4.19.2}"
 audit_args=(--base-sha "$BASE_SHA" --head-sha "$HEAD_SHA" --out-dir "$REPO_DIR")
 if [ -n "${EXPERTISE_AUDIT_TELEMETRY_DIR:-}" ]; then

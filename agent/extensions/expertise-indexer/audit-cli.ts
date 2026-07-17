@@ -7,7 +7,7 @@
  *
  * What a green result PROVES (state this honestly — see the #601 re-scope):
  * "the changed-set blob was computed from THIS checkout's git state, one
- * read-only search ran against the loopback API, the artifacts are
+ * read-only search ran against the configured expertise API, the artifacts are
  * well-formed, and any supplied telemetry log is internally consistent."
  * It does NOT prove a real fanout or a real human approval occurred —
  * `canonical_blob_sha` is computable by anyone with repo read access.
@@ -20,14 +20,14 @@
  *   2 — environment/usage failure
  *   3 — skip (API unreachable / no key) — wrapper prints SKIP, exits 0
  *
- * Secret handling: the API key is read from `process.env` (merged over the
- * expertise-client extension's `.env.local` for local/pre-push runs) and
- * used only inside the shared HTTP stack — it never appears in argv, output
+ * Secret handling: the local API key or upstream bearer token is read from
+ * process env plus fixed operator-owned files and used only inside the shared
+ * HTTP stack — it never appears in argv, output
  * lines, or artifacts.
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -35,6 +35,7 @@ import { gzipSync } from "node:zlib";
 import {
 	buildClientConfig,
 	loadEnvLocal,
+	loadUpstreamSecrets,
 	type ClientConfig,
 } from "../shared/expertise-api-config.ts";
 import { checkReady } from "../shared/expertise-api-health.ts";
@@ -220,8 +221,12 @@ async function main(): Promise<number> {
 
 	// --- 3. One read-only search ------------------------------------------
 	const envLocalPath = fileURLToPath(new URL("../expertise-client/.env.local", import.meta.url));
-	const fileEnv = existsSync(envLocalPath) ? loadEnvLocal(envLocalPath) : {};
-	const cfg = buildClientConfig(process.env, fileEnv);
+	const fileEnv = loadEnvLocal(envLocalPath);
+	const cfg = buildClientConfig(
+		process.env,
+		fileEnv,
+		loadUpstreamSecrets(process.env),
+	);
 	if (!cfg.ok) {
 		process.stdout.write(`SKIP audit: ${cfg.reason.split("\n")[0]}\n`);
 		return 3;

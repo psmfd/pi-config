@@ -36,9 +36,12 @@
  *
  * WHAT IS NEVER PASSED (either mode)
  * ----------------------------------
- * - `PI_EXPERTISE_ALLOW_LOCALDEV_WRITE` — the ADR-0028 write gate. Stripping
- *   it enforces "orchestrator-only expertise_create" structurally, not just
- *   by convention.
+ * - `PI_EXPERTISE_ALLOW_LOCALDEV_WRITE` — the create opt-in gate.
+ * - `EXPERTISE_API_TOKEN` — the upstream pre-provisioned bearer/JWT.
+ * - the caller's `EXPERTISE_API_SECRETS_FILE` path. Children receive a
+ *   `/dev/null` sentinel instead so upstream extensions cannot fall back to
+ *   the default token-bearing file. Canonical expertise is parent-fetched and
+ *   injected; children do not need the bearer.
  *
  * WHAT IS ONLY DENIED IN STRICT MODE
  * ----------------------------------
@@ -70,10 +73,15 @@ export interface SanitizeEnvOptions {
  * short and load-bearing — each entry needs a comment explaining why.
  */
 const ALWAYS_DENY_EXACT: ReadonlySet<string> = new Set([
-	// ADR-0028 write gate for expertise-client. Stripping enforces
-	// "orchestrator-only expertise_create" structurally (epic #595).
+	// Create gate: stripping enforces orchestrator-only expertise_create.
 	"PI_EXPERTISE_ALLOW_LOCALDEV_WRITE",
+	// ADR-0103 upstream bearer: canonical search stays parent-owned.
+	"EXPERTISE_API_TOKEN",
+	// The caller-controlled value is replaced with a safe sentinel below.
+	"EXPERTISE_API_SECRETS_FILE",
 ]);
+
+const BLOCKED_EXPERTISE_SECRETS_FILE = "/dev/null";
 
 /**
  * Env keys matching any of these patterns are denied in STRICT mode only.
@@ -176,6 +184,10 @@ export function buildSanitizedEnv(
 
 		out[key] = value;
 	}
+	// A missing override would make both our client and upstream's extension
+	// discover ~/.config/expertise-api/secrets.env in the child. Pin a harmless
+	// non-config file so the bearer remains parent-owned even in default mode.
+	out.EXPERTISE_API_SECRETS_FILE = BLOCKED_EXPERTISE_SECRETS_FILE;
 	return out;
 }
 
@@ -232,4 +244,5 @@ export const __testing = {
 	STRICT_DENY_PATTERNS,
 	BASE_ALLOWLIST,
 	BASE_ALLOW_PREFIXES,
+	BLOCKED_EXPERTISE_SECRETS_FILE,
 };

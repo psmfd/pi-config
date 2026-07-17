@@ -1,11 +1,12 @@
 ---
-status: Accepted
+status: Superseded
 date: 2026-06-07
+superseded-by: 0103-upstream-expertise-static-oidc-consumption.md
 ---
 
 # ADR-0028: local write-capable `agent-expertise-api` client for pi
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0103](0103-upstream-expertise-static-oidc-consumption.md)
 **Date:** 2026-06-07
 **Related:** #149, #150, [`agent-expertise-api` hosting note](../notes/agent-expertise-api-hosting.md), [ADR-0015](0015-network-capable-extensions-and-the-first-party-docs-allowlist.md), [ADR-0021](0021-extension-type-checking-and-linting.md)
 

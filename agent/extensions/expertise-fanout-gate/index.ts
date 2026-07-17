@@ -6,7 +6,7 @@
  * prompt discipline. A `tool_call` hook on the `subagent` tool detects a
  * research-shaped parallel fanout (mechanical trigger — see
  * `expertise-indexer/fanout-derive.ts`), runs ONE canonical
- * `expertise_search` against the loopback agent-expertise-api, and injects
+ * `expertise_search` through the configured local or upstream bearer profile, and injects
  * the rendered `CANONICAL_EXPERTISE_RESULTS` block into every task by
  * mutating the tool input in place. The vendored subagent extension then
  * prepends it to each child's user-role `Task:` framing (LOCAL PATCH #6) —
@@ -14,7 +14,7 @@
  *
  * Fail-open, self-caught: the pi runtime does NOT wrap `tool_call` handlers
  * in try/catch, so every failure path here is caught internally — a missing
- * API key, an unreachable endpoint, a 429, a git probe failure, or a bug in
+ * bearer credential, an unreachable endpoint, a 429, a git probe failure, or a bug in
  * this extension must degrade to "fanout proceeds without canonical
  * context", never to a broken turn.
  *
@@ -27,12 +27,12 @@
  * spends at most ONE search per fanout, backs off session-wide on a 429
  * (Retry-After when sent, else 60s), and never retries in-handler.
  *
- * Trust boundary: config comes from `process.env` + the expertise-client
- * extension's own `.env.local` (sibling path — extensions co-live under
- * `~/.pi/agent/extensions/`), resolved through the SHARED parser
- * (`shared/expertise-api-config.ts`) with the same loopback-only +
- * key-required invariants. Project/repo content can never steer the
- * endpoint. Read-only: this extension imports no create-capable module.
+ * Trust boundary: config comes from `process.env` plus fixed operator-owned
+ * files: the legacy expertise-client `.env.local` and upstream
+ * `~/.config/expertise-api/secrets.env`. The shared parser keeps legacy API
+ * keys loopback-only and requires HTTPS for non-loopback bearer endpoints.
+ * Project/repo content cannot steer the endpoint. Read-only: this extension
+ * imports no create-capable module.
  *
  * Approval loop + create gate (#605, ADR-0095 § Approval design): a
  * `tool_result` hook surfaces coalesced EXPERTISE_CANDIDATES groups via
@@ -44,6 +44,8 @@
  * sessions queue candidates to a pending JSONL and never approve.
  */
 
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
@@ -67,7 +69,11 @@ import {
 	projectSearchResults,
 	type FanoutTask,
 } from "../expertise-indexer/fanout-derive.ts";
-import { buildClientConfig, loadEnvLocal } from "../shared/expertise-api-config.ts";
+import {
+	buildClientConfig,
+	loadEnvLocal,
+	loadUpstreamSecrets,
+} from "../shared/expertise-api-config.ts";
 import { searchExpertise } from "../shared/expertise-api-search.ts";
 import { notify } from "../shared/notify.ts";
 import { scanRawString } from "../shared/secret-scan.ts";
@@ -90,17 +96,44 @@ export const MAX_INLINE_CONFIRMS_PER_SESSION = 3;
 export interface GateDeps {
 	readonly fetchImpl?: typeof fetch;
 	readonly gitExec?: GitExecutor;
-	/** Override the `.env.local` path (tests). */
+	/** Override the legacy `.env.local` path (tests). */
 	readonly envPath?: string;
+	/** Override the upstream `secrets.env` path (tests). */
+	readonly upstreamEnvPath?: string;
 	/** Override the telemetry base dir (tests). */
 	readonly agentDir?: string;
 	/** Injectable clock (tests). */
 	readonly now?: () => number;
 }
 
-/** Sibling-path anchor for the one env file the client owns (see header). */
+/** Source-tree sibling path for the legacy client file. */
 export function resolveClientEnvPath(): string {
 	return fileURLToPath(new URL("../expertise-client/.env.local", import.meta.url));
+}
+
+/** Git-package path used when expertise-client is installed as its mirror package. */
+export function resolveInstalledClientEnvPath(
+	env: NodeJS.ProcessEnv = process.env,
+): string {
+	const agentDir = env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+	return join(
+		agentDir,
+		"git",
+		"github.com",
+		"psmfd",
+		"pi-expertise-client",
+		".env.local",
+	);
+}
+
+function loadLegacyClientEnv(deps: GateDeps): Record<string, string> {
+	if (deps.envPath !== undefined) return loadEnvLocal(deps.envPath);
+	// Source-tree config wins when present; the package path closes the real
+	// distributed-install topology where the sibling extension is absent.
+	return {
+		...loadEnvLocal(resolveInstalledClientEnvPath()),
+		...loadEnvLocal(resolveClientEnvPath()),
+	};
 }
 
 /** Narrow the raw tool input's `tasks` to the derivation shape, or null when
@@ -198,7 +231,10 @@ export default function (pi: ExtensionAPI, deps: GateDeps = {}) {
 
 			const cfg = buildClientConfig(
 				process.env,
-				loadEnvLocal(deps.envPath ?? resolveClientEnvPath()),
+				loadLegacyClientEnv(deps),
+				deps.upstreamEnvPath !== undefined
+					? loadEnvLocal(deps.upstreamEnvPath)
+					: loadUpstreamSecrets(process.env),
 			);
 			if (!cfg.ok) {
 				record({ event: "skip", reason: "no-config", detail: cfg.reason, ...base });

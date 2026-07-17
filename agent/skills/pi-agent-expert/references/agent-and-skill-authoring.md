@@ -32,7 +32,7 @@ Disable all auto-discovery with `--no-skills` (explicit `--skill` paths still lo
 | `compatibility` | No | ≤500 chars | Environment requirements |
 | `metadata` | No | object | Arbitrary key-values |
 | `allowed-tools` | No | space-delimited list | Pre-approved tools (experimental) |
-| `disable-model-invocation` | No | boolean | When `true`, hidden from system prompt — must invoke via `/skill:name` or be loaded explicitly by an agent wrapper. **Set on all 20 wrapper-paired skills in this repo to force `subagent`-tool routing and shrink the parent system prompt.** |
+| `disable-model-invocation` | No | boolean | When `true`, hidden from system prompt — must invoke via `/skill:name` or be loaded explicitly by an agent wrapper. **Set on all 21 wrapper-paired skills in this repo to force `subagent`-tool routing and shrink the parent system prompt.** |
 
 Unknown frontmatter fields are ignored. Name validation issues *warn* and load; missing description is a *hard error*.
 
@@ -72,24 +72,30 @@ Our extension reads:
 | `~/.pi/agent/agents/*.md` | Global ("user") | `scope: "user"` or `"both"` (default) |
 | `<cwd>/.pi/agents/*.md` or nearest ancestor | Project | `scope: "project"` or `"both"` |
 
-When `scope: "both"`, project entries override global entries with the same `name`. See `agents.ts:96-117`.
+When `scope: "both"`, project entries override global entries with the same `name`, subject to `detectProfiledShadows()` / `evaluateShadowGate()`.
 
 ### Wrapper frontmatter (what we currently parse)
-
-`agents.ts:54-71` reads exactly these fields:
 
 | Field | Required | Type | Behavior |
 |---|---|---|---|
 | `name` | Yes | string | Becomes the `agent:` value for the `subagent` tool |
-| `description` | Yes | string | Goes into the orchestrator's agent catalog and the tool spec |
-| `tools` | No | comma-separated string | Passed to child as `--tools <csv>` |
-| `model` | No | string | Passed to child as `--model <id>` |
+| `description` | Yes | string | Goes into the orchestrator's agent catalog and tool spec |
+| `tools` | No | comma-separated string | Passed to child as `--tools <csv>`; omission is unrestricted/local-forbidden |
+| `model` | No | string | Explicit model escape hatch; no first-party wrapper currently uses it |
+| `guard-profile` | No | string | Parent-enforced guard profile (`report-only` recognized today) |
+| `env-strict` | No | boolean | Enables strict child-environment allowlisting |
+| `env-allow` | No | comma-separated string | Exact environment additions under strict mode |
+| `env-allow-prefix` | No | comma-separated string | Prefix additions under strict mode |
+| `local-llm` | No | boolean | Local eligibility tag; cannot override bash/unrestricted floor |
+| `capability-tier` | No | enum | `frontier`, `capable`, or `fast` matrix quality request |
 
-**Body** of the `.md` file (after frontmatter) becomes the child's `--system-prompt`. Everything else in frontmatter is silently ignored. We use `mode:` (e.g. `read-only`, `interactive`) for our agent catalog regen script, but the extension doesn't read it — it's documentation for `scripts/regen-agent-catalog.sh`.
+**Body** of the `.md` file becomes the child's appended system prompt. Other
+frontmatter is ignored by the extension. `mode:` is consumed by catalog
+regeneration/documentation, not child execution.
 
 ### Candidate fields for migration (not currently parsed)
 
-If we migrate tintinweb-style frontmatter, the additions go in *both* `agents.ts` (parse + store in `AgentConfig`) and `index.ts:265` (translate to argv):
+If we migrate tintinweb-style frontmatter, additions go in `AgentConfig`/`loadAgentsFromDir()` and the corresponding `runSingleAgent()` argv, environment, or policy seam:
 
 | Field | Maps to | Child argv |
 |---|---|---|
@@ -109,7 +115,7 @@ Each catalog entry has two coordinated files:
 
 When the orchestrator invokes `subagent` with `agent: "tauri-expert"`, our extension spawns a child `pi` subprocess with the wrapper's body as `--system-prompt` and the wrapper's `tools` as `--tools`. The child *also* inherits all globally-discoverable skills (including the matching `tauri-expert` skill), and the wrapper body tells it to load that skill.
 
-All 20 wrapper-paired skills set `disable-model-invocation: true` on the **skill** to remove parent auto-trigger — they're reachable only through the `subagent` tool (or a manual `/skill:<name>`), guaranteeing isolated-subprocess execution and shrinking the parent system prompt. The three review specialists (`code-review-expert`, `security-review-expert`, `checkmarx-expert`) are *additionally* gated by opus pinning and a read-only tool allowlist. See [`AGENTS.md`](../../../AGENTS.md#agent-catalog).
+All 21 wrapper-paired skills set `disable-model-invocation: true` on the **skill** to remove parent auto-trigger — they're reachable only through the `subagent` tool (or a manual `/skill:<name>`), guaranteeing isolated-subprocess execution and shrinking the parent system prompt. The three review specialists (`code-review-expert`, `security-review-expert`, `checkmarx-expert`) are *additionally* gated by `capability-tier: frontier`, specialist tool allowlists, and explicit read-only contracts; the live matrix chooses the concrete frontier model. See [`AGENTS.md`](../../../AGENTS.md#agent-catalog).
 
 ### Agent catalog regen
 

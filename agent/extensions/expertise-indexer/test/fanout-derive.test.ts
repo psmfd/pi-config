@@ -166,13 +166,30 @@ test("accepts a bare array; keeps optional fields; filters junk tags", () => {
 	assert.deepEqual(rows[0].tags, ["a", "2"]);
 });
 
+test("projects upstream response-hygiene free-text wrappers", () => {
+	const rows = projectSearchResults(
+		JSON.stringify({
+			results: [
+				{
+					...validRow,
+					title: { contentClass: "user-supplied-free-text", value: "wrapped title" },
+					body: { contentClass: "user-supplied-free-text", value: "wrapped body" },
+				},
+			],
+		}),
+	);
+	assert.equal(rows.length, 1);
+	assert.equal(rows[0].title, "wrapped title");
+	assert.equal(rows[0].body, "wrapped body");
+});
+
 test("drops rows missing required fields; coerces primitives", () => {
 	const rows = projectSearchResults(
 		JSON.stringify({
 			results: [
 				{ ...validRow, id: 7 }, // coerced
 				{ ...validRow, body: undefined }, // dropped
-				{ ...validRow, title: { nested: true } }, // dropped
+				{ ...validRow, title: { nested: true } }, // no hygiene value: dropped
 				"not-an-object", // dropped
 			],
 		}),

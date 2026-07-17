@@ -120,6 +120,17 @@ test("a live-tier-gated fallback is rejected: session default with a tier-gated 
   assert.match(r.note ?? "", /session default/);
 });
 
+test("a snapshot-filtered fallback preserves the tier-gated diagnostic", () => {
+  const r = resolveModelPin("omlx/coding-workhorse", new Set(["anthropic/claude-opus-4-7"]), {
+    ...FB,
+    registryAvailable: true,
+    liveEnabledIds: new Set(["claude-opus-4.7"]),
+  });
+  assert.equal(r.modelArg, null);
+  assert.equal(r.kind, "default");
+  assert.match(r.note ?? "", /tier-gated/);
+});
+
 test("a registry-absent fallback falls through to the session default with a note", () => {
   const r = resolveModelPin("omlx/coding-workhorse", new Set(["anthropic/claude-opus-4-7"]), FB);
   assert.equal(r.modelArg, null);

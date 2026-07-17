@@ -146,6 +146,36 @@ test("cache: conclusive results are reused within the TTL; null is never cached"
   clearOmlxCache();
 });
 
+test("clearOmlxCache prevents an older in-flight request from repopulating the cache", async () => {
+  clearOmlxCache();
+  let resolveOld: ((response: Awaited<ReturnType<FetchLike>>) => void) | undefined;
+  const oldFetch: FetchLike = () =>
+    new Promise((resolve) => {
+      resolveOld = resolve;
+    });
+  const old = getServedOmlxModels({ fetchFn: oldFetch, readKey: KEY, baseUrl: BASE, now: () => 0 });
+
+  clearOmlxCache();
+  let newFetches = 0;
+  const newFetch: FetchLike = async () => {
+    newFetches += 1;
+    return { ok: true, status: 200, text: async () => servedBody("fresh-model") };
+  };
+  assert.deepEqual(
+    await getServedOmlxModels({ fetchFn: newFetch, readKey: KEY, baseUrl: BASE, now: () => 0 }),
+    new Set(["fresh-model"]),
+  );
+  assert.ok(resolveOld, "older request did not start");
+  resolveOld({ ok: true, status: 200, text: async () => servedBody("stale-model") });
+  assert.deepEqual(await old, new Set(["stale-model"]));
+  assert.deepEqual(
+    await getServedOmlxModels({ fetchFn: newFetch, readKey: KEY, baseUrl: BASE, now: () => 0 }),
+    new Set(["fresh-model"]),
+  );
+  assert.equal(newFetches, 1, "stale completion must not evict the replacement cache");
+  clearOmlxCache();
+});
+
 test("clearOmlxCache forces a fresh probe", async () => {
   clearOmlxCache();
   let calls = 0;

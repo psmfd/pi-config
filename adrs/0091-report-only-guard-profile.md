@@ -73,7 +73,7 @@ not general-scope").
   ungated — now stated explicitly in its header — and the report-only
   profile owns the in-cwd write gate.
 - **Profile signal:** `guard-profile: report-only` frontmatter (today:
-  `agent/agents/linter.md`) → subagent LOCAL PATCH #7 exports
+  `agent/agents/linter.md`) → subagent LOCAL PATCH #7a exports
   `PI_GUARD_PROFILE=report-only` with set-or-delete semantics (never
   inherited; only the recognized value exported). Parent-controlled at
   spawn, so the child cannot un-certify itself.

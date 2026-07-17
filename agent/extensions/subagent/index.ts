@@ -22,10 +22,17 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { type ExtensionAPI, CONFIG_DIR_NAME, getAgentDir, getMarkdownTheme, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { getCandidates, type Candidate } from "../shared/candidates.ts";
-import { clearCopilotCache, resolveCopilotFilter } from "../shared/copilot-discovery.ts";
+import {
+	availabilityEvidenceSet,
+	clearAvailabilitySnapshot,
+	getAvailabilitySnapshot,
+	type AvailabilitySnapshotContext,
+} from "../shared/availability-snapshot.ts";
+import { clearAnthropicCache } from "../shared/anthropic-discovery.ts";
+import type { Candidate } from "../shared/candidates.ts";
+import { clearCopilotCache } from "../shared/copilot-discovery.ts";
 import { readLocalRole, type LocalRole } from "../shared/local-role.ts";
-import { clearOmlxCache, resolveOmlxFilter } from "../shared/omlx-discovery.ts";
+import { clearOmlxCache } from "../shared/omlx-discovery.ts";
 import { loadRoutingMatrix, type RoutingMatrix } from "../shared/routing-matrix.ts";
 import { type AgentConfig, type AgentScope, discoverAgents, evaluateShadowGate } from "./agents.ts";
 import { selectSubagentPolicyModel } from "./policy-model.ts";
@@ -37,8 +44,6 @@ import {
 } from "./expertise-wiring.ts";
 import {
 	applyLocalRole,
-	filterDownOmlxIds,
-	getAvailableModelIds,
 	resolveModelPin,
 	sanitizeFallbackModelId,
 	type CopilotFallback,
@@ -334,52 +339,18 @@ async function readFallbackModelSetting(): Promise<string> {
 }
 
 /**
- * Build the Copilot fallback rung's inputs once per tool call (#536) — never
- * per agent, so a cold discovery cache cannot thundering-herd at fan-out
- * concurrency. The live probe runs only when the fallback id is actually
- * registry-present (the cheap set check); a registry-absent fallback is still
- * returned so the gate's note can name it. `availableModelIds === null`
- * (registry unreadable) returns undefined — pins pass through fail-open and
- * the rung is never consulted without registry data.
+ * Build the Copilot fallback rung from the same frozen availability generation
+ * used for provider-matrix selection. A registry/snapshot failure (`null`)
+ * keeps the historical fail-open pin behavior.
  */
 async function buildCopilotFallback(
-	ctx: Parameters<typeof resolveCopilotFilter>[0],
 	availableModelIds: ReadonlySet<string> | null,
-	signal?: AbortSignal,
+	registryModelIds: ReadonlySet<string> | null,
+	liveEnabledIds: ReadonlySet<string> | null,
 ): Promise<CopilotFallback | undefined> {
-	if (availableModelIds === null) return undefined;
+	if (availableModelIds === null || registryModelIds === null) return undefined;
 	const modelId = await readFallbackModelSetting();
-	if (!availableModelIds.has(modelId)) return { modelId };
-	const liveEnabledIds = await resolveCopilotFilter(ctx, signal ? { signal } : {}).catch(
-		() => null,
-	);
-	return { modelId, liveEnabledIds };
-}
-
-/**
- * Probe oMLX liveness once per tool call (#534, ADR-0081) — never per agent, so
- * a fan-out cannot thundering-herd the local server. Lazy: skipped entirely
- * (zero cost, no network) unless some `omlx/*` id is registry-present, matching
- * buildCopilotFallback's cheap pre-check. Returns the authoritative served-id
- * set (possibly empty = confirmed down), or `null` when the probe is
- * inconclusive, no omlx is registered, or the registry is unreadable — all of
- * which mean FAIL OPEN downstream (filterDownOmlxIds leaves the menu unchanged).
- */
-async function buildOmlxLiveness(
-	ctx: Parameters<typeof resolveOmlxFilter>[0],
-	availableModelIds: ReadonlySet<string> | null,
-	signal?: AbortSignal,
-): Promise<ReadonlySet<string> | null> {
-	if (availableModelIds === null) return null;
-	let hasOmlx = false;
-	for (const id of availableModelIds) {
-		if (id.startsWith("omlx/")) {
-			hasOmlx = true;
-			break;
-		}
-	}
-	if (!hasOmlx) return null;
-	return resolveOmlxFilter(ctx, signal ? { signal } : {}).catch(() => null);
+	return { modelId, liveEnabledIds, registryAvailable: registryModelIds.has(modelId) };
 }
 
 async function runSingleAgent(
@@ -484,7 +455,7 @@ async function runSingleAgent(
 		}
 	};
 
-	// LOCAL PATCH #7 (pi_config #643): emit once at the moment of invocation so
+	// LOCAL PATCH #7b (pi_config #643): emit once at the moment of invocation so
 	// the resolved child model is visible immediately, not only in the completion
 	// footer. `currentResult.model` is already seeded from the spawn-time pin
 	// (pin.modelArg) above, so a pinned / fallback-resolved child renders its
@@ -516,7 +487,7 @@ async function runSingleAgent(
 			// subagent — enforces the ADR-0028 "orchestrator-only
 			// expertise_create" trust boundary structurally rather than by
 			// convention. Default mode is passthrough-with-explicit-denies.
-			// LOCAL PATCH #7 (pi_config #551, ADR-0091): guard-profile signal —
+			// LOCAL PATCH #7a (pi_config #551, ADR-0091): guard-profile signal —
 			// set-or-delete semantics live in applyGuardProfile (sanitize-env.ts).
 			// LOCAL PATCH #11 (pi_config #606): per-wrapper strict allowlist mode
 			// via `env-strict`/`env-allow`/`env-allow-prefix` frontmatter; the
@@ -697,12 +668,12 @@ const SubagentParams = Type.Object({
 });
 
 export default function (pi: ExtensionAPI) {
-	// #536/#534: keep the Copilot tier and oMLX liveness discovery fresh per
-	// session without relying on auto-router being installed (both shared
-	// modules' caches are process singletons; auto-router's own session_start
-	// clears cover them only when both extensions are loaded).
+	// Keep the canonical snapshot and all provider discovery caches fresh per
+	// session without relying on auto-router being installed.
 	pi.on("session_start", () => {
+		clearAvailabilitySnapshot();
 		clearCopilotCache();
+		clearAnthropicCache();
 		clearOmlxCache();
 	});
 
@@ -721,27 +692,27 @@ export default function (pi: ExtensionAPI) {
 			const agentScope: AgentScope = params.agentScope ?? "user";
 			const discovery = discoverAgents(ctx.cwd, agentScope);
 			const agents = discovery.agents;
-			// One registry read per tool call feeds the spawn-time pin gate (#519);
-			// null (registry unreadable) makes the gate fail open. The oMLX
-			// liveness probe (#534) and the Copilot fallback rung (#536) are
-			// likewise resolved once per call, never per child.
-			const availableModelIds = await getAvailableModelIds(ctx.modelRegistry);
-			// #534: probe oMLX once, drop any confirmed-down workhorse id from the
-			// effective menu so its pin takes the drop→fallback path. servedOmlxIds
-			// is kept for the note wording; effectiveAvailableIds drives every
-			// downstream decision (fallback build + each child's pin gate).
-			const servedOmlxIds = await buildOmlxLiveness(
-				ctx as unknown as Parameters<typeof resolveOmlxFilter>[0],
-				availableModelIds,
-				signal,
-			);
-			const effectiveAvailableIds = filterDownOmlxIds(availableModelIds, servedOmlxIds);
+			// One shared, frozen registry + provider-discovery generation feeds the
+			// pin gate, fallback rung, and provider-matrix policy. A registry failure
+			// keeps qualified pins fail-open and leaves policy candidates empty.
+			const snapshot = await getAvailabilitySnapshot(
+				ctx as unknown as AvailabilitySnapshotContext,
+				signal ? { signal } : {},
+			).catch(() => null);
+			const effectiveAvailableIds = snapshot
+				? new Set(snapshot.candidates.map((candidate) => `${candidate.provider}/${candidate.id}`))
+				: null;
+			const registryModelIds = snapshot
+				? new Set(snapshot.registryCandidates.map((candidate) => `${candidate.provider}/${candidate.id}`))
+				: null;
+			const servedOmlxIds = snapshot ? availabilityEvidenceSet(snapshot.filters.omlx) : null;
+			const liveCopilotIds = snapshot ? availabilityEvidenceSet(snapshot.filters.copilot) : null;
 			const copilotFallback = await buildCopilotFallback(
-				ctx as unknown as Parameters<typeof resolveCopilotFilter>[0],
 				effectiveAvailableIds,
-				signal,
+				registryModelIds,
+				liveCopilotIds,
 			);
-			const policyCandidates = await getCandidates(ctx, { omlxFilter: servedOmlxIds }).catch(() => []);
+			const policyCandidates = snapshot?.candidates ?? [];
 			const policyMatrix = await loadRoutingMatrix();
 			// ADR-0094 (#685): global local-LLM role lever, read per tool call
 			// from user-layer settings (shared/local-role.ts). Children never run

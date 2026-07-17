@@ -14,7 +14,7 @@ export interface AgentConfig {
 	tools?: string[];
 	model?: string;
 	/**
-	 * LOCAL PATCH #7 (pi_config #551, ADR-0091): optional `guard-profile`
+	 * LOCAL PATCH #7a (pi_config #551, ADR-0091): optional `guard-profile`
 	 * frontmatter. The only recognized value is "report-only"; the spawn path
 	 * exports it to the child as PI_GUARD_PROFILE so bash-destructive-guard
 	 * enforces the wrapper's report-only contract mechanically.
@@ -152,7 +152,7 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 			description: frontmatter.description,
 			tools: tools && tools.length > 0 ? tools : undefined,
 			model: frontmatter.model,
-			// LOCAL PATCH #7 (pi_config #551): guard-profile passthrough.
+			// LOCAL PATCH #7a (pi_config #551): guard-profile passthrough.
 			guardProfile: frontmatter["guard-profile"]?.trim() || undefined,
 			// LOCAL PATCH #11 (pi_config #606): strict-env opt-in. Only a
 			// literal `true` (YAML boolean or the string "true") enables strict

@@ -1,203 +1,167 @@
 # Subagent extension internals
 
-Authoritative source: the vendored extension itself at `agent/extensions/subagent/` (1,135 lines across `index.ts` and `agents.ts`) and `agent/extensions/subagent/README.md` for patch provenance. This reference is the map of what the extension does, what we've patched, and what footguns exist.
+Authoritative sources are `agent/extensions/subagent/*.ts`, its tests,
+`PATCH_MANIFEST.json`, and `agent/extensions/subagent/README.md`. This reference
+summarizes stable seams without pinning brittle line numbers.
 
-## Provenance
+## Provenance and patch inventory
 
-Vendored from `@earendil-works/pi-coding-agent@0.78.0` `examples/extensions/subagent/`. The pinned upstream version lives in `agent/extensions/subagent/README.md`. One local patch diverges from upstream HEAD: patch #3 (`tool_execution_*` UI refresh), tracked in pi_config issue #46. Patches #1 (full per-task output) and #2 (failed-task diagnostics) were dropped at the 0.75.4 re-audit after upstream adopted them. See `agent/extensions/subagent/README.md` for the patch table.
+The extension is paired to upstream pi's 0.80.2 subagent example and was audited
+against the installed v0.80.6-psmfd.1 runtime. Upstream's example remained
+byte-identical across that interval. The README patch table is the canonical
+inventory for local patches #3–#14; `PATCH_MANIFEST.json` plus
+`scripts/validate-subagent-drift.sh` fail closed on unrecorded vendored drift.
+
+Patches #1 and #2 (full parallel output and failed-task diagnostics) were dropped
+when upstream adopted them. Do not infer the current patch count from historical
+issue prose; read the table and manifest.
 
 ## File layout
 
 ```text
 agent/extensions/subagent/
-├── index.ts          # 1009 lines — tool registration, modes, subprocess mgmt, rendering
-├── agents.ts         # 126 lines — agent discovery + frontmatter parsing
-└── README.md         # Provenance + patch table
+├── index.ts                 # tool schema, policy, subprocesses, concurrency, rendering
+├── agents.ts                # discovery, frontmatter, shadow gate
+├── model-pin.ts             # registry/live gate and fallback helpers
+├── policy-model.ts          # matrix/tier/local-eligibility selection
+├── sanitize-env.ts          # default and strict child environments
+├── expertise-wiring.ts      # canonical expertise injection/collection
+├── test/                    # focused policy, spawn, env, shadow, expertise tests
+├── PATCH_MANIFEST.json      # recorded local patch signatures
+└── README.md                # upstream pairing and authoritative patch table
 ```
 
-## `agents.ts` — agent discovery
+## Agent discovery and frontmatter
 
-Single responsibility: walk `~/.pi/agent/agents/` and `.pi/agents/` (nearest ancestor in cwd chain), parse frontmatter from each `*.md`, return an `AgentConfig[]`.
+User wrappers are loaded from `~/.pi/agent/agents/*.md`. Project wrappers are
+loaded from the nearest ancestor `.pi/agents/*.md` when `agentScope` is
+`project` or `both`. Under `both`, project names override user names, subject to
+the guard-profile shadowing gate.
 
-### `AgentConfig` shape (lines 11-20)
+`AgentConfig` parses these wrapper fields:
 
-```typescript
-interface AgentConfig {
-  name: string;            // From frontmatter `name:`
-  description: string;     // From frontmatter `description:`
-  tools?: string[];        // From frontmatter `tools:` (comma-split)
-  model?: string;          // From frontmatter `model:`
-  systemPrompt: string;    // The .md body after frontmatter
-  source: "user" | "project";
-  filePath: string;
-}
-```
-
-### Frontmatter contract (lines 54-71)
-
-Only four keys read: `name`, `description`, `tools`, `model`. **All other frontmatter keys are silently ignored.** This is the single biggest constraint on migrating tintinweb-style features — adding any new agent-level config requires extending this parser *and* the spawn argv in `index.ts`.
-
-### Discovery walk (lines 87-117)
-
-`findNearestProjectAgentsDir(cwd)` walks up from `cwd` looking for `<dir>/.pi/agents`, stopping at filesystem root. **Note the path: `.pi/agents`, not `.pi/agent/agents`.** Project-level discovery uses a different layout from the global location.
-
-`discoverAgents(cwd, scope)` builds a `Map<name, AgentConfig>`:
-
-| `scope` | Behavior |
+| Field | Meaning |
 |---|---|
-| `"user"` (default) | Only `~/.pi/agent/agents/`. |
-| `"project"` | Only nearest `.pi/agents/`. |
-| `"both"` | Both, with **project entries overriding user entries** on `name` collision. |
+| `name`, `description` | Required catalog identity and summary. |
+| `tools` | Optional comma-separated child `--tools` allowlist. Omission leaves pi's default tool surface and is structurally local-forbidden. |
+| `model` | Optional explicit model escape hatch. No first-party wrapper currently uses it. |
+| `guard-profile` | Recognized enforcement profile (`report-only` today). |
+| `env-strict` | Literal-true strict child environment mode. |
+| `env-allow`, `env-allow-prefix` | Per-wrapper strict-environment extensions. |
+| `local-llm` | Literal-true local eligibility tag; never overrides the bash/unrestricted floor. |
+| `capability-tier` | `frontier`, `capable`, or `fast` matrix quality request. |
 
-## `index.ts` — tool registration and execution
+The Markdown body becomes the child's appended system prompt. Fields such as
+`thinking`, `max_turns`, `extensions`, and `skills` are not parsed.
 
-### Tool schema (lines 416-429)
+### Guard-profile shadowing
 
-The `subagent` tool accepts a union of three modes via top-level params:
+A project wrapper colliding with a guard-profiled user wrapper is inspected even
+under project-only scope. Tool widening is refused. Profile weakening requires
+interactive confirmation, fails closed headlessly, and inherits the stronger
+user profile when approved. This gate is deliberately independent of the
+caller-controlled `confirmProjectAgents` parameter.
 
-| Param | Mode signal |
+## Tool schema and modes
+
+Exactly one mode is accepted:
+
+| Mode | Parameters |
 |---|---|
-| `agent` + `task` | Single |
-| `tasks: [{ agent, task, cwd? }, ...]` | Parallel |
-| `chain: [{ agent, task, cwd? }, ...]` | Chain (sequential with `{previous}` placeholder) |
+| Single | `agent`, `task`, optional `cwd`, optional `expertiseInjection` |
+| Parallel | `tasks[]` containing agent/task/cwd/expertiseInjection |
+| Chain | `chain[]`; `{previous}` expands to the prior step's output |
 
-Plus `agentScope` (`"user"` / `"project"` / `"both"`, default `"user"`) and `confirmProjectAgents` (default `true` — prompts when running project agents, no-op in headless modes via `ctx.hasUI` check).
+Shared parameters are `agentScope` and `confirmProjectAgents`. Parallel mode is
+runtime-capped at eight tasks and uses a four-worker concurrency limiter.
 
-Validation (`index.ts:452-465`) requires **exactly one** mode. Multi-mode or zero-mode invocations return a usage hint listing available agents.
+Project-agent confirmation and guard-profile shadow confirmation are distinct:
+the latter cannot be disabled by a tool parameter.
 
-### Subprocess invocation (lines 261-281, `runSingleAgent`)
+## Canonical model policy
 
-Argv assembly:
+At tool execution, the extension obtains ADR-0104's canonical availability
+snapshot and the reviewed routing matrix:
 
-```typescript
-const args = ["--mode", "json", "-p", "--no-session"];
-// #519/#536/#534 spawn-time gate (model-pin.ts, ADR-0076/ADR-0080/ADR-0081): a
-// slash-qualified pin reaches argv only when its exact provider/id is in
-// modelRegistry.getAvailable() AND (for omlx pins) the server is live — a
-// once-per-call probe (shared/omlx-discovery.ts; explicit override /
-// OMLX_BASE_URL / configured provider baseUrl / localhost default, then
-// loopback-validated) pre-filters down-omlx ids out of availableModelIds via
-// filterDownOmlxIds, so a dead-server pin is treated as absent. A dropped
-// non-Copilot pin then substitutes the Copilot fallback
-// (registry-present + live-tier-enabled, shared/copilot-discovery.ts) before
-// --model is omitted entirely (child inherits the session default). servedOmlxIds
-// shapes only the note wording (server-down vs not-installed). The tool result
-// carries a [note] naming the rung that actually ran. Slash-less pins ungated.
-const pin = resolveModelPin(agent.model, effectiveAvailableIds, copilotFallback, servedOmlxIds);
-if (pin.modelArg) args.push("--model", pin.modelArg);
-if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
-// Prompt body is written to a 0o600 temp file (see writePromptToTempFile at
-// index.ts:210); only the path enters argv. This avoids leaking prompt content
-// to `ps` / argv inspection and keeps argv length bounded.
-args.push("--append-system-prompt", tmpPromptPath);
-args.push(`Task: ${task}`);                         // user task as positional prompt
-```
+1. Explicit `model:` remains authoritative when present.
+2. Otherwise `selectSubagentPolicyModel()` applies capability/tier policy to the
+   snapshot candidates.
+3. `local-llm: true` permits the local lane only when the global
+   `extensionSettings.localLlm.role` is `full` and the wrapper is not
+   structurally local-forbidden.
+4. Wrappers with omitted tools or a `bash` tool remove local candidates. If no
+   non-local matrix candidate exists, spawn fails closed.
+5. Every explicit or policy-selected qualified model passes the spawn-time
+   registry/live gate. A dropped non-Copilot model may use the configured
+   Copilot fallback rung before session-default behavior; the result note names
+   the effective rung.
 
-The prompt-temp-file path is unlinked on `proc.exit` (`index.ts:394-396`) regardless of exit code.
+Parent and child policy share Copilot, Anthropic, and oMLX evidence from one
+frozen generation. Provider discovery is not repeated per child. Session start
+clears snapshot/provider caches; parent `/auto matrix refresh` explicitly
+replaces them in-process.
 
-Spawn config:
+## Child environment and prompt boundary
 
-- `cwd`: explicit `cwd` param > tool-call `cwd` > orchestrator's `ctx.cwd`
-- `shell: false` — direct exec, no shell expansion
-- `stdio: ["ignore", "pipe", "pipe"]` — no stdin, capture stdout (JSON events) and stderr (diagnostics)
+Children run as direct subprocesses (`shell: false`) in JSON print mode with
+`--no-session`. The wrapper system prompt is written to a mode-0600 temporary
+file so prompt contents do not enter argv; cleanup runs after process exit.
 
-`getPiInvocation(args)` (helper) resolves the pi binary path — used because we can't always assume `pi` is in PATH for child invocations.
+`buildChildEnv()` applies always-denied expertise credentials and either:
 
-### Event stream parser
+- default passthrough with explicit denies, or
+- `env-strict: true` allowlist mode plus justified wrapper extensions.
 
-Per-line `JSON.parse` from stdout. Two event types are handled:
+Secret-suffix keys remain denied unless exactly re-allowed, and always-deny wins.
+A recognized guard profile is exported by the parent; children cannot self-certify.
 
-```typescript
-if (event.type === "message_end" && event.message) {
-  // Accumulate messages, count turns, sum usage, capture stopReason/errorMessage
-}
-if (event.type === "tool_execution_start" || event.type === "tool_execution_end") {
-  emitUpdate();  // Per-tool-call UI refresh; no message accumulation
-}
-```
+Canonical expertise is injected into the user-role `Task:` framing, never via a
+network-sourced system message. Returned `EXPERTISE_CANDIDATES` are extracted,
+coalesced, and surfaced as structured result details. Child output cannot invoke
+expertise creation.
 
-**Historical note:** upstream's branch listened for `tool_result_end` with `event.message`, but current pi emits `tool_execution_start` / `tool_execution_end` (no `message` field). Our one active local patch (pi_config #46; see `agent/extensions/subagent/README.md`) replaces the dead branch with the corrected event names and triggers UI refresh on both edges without polluting `currentResult.messages`.
+## Event stream and rendering
 
-### Per-message accumulation (lines 322-343)
+Stdout is parsed line-by-line as JSON. Assistant `message_end` events accumulate
+messages, usage, model, stop reason, and errors. All three tool execution edges
+(`tool_execution_start`, `tool_execution_update`, `tool_execution_end`) refresh
+the parent UI without being added to final message accumulation.
 
-For each `message_end` of an assistant role:
+The effective model appears in invocation/progress/result labels. A selected
+model is known at spawn; otherwise the label remains `model pending` until child
+telemetry identifies it.
 
-| Captured | Source |
+Collapsed rendering shows per-agent usage summaries. Expanded rendering shows
+full transcripts and tool previews. Parallel result text is capped at 50 KiB per
+task. Abort signals terminate the child and surface an aborted result.
+
+## Stable constants and limits
+
+| Limit | Value |
 |---|---|
-| `messages[]` | Full message pushed |
-| `usage.turns++` | Incremented per assistant message |
-| `usage.input/output/cacheRead/cacheWrite` | Summed from `msg.usage` |
-| `usage.cost` | Summed from `msg.usage.cost.total` |
-| `usage.contextTokens` | Latest `msg.usage.totalTokens` (running total) |
-| `model` | First non-null `msg.model` |
-| `stopReason` | Latest `msg.stopReason` |
-| `errorMessage` | Latest `msg.errorMessage` |
+| Parallel task count | 8 |
+| Concurrent parallel children | 4 |
+| Per-task returned parallel output | 50 KiB |
+| Child session persistence | Disabled (`--no-session`) |
 
-### Abort handling
+## Known boundaries
 
-`signal.aborted` from the orchestrator's tool call propagates: when fired, `proc.kill()` sends SIGTERM and `wasAborted = true`. The final result reflects `stopReason: "aborted"` in the parent's view of the run.
+- Project agent path is `.pi/agents`, not `.pi/agent/agents`.
+- Unknown wrapper frontmatter is ignored.
+- `-p` children have no documented parent-to-child stdin steering channel.
+- Explicit slash-less model patterns remain delegated to pi's own matching.
+- Qualified-pin registry unreadability retains the documented fail-open pin
+  behavior, while provider-matrix selection has no candidates.
 
-## Mode-specific execution
+## Adding wrapper features
 
-### Single mode (lines 661-687)
+A new frontmatter feature normally requires coordinated changes to:
 
-Calls `runSingleAgent`, then:
+1. `AgentConfig` and parsing in `agents.ts`;
+2. policy, argv, or environment composition in `index.ts` and its helper module;
+3. focused tests and the strict type/lint gates;
+4. the subagent README patch table and `PATCH_MANIFEST.json` when vendored source
+   changes.
 
-- On success: returns `{ content: [{ type: "text", text: getFinalOutput(result.messages) }] }`.
-- On failure: returns `isError: true` with fallback diagnostic (`errorMessage` → `stderr` → `getFinalOutput` → `"(no output)"`).
-
-### Parallel mode (lines 590-651)
-
-Spawns all `tasks` concurrently via `Promise.all`. Per-task update callbacks merge into a shared `allResults[]` indexed by position; `emitParallelUpdate()` flushes the merged view to the TUI.
-
-**Historical parallel-mode patch zone:** patches #1 and #2 used to live here. Upstream now returns full per-task output up to the per-task cap and preserves failed-task diagnostics, so those downstream patches were dropped at the 0.75.4 re-audit. Keep this section in mind when auditing regressions in parallel-mode output, but it is no longer an active local patch zone.
-
-Currently no documented per-task concurrency cap in code — `Promise.all` runs all tasks at once. The 8-task / 4-concurrent cap referenced in `AGENTS.md` is enforced by the orchestrator's discipline, not by code.
-
-### Chain mode (lines 503-578)
-
-Sequential. Each step's task string has `{previous}` placeholders replaced with the previous step's final output before invocation. Aborts the chain on the first failure. Per-step results stream live as they complete.
-
-## Rendering
-
-`renderCall(args, theme, ctx)` (lines 696-810) — pre-execution tool call rendering. Shows mode, scope, and a preview of up to 3 agents/tasks/steps.
-
-`renderResult(result, options, theme, ctx)` (lines 811-1006) — post/streaming result rendering with two view states (`collapsed` and `expanded`):
-
-- **Collapsed** (default): one-line per agent with usage stats (turns, tokens, duration, cost).
-- **Expanded** (Ctrl+O): full per-task transcript with tool-call previews and final output rendered as markdown.
-
-The collapsed/expanded split is where the historical upstream truncation defect originated — full output was emitted only to `details` (visible in expanded view) but not to the `content` returned to the model. Upstream adopted that fix before the 0.75.4 re-audit, so the current vendored copy preserves full `content` output without a downstream patch.
-
-## Constants and caps (in-code, not configurable)
-
-| Constant | Value | Location | Effect |
-|---|---|---|---|
-| `PER_TASK_OUTPUT_CAP` | 50,000 bytes | `index.ts:633` | Per-task output cap in parallel-mode summary returned to the model |
-| (no explicit concurrency cap) | — | — | Parallel `Promise.all` — all tasks dispatched simultaneously |
-| `--no-session` | — | `index.ts:265` | Children never write session files |
-
-## Defects and known issues
-
-| Issue | Location | Severity | Notes |
-|---|---|---|---|
-| ~~Stale event name `tool_result_end`~~ | ~~`index.ts:344`~~ | **Fixed** (pi_config #46 patch) | Replaced with `tool_execution_start` / `tool_execution_end` — UI now refreshes per tool call. Listed here for historical context. |
-| No per-task concurrency cap in code | `index.ts` parallel mode | Low | Discipline-enforced via AGENTS.md (8/4). Production rate-limit issues would surface here first. |
-| Project-agents path is `.pi/agents` not `.pi/agent/agents` | `agents.ts:87` | Documentation, not bug | Different from global path; intentional but easy to miss. |
-| Frontmatter parser silently ignores unknown keys | `agents.ts:54-71` | Design — by intent | Means new fields like `thinking`, `max_turns`, `extensions` need parser-side and argv-side changes together. |
-
-## Extension points (for future migrations)
-
-If we want to migrate tintinweb capabilities, the touch points are:
-
-| Feature | `agents.ts` change | `index.ts` change | Other |
-|---|---|---|---|
-| `thinking:` frontmatter | Add to parse + `AgentConfig` | Add `--thinking <level>` to argv assembly (`runSingleAgent`) | None |
-| `extensions: false` | Add to parse + `AgentConfig` | Add `--no-extensions` to argv | None |
-| `max_turns` (hard) | Add to parse + `AgentConfig` | Count `message_end` (assistant) events; `proc.kill("SIGTERM")` at threshold | Result needs new `stopReason` value like `"max_turns"` |
-| `max_turns` (graceful) | Same | Same counting; instead of SIGTERM, write a steer message — but **`-p` mode has no documented stdin steering**. Likely needs an in-child extension that watches counts via its own event subscription. | Significant — see [`extension-api.md`](extension-api.md#pisendmessagemessage-options--programmatic-steering) |
-| `skills:` preload list | Add to parse + `AgentConfig` | Resolve names to paths; emit `--skill <path>` per item | Skill discovery code in `agents.ts` would need a counterpart for skill paths |
-| Worktree isolation | Add to parse + `AgentConfig` | Pre-spawn: `git worktree add`; post-completion: commit or remove; pass new path as `cwd` | Significant — pairs with hook integration |
-| Background queue | Major | Major — needs registry, status polling tool, completion injection | Effectively a rewrite of the parallel-mode model |
-
-The first three rows are small and additive — recommended path in the prior migration analysis. The last three are substantial.
+Subagent source changes must run the drift validator/regenerator described in
+the README. Do not update this reference as a substitute for patch provenance.

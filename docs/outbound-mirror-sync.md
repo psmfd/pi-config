@@ -235,6 +235,12 @@ compliant and existing ones are auditable. Mechanical enforcement is tracked in
    routing-matrix tests failed on the mirror for exactly this reason (#736,
    fixed by resolving the matrix via shared/routing-matrix.ts's module-adjacent
    `defaultMatrixPath()`).
+5. **Ship operator contracts beside their extension.** Auto-router's
+   `MATRIX_LIFECYCLE_V1.md` lives at the extension root, so overlay staging
+   publishes it automatically beside `README.md`; the inlined
+   `shared/routing-matrix.json` is the synchronized distribution copy described
+   by that contract. Keep source-only script paths clearly labeled and verify
+   the target with `sync-mirror.sh --target pi-auto-router --dry-run`.
 
 ## Releases (ADR-0055)
 

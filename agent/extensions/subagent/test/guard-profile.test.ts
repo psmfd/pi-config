@@ -1,5 +1,5 @@
 /**
- * subagent — guard-profile frontmatter tests (LOCAL PATCH #7; pi_config
+ * subagent — guard-profile frontmatter tests (LOCAL PATCH #7a; pi_config
  * #551, ADR-0091).
  *
  * Verifies the wrapper-side half of the report-only enforcement chain: the

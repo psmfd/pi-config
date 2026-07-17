@@ -227,6 +227,17 @@ test("applyLocalRole: non-local pins pass through under a restricted lever", () 
 
 // --- first-party wrapper migration pins (#685) ---
 
+test("integration pin: subagent policy and pin gates consume the canonical live-filtered snapshot (#748)", () => {
+  const source = readFileSync(join(HERE, "..", "index.ts"), "utf-8");
+  assert.match(source, /getAvailabilitySnapshot\(/);
+  assert.match(source, /const policyCandidates = snapshot\?\.candidates \?\? \[\]/);
+  assert.match(source, /snapshot\.filters\.copilot/);
+  assert.match(source, /snapshot\.filters\.omlx/);
+  assert.match(source, /clearAnthropicCache\(\)/);
+  assert.doesNotMatch(source, /getCandidates\(ctx/);
+  assert.doesNotMatch(source, /resolve(?:Copilot|Anthropic|Omlx)Filter\(/);
+});
+
 test("integration pin: no first-party wrapper carries any model: pin (#656)", () => {
   for (const file of readdirSync(REPO_AGENTS_DIR).filter((f) => f.endsWith(".md"))) {
     const content = readFileSync(join(REPO_AGENTS_DIR, file), "utf-8");

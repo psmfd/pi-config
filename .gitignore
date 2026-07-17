@@ -63,8 +63,8 @@ drafts/
 # in version control.
 /agent/git/
 
-# Operator-local GitHub identity guard configuration
-.pi/expected-identity
+# Repository-authorized GitHub identity guard configuration
+!/.pi/expected-identity
 
 # expertise-audit artifacts (#601) — written to the repo root by scripts/expertise-audit.sh
 expertise-blob-*.json.gz

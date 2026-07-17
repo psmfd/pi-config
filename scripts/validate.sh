@@ -1249,7 +1249,7 @@ MX_KEYS
     ((.lastReviewed | strptime("%Y-%m-%d") | mktime)) as $reviewed
     | ((now - $reviewed) / 86400 | floor)
   ' "$MX" 2>/dev/null)"
-  if ! [[ "$mx_stale_days" =~ ^[0-9]+$ ]]; then
+  if ! [[ "$mx_stale_days" =~ ^[1-9][0-9]*$ ]]; then
     err "routing-matrix: staleAfterDays in $MX is missing or not a positive integer (single source of the staleness threshold, #686)"
   elif [ -z "$mx_age_days" ]; then
     err "routing-matrix: lastReviewed in $MX is missing or not a valid YYYY-MM-DD date"
@@ -1279,12 +1279,12 @@ MX_TIERS
   [ "$mx_bad_tier" -eq 0 ] && ok "routing-matrix: all tier values are in the recognized enum"
 
   # #660 refresh audit block: optional; when present, at/tool/source must be
-  # strings or the loader silently drops it (WARN so the author notices).
+  # strings or the strict loader rejects the policy.
   if jq -e '.refresh' "$MX" >/dev/null 2>&1; then
     if jq -e '.refresh | (.at|type=="string") and (.tool|type=="string") and (.source|type=="string")' "$MX" >/dev/null 2>&1; then
       ok "routing-matrix: refresh audit block shape valid"
     else
-      warn "routing-matrix: refresh block present but malformed (at/tool/source must be strings) — the loader will drop it"
+      err "routing-matrix: refresh block present but malformed (at/tool/source must be strings) — the strict loader will reject it"
     fi
   fi
 

@@ -17,10 +17,10 @@ Load the `pi-agent-expert` skill (`/skill:pi-agent-expert` or read `~/.pi/agent/
 - `references/extension-api.md` — `pi.registerTool`, the full event catalog, `ExtensionContext`, `pi.sendMessage` steering, `pi.events` bus
 - `references/agent-and-skill-authoring.md` — frontmatter contracts for skills and our agent wrappers, discovery precedence, auto-trigger semantics, prompt templates
 - `references/settings-and-config.md` — `settings.json` keys, precedence, env-var overrides
-- `references/subagent-internals.md` — vendored extension anatomy, the one active local patch (`tool_execution_*` UI refresh; patches #1/#2 were dropped after upstream adoption), extension points for future migrations
+- `references/subagent-internals.md` — current vendored extension anatomy, frontmatter/model/env/expertise policy, concurrency/event seams, patch-manifest boundary, and migration touch points
 - `references/versioning-and-upstream.md` — snapshot-bump procedure, behaviors that have historically drifted
 
-The single most important reference for substrate work is `subagent-internals.md` — it maps every line of `index.ts` / `agents.ts` we'd touch when migrating new capabilities (`thinking`, `max_turns`, etc.).
+The single most important reference for substrate work is `subagent-internals.md` — it maps stable discovery, policy, spawn, event, environment, expertise, and concurrency seams without duplicating brittle source line numbers.
 
 ## Verifying against first-party sources
 
@@ -29,7 +29,7 @@ pi is a living dependency — behaviors documented in `docs/*.md` are mostly sta
 1. Resolve the installed location: `node -e 'console.log(require.resolve("@earendil-works/pi-coding-agent/package.json"))'`. The macOS Homebrew path in the skill is illustrative; actual installs differ.
 2. Read the relevant `docs/` file. If documented, the answer is authoritative.
 3. If undocumented, grep `dist/` — but **caveat the answer** as version-specific. Always note the verified pi version (`package.json` `version` field).
-4. For event names or API shapes the substrate depends on, prefer `dist/core/agent-session.js` over the docs — drift has been observed (the upstream `tool_result_end` handler remains dead against pi 0.78.0 emitting `tool_execution_*`; patched in pi_config #46).
+4. For event names or API shapes the substrate depends on, prefer `dist/core/agent-session.js` over the docs — at v0.80.6 the runtime emits all three `tool_execution_{start,update,end}` edges while upstream's example retains a dead `tool_result_end` branch; local patch #3 handles the current events.
 
 `web` is allowed for verifying upstream repo state or release notes when the installed version is older than the version that fixed/introduced something. Prefer first-party sources (the `earendil-works/pi-mono` repo or `pi.dev` if it has docs) over third-party summaries.
 
@@ -53,10 +53,10 @@ For **research questions** ("does pi support X?", "what does event Y look like?"
 
 For **proposal questions** ("how would we add `thinking:` to agent frontmatter?"): produce a structured proposal:
 
-1. **Touch points** — the exact files and line ranges that need modification (cite the current `index.ts` / `agents.ts` line numbers from `subagent-internals.md`).
+1. **Touch points** — the exact files, symbols, and current source line ranges that need modification (derive ranges from the source at review time; the internals reference intentionally avoids brittle numbers).
 2. **Proposed diff** — a fenced patch sketch (not a runnable patch — the orchestrator will produce the final form). Include both `agents.ts` parsing changes and `index.ts` argv-translation changes when they're coupled.
 3. **Test plan** — how to verify the change works (smoke test, observable side effects, agents to dry-run against).
-4. **Risk** — what could break, what version assumptions the change makes, whether it interacts with our active local patch.
+4. **Risk** — what could break, what version assumptions the change makes, and which README/PATCH_MANIFEST patch signatures are affected.
 
 For **defect reports** (drift, dead code, missed events): use the structured findings format from `rules/structured-review-format.md` — table of `Severity` / `File` / `Line` / `Finding`, plus a verdict (`PASS` / `PASS_WITH_WARNINGS` / `NEEDS_CHANGES`).
 
@@ -69,4 +69,4 @@ For **snapshot-bump questions**: walk through `references/versioning-and-upstrea
 - Always cite pi version when claiming a specific behavior — drift between minor releases is real.
 - Distinguish documented (in `docs/`) from inferred (in `dist/`) behavior in every answer.
 - Do not invoke other subagents.
-- When the question would require modifying our active local patch, flag the patch-zone coupling explicitly — the patch is tracked in pi_config #46 and any change in that line range needs `agent/extensions/subagent/README.md` updates.
+- When a question would modify vendored subagent behavior, identify every affected patch row (#3–#14 today), update `agent/extensions/subagent/README.md`, and regenerate/validate `PATCH_MANIFEST.json`; never treat #46's event patch as the whole downstream surface.

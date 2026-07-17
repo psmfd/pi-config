@@ -6,7 +6,7 @@ Authoritative sources: `agent/extensions/subagent/README.md` (current snapshot v
 
 Per [ADR-0001](../../../../adrs/0001-subagent-orchestration-substrate.md): the upstream `examples/extensions/subagent/` ships as documentation, not a stability-promised API. Two issues motivated vendoring:
 
-1. **Patch surface.** We carry one local patch (`tool_execution_*` UI refresh — see [`subagent-internals.md`](subagent-internals.md#event-stream-parser)). Without vendoring, an `npm update` could silently revert it. Patches #1 (full per-task output) and #2 (failed-task diagnostics) were dropped at the 0.75.4 re-audit after upstream adopted them.
+1. **Patch surface.** We carry the documented #3–#14 patch set covering UI events, model policy, canonical availability, environment/guard enforcement, expertise wiring, shadow gating, and rendering. The authoritative inventory and signatures are `agent/extensions/subagent/README.md` plus `PATCH_MANIFEST.json`. Patches #1 (full per-task output) and #2 (failed-task diagnostics) were dropped after upstream adoption.
 2. **Audit boundary.** The orchestration substrate must be inspectable in-tree. Reading `~/.pi/agent/extensions/subagent/index.ts` should match `git blame` history.
 
 Vendoring is an explicit operation: bumping the snapshot is a deliberate commit, not a side effect of `npm update -g @earendil-works/pi-coding-agent`.
@@ -59,9 +59,11 @@ Compare upstream `examples/extensions/subagent/{index.ts,agents.ts}` against `ag
 | Our code that upstream lacks | **Verify each line is one of our documented patches.** If yes, port the patch onto the new upstream. If no, the line is undocumented drift — write it up before re-applying. |
 | Upstream changed code we also changed | **Conflict zone.** Re-apply our patches against the new context. Update line numbers in the patch table. |
 
-The active patch zone to focus on:
-
-1. **Per-tool-call UI refresh** — upstream still carries a dead `tool_result_end` branch; our active patch listens for `tool_execution_start` / `tool_execution_end` and calls `emitUpdate()` without appending synthetic messages.
+The active patch surface is the complete #3–#14 inventory in the subagent
+README and `PATCH_MANIFEST.json`: UI refresh, model pin/fallback/liveness,
+expertise/env/guard policy, effective-model rendering, matrix/local/tier policy,
+shadow gating, strict child environments, and the canonical snapshot. Audit
+every recorded signature; do not reduce the diff mentally to the event patch.
 
 Historical patch zones for parallel-mode full output and failed-task diagnostics were dropped after upstream adopted those behaviors. Still smoke-test them during a bump, but do not treat them as active downstream diffs unless a future audit shows regression.
 
@@ -74,7 +76,10 @@ grep -n "tool_execution_\|message_end\|tool_result" \
   $(npm prefix -g 2>/dev/null)/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js
 ```
 
-Known historical drift: the upstream `tool_result_end` handler at `index.ts:344` was dead against pi 0.74.x because pi now emits `tool_execution_start`/`tool_execution_end` instead. The parser silently underperformed (no per-tool-call UI refresh) rather than crashing — easy to miss without explicit verification. Fixed in pi_config #46. On future bumps, re-verify these event names haven't drifted again.
+Known historical drift: upstream's `tool_result_end` handler is dead against
+the current runtime, which emits `tool_execution_start`,
+`tool_execution_update`, and `tool_execution_end`. Local patch #3 consumes all
+three without polluting message accumulation. On future bumps, re-verify them.
 
 ### 5. Smoke-test against the catalog
 
@@ -97,12 +102,13 @@ Verify:
 
 ### 6. Update the snapshot README and patch table
 
-In `agent/extensions/subagent/README.md`:
+In `agent/extensions/subagent/README.md` and `PATCH_MANIFEST.json`:
 
-- Update the first line: `> **Vendored from pi X.Y.Z** ...`
-- Update each patch row's "Lines (post-patch)" column with new line numbers
-- If upstream merged a patch, remove its row and note in the commit message which patch became unnecessary
-- Add new patches if drift in step 3 required new local changes
+- Update the upstream pairing/audit note.
+- Reconcile every patch row with the new source.
+- Remove rows that upstream made unnecessary and record why.
+- Add rows for any deliberate new downstream behavior.
+- Regenerate and validate manifest signatures with the repository drift script.
 
 ### 7. Update ADR-0001 only if substrate semantics changed
 
@@ -117,9 +123,9 @@ ADR-0001 documents *why* we vendor. Bumps don't change the why. Update only if:
 ```text
 chore(subagent): bump vendored snapshot to pi X.Y.Z
 
-- Re-applied "tool_execution_* UI refresh" patch (lines NNN-MMM)
+- Re-applied recorded patches #3-#14 against the new snapshot
 - Confirmed patches #1/#2 remain upstream-adopted
-- Updated patch table in agent/extensions/subagent/README.md
+- Updated patch table and regenerated PATCH_MANIFEST.json
 - No event-name drift detected against agent-session.js
 - Smoke-tested /review and single-agent invocation
 ```
@@ -140,7 +146,7 @@ Maintain this list — add new entries as drift is observed. Each entry should a
 
 | Behavior | Drift history | Detection |
 |---|---|---|
-| Event name for per-tool-call result | `tool_result_end` (upstream) → `tool_execution_start`/`tool_execution_end` somewhere before pi 0.74.0. Vendored `index.ts:344` carried the dead upstream name until pi_config #46. | Diff stdout of `pi --mode json -p "hello" 2>/dev/null` against the parser's event-name switch |
+| Event name for per-tool-call result | Upstream example retains `tool_result_end`; current runtime emits `tool_execution_start`/`tool_execution_update`/`tool_execution_end`, consumed by local patch #3. | Diff JSON-mode stdout against the parser's event-name switch and run the spawn integration test. |
 | 100-char preview truncation in parallel mode | Upstream behavior pre-0.74.0; patch #1 fixed this downstream until upstream adopted the behavior before the 0.75.4 re-audit. | Run `/review` and confirm full text reaches model, not just preview |
 | `getFinalOutput` shape | Stable through 0.74.x. Helper used in all three modes' summary paths. | Verify return type matches `messages[].content[].text` extraction |
 
@@ -156,11 +162,14 @@ The pi CLI itself can be updated freely (`npm update -g @earendil-works/pi-codin
 
 ## Future: upstream contribution path
 
-The active carried patch is tracked in pi_config issue #46. If/when it merges upstream:
+When any carried behavior merges upstream:
 
-1. Bump the snapshot to a version that contains the merge.
-2. Drop the merged row from the patch table.
-3. Close or update pi_config #46.
-4. Consider whether vendoring is still warranted with no remaining patch surface — discuss in an ADR-0001 amendment, not unilaterally.
+1. Bump to a snapshot containing the merge.
+2. Drop only the redundant patch row and reconcile dependent rows.
+3. Regenerate `PATCH_MANIFEST.json` and update the backing issue.
+4. Re-evaluate ADR-0001 only if the total remaining patch/audit boundary changes
+   enough to alter the vendoring decision.
 
-Vendoring without patches is still defensible (audit-in-tree argument), but the cost-benefit shifts.
+A merge of #46's event behavior would remove patch #3, not patches #4–#14.
+Vendoring without patches would still be defensible for audit-in-tree reasons,
+but that is not the current state.

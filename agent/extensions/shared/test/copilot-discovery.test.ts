@@ -28,6 +28,18 @@ function fetchReturning(body: unknown, ok = true): { fn: FetchLike; calls: strin
   return { fn, calls };
 }
 
+async function withTestWatchdog<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const watchdog = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error("internal discovery deadline did not settle")), 250);
+  });
+  try {
+    return await Promise.race([operation, watchdog]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 const SAMPLE = {
   data: [
     { id: "gpt-5.5", model_picker_enabled: true, policy: { state: "enabled" } },
@@ -111,9 +123,18 @@ test("fetchCopilotEnabledModels fails open when the body exceeds the size cap", 
   assert.equal(await fetchCopilotEnabledModels(AUTH, { fetchFn: fn }), null);
 });
 
-test("fetchCopilotEnabledModels fails open when fetch throws (network / redirect)", async () => {
-  const fn: FetchLike = async () => { throw new Error("redirect not allowed"); };
-  assert.equal(await fetchCopilotEnabledModels(AUTH, { fetchFn: fn }), null);
+test("fetchCopilotEnabledModels fails open when fetch throws or reaches its deadline", async () => {
+  const throwing: FetchLike = async () => { throw new Error("redirect not allowed"); };
+  assert.equal(await fetchCopilotEnabledModels(AUTH, { fetchFn: throwing }), null);
+
+  const hanging: FetchLike = (_url, init) =>
+    new Promise((_resolve, reject) => {
+      init.signal?.addEventListener("abort", () => reject(new Error("timed out")), { once: true });
+    });
+  assert.equal(
+    await withTestWatchdog(fetchCopilotEnabledModels(AUTH, { fetchFn: hanging, timeoutMs: 5 })),
+    null,
+  );
 });
 
 test("fetchCopilotEnabledModels sends the Bearer token in the Authorization header", async () => {
@@ -152,6 +173,31 @@ test("getEnabledCopilotModels does not cache a null (failure) result", async () 
   clearCopilotCache();
 });
 
+test("clearCopilotCache prevents an older in-flight request from repopulating the cache", async () => {
+  clearCopilotCache();
+  let resolveOld: ((response: FetchResponseLike) => void) | undefined;
+  const oldFetch: FetchLike = () =>
+    new Promise((resolve) => {
+      resolveOld = resolve;
+    });
+  const old = getEnabledCopilotModels(AUTH, { fetchFn: oldFetch, now: () => 0 });
+
+  clearCopilotCache();
+  let newFetches = 0;
+  const fresh = { data: [{ id: "fresh-model", model_picker_enabled: true }] };
+  const newFetch: FetchLike = async () => {
+    newFetches += 1;
+    return jsonResponse(fresh);
+  };
+  assert.deepEqual(await getEnabledCopilotModels(AUTH, { fetchFn: newFetch, now: () => 0 }), new Set(["fresh-model"]));
+  assert.ok(resolveOld, "older request did not start");
+  resolveOld(jsonResponse({ data: [{ id: "stale-model", model_picker_enabled: true }] }));
+  assert.deepEqual(await old, new Set(["stale-model"]));
+  assert.deepEqual(await getEnabledCopilotModels(AUTH, { fetchFn: newFetch, now: () => 0 }), new Set(["fresh-model"]));
+  assert.equal(newFetches, 1, "stale completion must not evict the replacement cache");
+  clearCopilotCache();
+});
+
 // --- resolveCopilotFilter --------------------------------------------------
 function registry(
   available: { provider: string; id: string }[],
@@ -186,7 +232,7 @@ test("resolveCopilotFilter discovers via any available copilot model", async () 
   clearCopilotCache();
 });
 
-test("resolveCopilotFilter fails open when auth is unavailable", async () => {
+test("resolveCopilotFilter fails open when auth is unavailable or exceeds the deadline", async () => {
   clearCopilotCache();
   const { fn } = fetchReturning(SAMPLE);
   const out = await resolveCopilotFilter(
@@ -194,5 +240,17 @@ test("resolveCopilotFilter fails open when auth is unavailable", async () => {
     { fetchFn: fn },
   );
   assert.equal(out, null);
+
+  const hangingAuth = {
+    modelRegistry: {
+      getAvailable: () => [{ provider: "github-copilot", id: "gpt-5.5" }],
+      find: () => ({}),
+      getApiKeyAndHeaders: (): Promise<typeof AUTH> => new Promise(() => undefined),
+    },
+  };
+  assert.equal(
+    await withTestWatchdog(resolveCopilotFilter(hangingAuth, { fetchFn: fn, timeoutMs: 5 })),
+    null,
+  );
   clearCopilotCache();
 });

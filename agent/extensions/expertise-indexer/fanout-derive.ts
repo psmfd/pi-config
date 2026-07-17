@@ -112,14 +112,14 @@ export function deriveFanoutCanonicalInputs(args: {
 
 /**
  * Project a raw `expertise_search` response body into the injection entry
- * shape. Tolerant by design — the response is loopback-API output, not
- * hostile, but a schema drift must degrade to "fewer results", never throw
+ * shape. Tolerant by design — the response is untrusted API output, and a
+ * schema drift must degrade to "fewer results", never throw
  * into the tool_call hook (whose exceptions the pi runtime does NOT catch).
  *
  * Accepts `{"results": [...]}` (the semantic endpoint's envelope) or a bare
- * array. An entry is kept iff every required field is a non-empty string
- * after `String()` coercion of primitives; objects/arrays in a required
- * field drop the entry.
+ * array. Required free-text fields accept either legacy primitives or the
+ * upstream response-hygiene `{ value: string, ... }` wrapper. Other objects
+ * and arrays drop the entry.
  */
 export function projectSearchResults(text: string): CanonicalResultEntry[] {
 	let parsed: unknown;
@@ -138,6 +138,14 @@ export function projectSearchResults(text: string): CanonicalResultEntry[] {
 
 	const str = (v: unknown): string | null =>
 		typeof v === "string" || typeof v === "number" || typeof v === "boolean" ? String(v) : null;
+	const freeText = (v: unknown): string | null => {
+		const primitive = str(v);
+		if (primitive !== null) return primitive;
+		if (v === null || typeof v !== "object" || Array.isArray(v)) return null;
+		return typeof (v as Record<string, unknown>).value === "string"
+			? ((v as Record<string, unknown>).value as string)
+			: null;
+	};
 
 	const out: CanonicalResultEntry[] = [];
 	for (const row of rows) {
@@ -145,8 +153,8 @@ export function projectSearchResults(text: string): CanonicalResultEntry[] {
 		const r = row as Record<string, unknown>;
 		const id = str(r.id);
 		const domain = str(r.domain);
-		const title = str(r.title);
-		const body = str(r.body);
+		const title = freeText(r.title);
+		const body = freeText(r.body);
 		const entryType = str(r.entryType);
 		const severity = str(r.severity);
 		if (!id || !domain || !title || !body || !entryType || !severity) continue;

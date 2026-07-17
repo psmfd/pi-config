@@ -1,7 +1,7 @@
 /**
- * expertise-client — `/health/ready` preflight (ADR-0028).
+ * expertise-client — `/health/ready` preflight (ADR-0103).
  *
- * Every tool call gates on readiness first so a not-yet-ready local API
+ * Every tool call gates on readiness first so a not-yet-ready configured API
  * surfaces a clear, fail-closed refusal instead of a confusing mid-call
  * error. Readiness is liveness evidence only — it is NOT proof of
  * authentication (the endpoint is unauthenticated upstream).
@@ -26,6 +26,7 @@ export async function checkReady(
 ): Promise<HealthResult> {
   try {
     const res = await apiGet(config, HEALTH_READY_PATH, {
+      authenticated: false,
       ...(options.signal ? { signal: options.signal } : {}),
       ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
     });

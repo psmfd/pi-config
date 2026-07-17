@@ -20,10 +20,11 @@ A `tool_call` hook on the `subagent` tool:
    (`buildCanonicalQuery` template), and the anchoring `canonical_blob_sha`
    from repo origin + HEAD + the exact task list (`computeCanonicalBlob`,
    empty `files` by contract — a live fanout has no changed-set).
-3. **Search**: ONE `expertise_search` (limit 5) against the loopback
-   agent-expertise-api, through the shared client stack
-   (`shared/expertise-api-{config,http,health,search}.ts`) with the same
-   loopback-only + key-required invariants as the tool surface.
+3. **Search**: ONE `expertise_search` (limit 5) through the shared client
+   stack (`shared/expertise-api-{config,http,health,search}.ts`). It consumes
+   either the retained loopback/API-key profile or upstream's HTTPS bearer /
+   static-OIDC contract (`EXPERTISE_API_*`). Current response-hygiene
+   `{ value, ... }` wrappers for title/body are projected explicitly.
 4. **Inject**: renders `CANONICAL_EXPERTISE_RESULTS` via
    `renderCanonicalResultsBlock` and mutates every task's
    `expertiseInjection` in place. The vendored subagent extension prepends it
@@ -61,7 +62,7 @@ satisfied in a single dialog.
 ## Failure posture
 
 **Fail-open, self-caught.** The pi runtime does not wrap `tool_call`
-handlers in try/catch, so every failure path (missing key, unreachable API,
+handlers in try/catch, so every failure path (missing credential, unreachable API,
 429, git probe failure, internal bug) is caught inside the handler and
 degrades to "fanout proceeds without canonical context". One search per
 fanout; a 429 arms a session-wide backoff (`Retry-After` when sent, else
@@ -82,12 +83,13 @@ secret-scanned (shared pattern set) and redacted to category names on match.
 
 ## Configuration
 
-Same sources as expertise-client, resolved through the shared parser:
-`process.env` > the expertise-client extension's `.env.local` (sibling path
-`../expertise-client/.env.local` — extensions co-live under
-`~/.pi/agent/extensions/`). No config → the gate logs one warning per
-session and skips. Read-only by construction: no create-capable module is
-imported.
+Same sources and profile selection as expertise-client, resolved through the
+shared parser. The upstream profile reads process env then
+`~/.config/expertise-api/secrets.env` (or `EXPERTISE_API_SECRETS_FILE`). The
+legacy profile reads process env then the client `.env.local`; the gate checks
+both source-tree sibling and git-package install locations, fixing the packaged
+layout where no sibling client directory exists. No config → one warning per
+session and a fail-open skip. Read-only by construction.
 
 ## Files
 
