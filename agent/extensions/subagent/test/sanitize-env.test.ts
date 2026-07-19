@@ -225,6 +225,39 @@ test("strict mode: ALWAYS_DENY beats every allowlist rule", () => {
   );
 });
 
+test("strict mode: TOKEN_METER_* carrier vars survive (whole-tree accounting, ADR-0105)", () => {
+  // Regression for the token-meter whole-tree accounting break: all three
+  // env carriers (ADR-0073 decision 4, ADR-0077 policy tag) must reach a
+  // strict-mode child or subagent usage is silently never recorded.
+  const out = buildSanitizedEnv(
+    {
+      PATH: "/usr/bin",
+      TOKEN_METER_SESSION: "019f1234-abcd-7000-8000-000000000000",
+      TOKEN_METER_ENABLED: "1",
+      TOKEN_METER_POLICY_TAG: "phase3-on",
+    },
+    { strict: true },
+  );
+  assert.equal(out.TOKEN_METER_SESSION, "019f1234-abcd-7000-8000-000000000000");
+  assert.equal(out.TOKEN_METER_ENABLED, "1");
+  assert.equal(out.TOKEN_METER_POLICY_TAG, "phase3-on");
+});
+
+test("strict mode: secret-suffixed TOKEN_METER_ names are still stripped", () => {
+  // The prefix allow must not become a secret smuggling channel:
+  // STRICT_DENY_PATTERNS runs before the allowlist check.
+  const out = buildSanitizedEnv(
+    {
+      PATH: "/usr/bin",
+      TOKEN_METER_API_TOKEN: "t",
+      TOKEN_METER_SECRET: "s",
+    },
+    { strict: true },
+  );
+  assert.equal(out.TOKEN_METER_API_TOKEN, undefined);
+  assert.equal(out.TOKEN_METER_SECRET, undefined);
+});
+
 test("strict mode: extraAllow re-enables a secret-suffix even against the pattern", () => {
   // extraAllow must beat STRICT_DENY_PATTERNS (that's the escape hatch for
   // per-wrapper allowlists in #606) but NEVER beats ALWAYS_DENY_EXACT.

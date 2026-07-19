@@ -75,7 +75,7 @@ EXT_MIRRORS=(
   pi-artifact-handoff@v0.1.1
   pi-web-fetch@v0.1.1
   pi-cache-meter@v0.1.1
-  pi-token-meter@v0.2.0
+  pi-token-meter@v0.2.1
   pi-gh-identity-guard@v0.1.1
   pi-compaction-optimizer@v0.1.1
   pi-expertise-client@v0.5.0

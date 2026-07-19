@@ -1,6 +1,6 @@
 {
   "manifestVersion": 2,
-  "pinnedPiVersion": "v0.80.6-psmfd.1",
+  "pinnedPiVersion": "v0.80.10-psmfd.1",
   "upstreamRelativePath": "examples/extensions/subagent",
   "trackedFiles": {
     "index.ts": {
@@ -16,6 +16,6 @@
       "netLines": 204
     }
   },
-  "generatedAt": "2026-07-16T13:20:43Z",
+  "generatedAt": "2026-07-19T18:45:55Z",
   "note": "See agent/extensions/subagent/README.md for the patch table. Regenerate with: scripts/validate-subagent-drift.sh --regenerate"
 }

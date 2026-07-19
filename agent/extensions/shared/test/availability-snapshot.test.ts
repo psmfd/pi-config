@@ -54,14 +54,15 @@ function context(models: readonly Model[] = MODELS): AvailabilitySnapshotContext
 }
 
 const providerFetch: FetchLike = async (url) => {
-  if (url.includes("githubcopilot.com")) {
+  const host = new URL(url).hostname;
+  if (host === "githubcopilot.com" || host.endsWith(".githubcopilot.com")) {
     return {
       ok: true,
       status: 200,
       text: async () => JSON.stringify({ data: [{ id: "enabled", model_picker_enabled: true }] }),
     };
   }
-  if (url.startsWith("https://api.anthropic.com")) {
+  if (host === "api.anthropic.com") {
     return {
       ok: true,
       status: 200,

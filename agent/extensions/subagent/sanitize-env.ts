@@ -99,6 +99,10 @@ const STRICT_DENY_PATTERNS: readonly RegExp[] = [
  * Minimum env every strict-mode child needs to start and run correctly. Keep
  * this list conservative — additions should be justified per-wrapper via
  * `extraAllow` / `extraAllowPrefixes` (issue #606), not bolted onto the base.
+ * The one exception category is unconditional cross-cutting infrastructure
+ * every child needs identically regardless of wrapper (runtime plumbing,
+ * proxy egress, whole-tree accounting) — those belong here or in
+ * `BASE_ALLOW_PREFIXES` with a justifying comment (ADR-0105).
  */
 const BASE_ALLOWLIST: ReadonlySet<string> = new Set([
 	// POSIX baseline.
@@ -148,6 +152,18 @@ const BASE_ALLOW_PREFIXES: readonly string[] = [
 	// beats every allow rule. PI_GUARD_PROFILE is set-or-delete via
 	// applyGuardProfile regardless of what passes through here.
 	"PI_",
+	// Whole-tree token accounting (ADR-0105): token-meter's session rollup
+	// (ADR-0073 decision 4) only includes subagent usage if every child
+	// inherits TOKEN_METER_SESSION / TOKEN_METER_ENABLED /
+	// TOKEN_METER_POLICY_TAG — non-secret observational values (session id,
+	// boolean, short operator label). Unconditional infra applied identically
+	// to every wrapper, so it lives on the base list like PI_/proxy rather
+	// than as 21 per-wrapper env-allow entries a future wrapper would forget.
+	// Secret-shaped members of the namespace (e.g. a hypothetical
+	// TOKEN_METER_API_TOKEN) are still stripped: STRICT_DENY_PATTERNS runs
+	// first. Inert for consumers without the standalone pi-token-meter
+	// mirror — nothing sets the namespace there, so nothing passes.
+	"TOKEN_METER_",
 ];
 
 /**

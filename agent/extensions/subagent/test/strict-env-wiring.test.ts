@@ -97,6 +97,21 @@ test("strict wrapper: base allowlist + pi plumbing pass; arbitrary vars drop", (
   assert.equal(env.GH_TOKEN, undefined);
 });
 
+test("strict wrapper: TOKEN_METER_ carriers reach the child (whole-tree accounting, ADR-0105)", () => {
+  const env = buildChildEnv(
+    {
+      ...PARENT,
+      TOKEN_METER_SESSION: "019f1234-abcd-7000-8000-000000000000",
+      TOKEN_METER_ENABLED: "1",
+      TOKEN_METER_POLICY_TAG: "untagged",
+    },
+    { envStrict: true },
+  );
+  assert.equal(env.TOKEN_METER_SESSION, "019f1234-abcd-7000-8000-000000000000");
+  assert.equal(env.TOKEN_METER_ENABLED, "1");
+  assert.equal(env.TOKEN_METER_POLICY_TAG, "untagged");
+});
+
 test("strict wrapper: secret-suffix keys inside the PI_ namespace stay denied", () => {
   const env = buildChildEnv(PARENT, { envStrict: true });
   assert.equal(env.PI_EXPERTISE_API_KEY, undefined);

@@ -103,7 +103,7 @@ When running interactively, the tool prompts for confirmation before running pro
 Every spawned child gets a sanitized env (`buildChildEnv`, `sanitize-env.ts`). Two modes, chosen per wrapper:
 
 - **Default** (no frontmatter keys): full passthrough minus the always-deny expertise controls (`PI_EXPERTISE_ALLOW_LOCALDEV_WRITE`, `EXPERTISE_API_TOKEN`; the secrets-file path is replaced with `/dev/null`). Retained as the safety net for third-party drop-in wrappers.
-- **Strict** (`env-strict: true`): allowlist-only. The child receives the base plumbing (POSIX/locale/terminal/Node vars, `LC_*`/`XDG_*`, the `PI_*` runtime namespace, proxy vars) and nothing else. Secret-suffix keys (`*_TOKEN`, `*_SECRET`, `*_API_KEY`, `*_PRIVATE_KEY`, …) are denied even inside allowed prefixes.
+- **Strict** (`env-strict: true`): allowlist-only. The child receives the base plumbing (POSIX/locale/terminal/Node vars, `LC_*`/`XDG_*`, the `PI_*` runtime namespace, proxy vars, and the `TOKEN_METER_*` accounting carriers — whole-tree token accounting per [ADR-0105](../../../adrs/0105-token-meter-strict-env-carveout.md)) and nothing else. Secret-suffix keys (`*_TOKEN`, `*_SECRET`, `*_API_KEY`, `*_PRIVATE_KEY`, …) are denied even inside allowed prefixes.
 
 **Adding a per-wrapper allowlist:** declare the wrapper's real needs in its frontmatter and justify each entry in the PR that adds it:
 
