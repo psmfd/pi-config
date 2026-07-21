@@ -219,6 +219,30 @@ test("computeCanonicalBlob: duplicate paths throw (caller bug)", () => {
 	);
 });
 
+test("computeCanonicalBlob: NFC vs NFD paths are duplicates and throw (#817)", () => {
+	// "café.ts" precomposed (é = U+00E9) vs decomposed (e + U+0301). Real
+	// filesystems produce this split (macOS APFS with core.precomposeunicode off
+	// vs a Linux checkout). Both NFKC-normalize to the same path, so they must be
+	// caught as duplicates BEFORE serialization — not silently collapse into two
+	// conflicting blob entries with a platform-dependent order.
+	const nfc = "caf\u00e9.ts"; // precomposed e-acute (U+00E9)
+	const nfd = "cafe\u0301.ts"; // e + combining acute (U+0301)
+	assert.notEqual(nfc, nfd, "the two raw strings must genuinely differ");
+	assert.equal(nfc.normalize("NFKC"), nfd.normalize("NFKC"));
+	assert.throws(
+		() =>
+			computeCanonicalBlob(
+				baseInputs({
+					files: [
+						{ path: nfc, blobSha: SHA1_A },
+						{ path: nfd, blobSha: SHA1_B },
+					],
+				}),
+			),
+		/duplicate file path/,
+	);
+});
+
 test("computeCanonicalBlob: NaN in frontmatter throws", () => {
 	assert.throws(
 		() =>

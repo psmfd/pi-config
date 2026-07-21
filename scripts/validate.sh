@@ -523,6 +523,40 @@ if [ "$sp_bad" -eq 0 ]; then
   ok "secret-lockstep: all 3 copies carry the canonical pattern set"
 fi
 
+# --- 6b-ter. Vault-naming + sensitive-basename lockstep gate (#796, ADR-0111)
+# The vault-naming and sensitive-basename detectors are a TWO-file lockstep
+# (hooks/secrets-guard.sh pre-commit layer + secrets-guard/index.ts in-session
+# layer; shared/secret-scan.ts carries neither). They drifted unnoticed (#796:
+# the in-session copy start-anchored 'vault', letting prod-vault.yml plaintext
+# through) because 6b-bis only gates the six content patterns. Same mechanics:
+# fixed-string fragments against active (non-comment) lines of both files.
+info "Vault/sensitive-path lockstep gate (#796)"
+vp_bad=0
+vp_check() {
+  # $1 = file, $2 = fragment, $3 = comment-strip regex for the file's language.
+  # (The TS strip regex treats leading `*` as a block-comment line; a shell
+  # `case` pattern like `*vault*.yml)` ALSO starts with `*`, so the shell
+  # file gets a #-only strip.)
+  local active
+  active="$(grep -vE "$3" "$1")"
+  if ! printf '%s\n' "$active" | grep -qF -- "$2"; then
+    err "vault-lockstep: $1 active lines are missing fragment: $2"
+    vp_bad=1
+  fi
+}
+vp_ts_comments='^[[:space:]]*(#|//|\*|/\*)'
+vp_sh_comments='^[[:space:]]*#'
+# In-session copy: vault anywhere in the basename; FIDO2 basenames present.
+vp_check agent/extensions/secrets-guard/index.ts 'vault[^/]*\.ya?ml$' "$vp_ts_comments"
+vp_check agent/extensions/secrets-guard/index.ts '"id_ecdsa_sk"' "$vp_ts_comments"
+vp_check agent/extensions/secrets-guard/index.ts '"id_ed25519_sk"' "$vp_ts_comments"
+# Pre-commit copy: unanchored vault glob; FIDO2 basenames present.
+vp_check hooks/secrets-guard.sh '*vault*.yml|*vault*.yaml' "$vp_sh_comments"
+vp_check hooks/secrets-guard.sh 'id_ecdsa_sk|id_ed25519_sk' "$vp_sh_comments"
+if [ "$vp_bad" -eq 0 ]; then
+  ok "vault-lockstep: both layers carry the vault-naming + sensitive-basename set"
+fi
+
 # --- 6b-quater. Cross-extension shipped-import gate (#635, ADR-0088) --------
 # Generalizes ADR-0065's ../shared/ resolution check into a systemic dev-time
 # gate: an extension must never hard-import a relative path into a DIFFERENT
@@ -1128,6 +1162,48 @@ else
   err "indexing: scripts/test-indexing.sh missing or not executable; required check skipped"
 fi
 
+# --- 9a-ter-artifact-handoff. artifact-handoff test suite (#824, ADR-0006/0007) ---
+info "Running artifact-handoff test suite"
+if [ -x scripts/test-artifact-handoff.sh ]; then
+  if ah_output="$(scripts/test-artifact-handoff.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$ah_output"
+    fi
+    ok "artifact-handoff: tests passed"
+  else
+    ah_status=$?
+    printf '%s\n' "$ah_output" >&2
+    if [ "$ah_status" -eq 2 ]; then
+      err "artifact-handoff: test environment unavailable (node/npx); required check skipped"
+    else
+      err "artifact-handoff: test suite failed (exit $ah_status)"
+    fi
+  fi
+else
+  err "artifact-handoff: scripts/test-artifact-handoff.sh missing or not executable; required check skipped"
+fi
+
+# --- 9a-quater-web-fetch. web-fetch test suite (#826, ADR-0015) ------------
+info "Running web-fetch test suite"
+if [ -x scripts/test-web-fetch.sh ]; then
+  if wf_output="$(scripts/test-web-fetch.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$wf_output"
+    fi
+    ok "web-fetch: tests passed"
+  else
+    wf_status=$?
+    printf '%s\n' "$wf_output" >&2
+    if [ "$wf_status" -eq 2 ]; then
+      err "web-fetch: test environment unavailable (node/npx); required check skipped"
+    else
+      err "web-fetch: test suite failed (exit $wf_status)"
+    fi
+  fi
+else
+  err "web-fetch: scripts/test-web-fetch.sh missing or not executable; required check skipped"
+fi
+
 # --- 9b-cache-meter. cache-meter test suite (#338, ADR-0034) ---------------
 info "Running cache-meter test suite"
 if [ -x scripts/test-cache-meter.sh ]; then
@@ -1315,6 +1391,27 @@ if [ -x scripts/test-token-meter.sh ]; then
   fi
 else
   err "token-meter: scripts/test-token-meter.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-payload-tuner. payload-tuner test suite (#769, ADR-0106) -----------
+info "Running payload-tuner test suite"
+if [ -x scripts/test-payload-tuner.sh ]; then
+  if pt_output="$(scripts/test-payload-tuner.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$pt_output"
+    fi
+    ok "payload-tuner: tests passed"
+  else
+    pt_status=$?
+    printf '%s\n' "$pt_output" >&2
+    if [ "$pt_status" -eq 2 ]; then
+      err "payload-tuner: test environment unavailable (node/npx); required check skipped"
+    else
+      err "payload-tuner: test suite failed (exit $pt_status)"
+    fi
+  fi
+else
+  err "payload-tuner: scripts/test-payload-tuner.sh missing or not executable; required check skipped"
 fi
 
 # --- 9b-token-cli. token-meter CLI self-test (ADR-0073) --------------------

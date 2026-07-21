@@ -6,9 +6,10 @@
 # (same pattern as scripts/test-context-manager.sh). Exits 0 on pass, 1 on
 # test failures, 2 on environment problems (missing node/npx).
 #
-# The indexing extension's pi/typebox imports live only in index.ts (not the
-# tested modules), so — like test-context-manager.sh — this suite needs no
-# extension-deps hydration and no installed `ccc` binary.
+# The suite includes test/index.test.ts, which imports index.ts and therefore its
+# runtime `typebox` dependency — so, like test-expertise-fanout-gate.sh, it hydrates
+# extension-deps (ADR-0021). No installed `ccc` binary is needed: the wiring test
+# exercises the pre-spawn refusal paths and redirects state writes to a temp HOME.
 #
 # Run:
 #   ./scripts/test-indexing.sh                normal output
@@ -30,6 +31,15 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 if ! command -v npx >/dev/null 2>&1; then
   echo "ERROR test-indexing: npx not found in PATH (install Node.js)" >&2
+  exit 2
+fi
+
+# index.test.ts imports index.ts -> needs typebox hydrated (ADR-0021), lockstep
+# with the other extension test runners.
+# shellcheck disable=SC1091
+source "$REPO_DIR/scripts/lib/extension-deps.sh"
+if ! ensure_extension_deps; then
+  echo "ERROR test-indexing: extension-deps install failed" >&2
   exit 2
 fi
 

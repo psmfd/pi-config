@@ -93,6 +93,15 @@ const STRICT_DENY_PATTERNS: readonly RegExp[] = [
 	/(?:^|_)(?:TOKEN|SECRET|PASSWORD|PASSWD|APIKEY|API_KEY)$/i,
 	// _PRIVATE_KEY suffix (SSH keys, provider service accounts, etc.).
 	/_PRIVATE_KEY$/i,
+	// ACCESS_KEY / ACCESS_KEY_ID / SECRET_ACCESS_KEY suffixes (#793): the
+	// suffix-anchored pattern above misses AWS_SECRET_ACCESS_KEY (ends
+	// _ACCESS_KEY, not _SECRET) — the standard AWS credential pair must not
+	// ride into a strict child on an `AWS_` prefix allow.
+	/(?:^|_)ACCESS_KEY(?:_ID)?$/i,
+	// CREDENTIAL/CREDENTIALS suffix (e.g. GOOGLE_APPLICATION_CREDENTIALS —
+	// a pointer to key material; strict children get it only via an exact
+	// per-wrapper env-allow).
+	/(?:^|_)CREDENTIALS?$/i,
 ];
 
 /**

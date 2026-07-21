@@ -5,6 +5,9 @@
  */
 
 import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { test } from "node:test";
 
 import {
@@ -13,6 +16,7 @@ import {
   isLocalModelKey,
   isLocalProvider,
   parseLocalRole,
+  readLocalRole,
 } from "../local-role.ts";
 
 test("parseLocalRole: only the three exact strings are recognized", () => {
@@ -44,4 +48,39 @@ test("filterLocalCandidates: role × context truth table", () => {
   // off: local nowhere.
   assert.deepEqual(filterLocalCandidates(pool, "off", "classifier"), [{ provider: "anthropic" }]);
   assert.deepEqual(filterLocalCandidates(pool, "off", "target"), [{ provider: "anthropic" }]);
+});
+
+test("readLocalRole: reads the lever from an injected agent dir", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "local-role-"));
+  try {
+    await fs.writeFile(
+      path.join(dir, "settings.json"),
+      JSON.stringify({ extensionSettings: { localLlm: { role: "classifier-only" } } }),
+    );
+    assert.equal(await readLocalRole(dir), "classifier-only");
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("readLocalRole: falls back to the default on missing file, bad JSON, or bad value", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "local-role-"));
+  try {
+    // Missing file.
+    assert.equal(await readLocalRole(dir), DEFAULT_LOCAL_ROLE);
+    // Malformed JSON.
+    await fs.writeFile(path.join(dir, "settings.json"), "{nope");
+    assert.equal(await readLocalRole(dir), DEFAULT_LOCAL_ROLE);
+    // Unrecognized value.
+    await fs.writeFile(
+      path.join(dir, "settings.json"),
+      JSON.stringify({ extensionSettings: { localLlm: { role: "Full" } } }),
+    );
+    assert.equal(await readLocalRole(dir), DEFAULT_LOCAL_ROLE);
+    // Absent block.
+    await fs.writeFile(path.join(dir, "settings.json"), JSON.stringify({}));
+    assert.equal(await readLocalRole(dir), DEFAULT_LOCAL_ROLE);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });

@@ -1,7 +1,7 @@
 ---
 name: linter
 description: Multi-tool lint runner with auto-fix awareness — shellcheck, markdownlint, yamllint, eslint, ruff, dotnet format. Reports issues; does not modify files. Spawns isolated subprocess.
-tools: read, grep, find, ls, bash
+tools: read, grep, find, ls, bash, web_fetch
 mode: read-only
 guard-profile: report-only
 env-strict: true

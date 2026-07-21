@@ -43,6 +43,22 @@ test("path-shape violations are rejected before any I/O", () => {
 	}
 });
 
+test("validly-named file one real subdir below /tmp is rejected parent-escape (#817)", () => {
+	// A validly-named file that PASSES the up-front string-shape check but sits
+	// one real directory below /tmp, so only the realpath(dirname)==realpath(/tmp)
+	// comparison can catch it — exercising that check on its own merits.
+	const dir = fs.mkdtempSync("/tmp/form-a-escape-");
+	const p = `${dir}/subagent-expertise-escape-1.candidates.json`;
+	fs.writeFileSync(p, "{}", { mode: 0o600 });
+	try {
+		const r = readCandidatesFile(p);
+		assert.ok(!r.ok && r.reason === "parent-escape", `expected parent-escape, got ${r.ok ? "ok" : r.reason}`);
+	} finally {
+		fs.unlinkSync(p);
+		fs.rmdirSync(dir);
+	}
+});
+
 test("missing file fails open-failed", () => {
 	const r = readCandidatesFile(tmpPath());
 	assert.ok(!r.ok && r.reason === "open-failed");

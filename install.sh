@@ -70,18 +70,18 @@ EXT_REF=""
 # Kept current by scripts/check-ext-ref-drift.sh --fix + the weekly
 # pin-drift-check.yml, which open per-extension bump PRs.
 EXT_MIRRORS=(
-  pi-secrets-guard@v0.2.0
-  pi-bash-destructive-guard@v0.4.0
-  pi-artifact-handoff@v0.1.1
-  pi-web-fetch@v0.1.1
-  pi-cache-meter@v0.1.1
-  pi-token-meter@v0.2.1
-  pi-gh-identity-guard@v0.1.1
-  pi-compaction-optimizer@v0.1.1
+  pi-secrets-guard@v0.2.1
+  pi-bash-destructive-guard@v0.4.1
+  pi-artifact-handoff@v0.1.2
+  pi-web-fetch@v0.1.2
+  pi-cache-meter@v0.1.2
+  pi-token-meter@v0.2.2
+  pi-gh-identity-guard@v0.1.2
+  pi-compaction-optimizer@v0.2.0
   pi-expertise-client@v0.5.0
-  pi-indexing@v0.1.2
-  pi-context-manager@v0.1.2
-  pi-auto-router@v0.9.0
+  pi-indexing@v0.1.3
+  pi-context-manager@v0.1.3
+  pi-auto-router@v0.10.0
 )
 
 DIR="${HOME}/projects/pi-config"

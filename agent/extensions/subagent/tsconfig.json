@@ -24,6 +24,7 @@
 		"index.ts",
 		"agents.ts",
 		"model-pin.ts",
+		"policy-model.ts",
 		"sanitize-env.ts",
 		"expertise-wiring.ts",
 		"test/**/*.ts"

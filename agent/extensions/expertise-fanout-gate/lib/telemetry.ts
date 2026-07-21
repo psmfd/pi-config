@@ -65,10 +65,14 @@ export interface TelemetryRecord {
 
 /** Redact + bound a free-text field for the log line. */
 export function sanitizeField(value: string): string {
-	const bounded = value.length > MAX_FIELD_CHARS ? `${value.slice(0, MAX_FIELD_CHARS)}…` : value;
-	const categories = scanRawString(bounded);
+	// Scan the FULL value BEFORE truncating. Truncating first could drop enough
+	// of a boundary-straddling secret that the surviving fragment falls under a
+	// pattern's minimum match length, evading the scan while still writing part
+	// of a real credential to disk (#815). Truncation applies only to the clean
+	// pass-through, mirroring canonicalize.ts's scan-before-write ordering.
+	const categories = scanRawString(value);
 	if (categories.length > 0) return `[redacted:${categories.join(",")}]`;
-	return bounded;
+	return value.length > MAX_FIELD_CHARS ? `${value.slice(0, MAX_FIELD_CHARS)}…` : value;
 }
 
 export function telemetryDir(agentDir?: string): string {

@@ -198,8 +198,14 @@ test("acceptCandidates: missing canonical_blob_sha — missing-required-field", 
 });
 
 test("acceptCandidates: malformed canonical_blob_sha (uppercase / wrong length)", () => {
-	expectRejected(payload([validCandidate({ canonical_blob_sha: SHA_VALID_40.toUpperCase() })]), "wrong-type", 0);
-	expectRejected(payload([validCandidate({ canonical_blob_sha: "abc" })]), "wrong-type", 0);
+	// A well-typed-but-malformed-hex value gets its own reason, distinct from a
+	// genuine type mismatch on the field (#817).
+	expectRejected(
+		payload([validCandidate({ canonical_blob_sha: SHA_VALID_40.toUpperCase() })]),
+		"invalid-canonical-blob-sha",
+		0,
+	);
+	expectRejected(payload([validCandidate({ canonical_blob_sha: "abc" })]), "invalid-canonical-blob-sha", 0);
 });
 
 test("acceptCandidates: tags not string[] — wrong-type", () => {

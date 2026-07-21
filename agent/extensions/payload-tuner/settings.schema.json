@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/psmfd/pi-config/agent/extensions/payload-tuner/settings.schema.json",
+  "title": "payload-tuner settings",
+  "description": "Schema for extensionSettings.payloadTuner in ~/.pi/agent/settings.json. USER layer only — the project layer is ignored entirely (ADR-0106; a repo's .pi/settings.json must not steer sampling or strip thinking on local models). Documentation-only — pi does not run runtime schema validation; lib/settings.ts is the runtime parser and fails closed to disabled on any malformed input.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "Master toggle. The extension is inert unless this is exactly true AND at least one valid rule exists."
+    },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered rule list; the FIRST rule whose match block matches the resolved model wins. A malformed rule disables the whole extension (fail-closed parsing).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["match", "apply"],
+        "properties": {
+          "match": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "description": "Model predicate — every present field must match (AND). Values support `*` as a multi-character wildcard, anchored to the whole value. Matched against ctx.model at request time.",
+            "properties": {
+              "provider": { "type": "string", "minLength": 1, "description": "Model provider id, e.g. `omlx`." },
+              "baseUrl": { "type": "string", "minLength": 1, "description": "Provider baseUrl glob, e.g. `http://localhost:8000/*` or `http://127.0.0.1:*`." },
+              "modelId": { "type": "string", "minLength": 1, "description": "Model id glob, e.g. `glm-*`." }
+            }
+          },
+          "apply": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "description": "Request-option tweaks. All are non-prefix wire fields — messages/system/tools are never touched (ADR-0106 invariant).",
+            "properties": {
+              "chatTemplateKwargs": {
+                "type": "object",
+                "minProperties": 1,
+                "description": "Merged into the payload's `chat_template_kwargs` (oMLX/vLLM-style servers), e.g. {\"enable_thinking\": false}. Must stay stable turn-to-turn within a session (server-side template churn would defeat the oMLX prefix cache)."
+              },
+              "temperature": { "type": "number", "description": "Overwrites the payload's `temperature`." },
+              "topP": { "type": "number", "description": "Overwrites the payload's `top_p`." },
+              "maxTokensCap": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Upper bound applied to `max_tokens` / `max_completion_tokens` / `max_output_tokens` when the adapter emitted one. Only ever lowers; never raises and never adds the field. `max_output_tokens` (Responses API family) is floored at 16 — the API rejects lower values (ADR-0110)."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

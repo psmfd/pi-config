@@ -15,6 +15,7 @@ This guide is the canonical maintainer runbook for checking, bumping, validating
 | ShellCheck | `agent/vendor/shellcheck/` | Release asset version and checksum metadata | [ADR-0011](../adrs/0011-toolchain-install-strategy.md) |
 | Gitleaks | `agent/vendor/gitleaks/` | Release asset version and checksum metadata | [ADR-0037](../adrs/0037-secret-scanner-tooling-strategy.md) |
 | pi-bash-parser | `agent/vendor/bash-parser/` | Release asset version and checksum metadata (first-party, attestation-verified). Bump procedure in the vendor dir's `README.md`. | [ADR-0099](../adrs/0099-reusable-release-workflows-and-parser-vendor.md), [ADR-0040](../adrs/0040-consume-psmfd-attested-pi-releases.md) |
+| cocoindex-code | `agent/vendor/cocoindex-code/` | `ccc` engine + embedding-model pin record (`VERSION`, `CHECKSUMS`, `README.md`). Acquired **out-of-band** by pipx, not fetched by `setup.sh`; the runtime source of truth is `agent/extensions/indexing/pin.ts`. Bump procedure below. | [ADR-0033](../adrs/0033-codebase-indexing.md) |
 | Subagent extension | `agent/extensions/subagent/` | Vendored source snapshot with local patch table | [ADR-0001](../adrs/0001-subagent-orchestration-substrate.md) |
 | Extension SDK pin | `scripts/lib/extension-deps.sh` | `EXTENSION_DEPS_PI_AGENT_VERSION` — the `@earendil-works/pi-*` pin used by `typecheck-extensions.sh` / `lint-extensions.sh`. **Runtime-coupled**: policy is `EXTENSION_DEPS_PI_AGENT_VERSION` == `agent/vendor/pi/VERSION` (stripped to X.Y.Z). Automated by `pin-drift-check.yml` (#566). | [ADR-0021](../adrs/0021-extension-type-checking-and-linting.md), [ADR-0069](../adrs/0069-ext-ref-pin-drift-automation.md) |
 | Changelog toast baseline | `agent/settings.example.json` | `lastChangelogVersion` — the version pi's changelog-toast compares against on session start. **Runtime-coupled** the same way. Automated by `pin-drift-check.yml` (#566). | [ADR-0069](../adrs/0069-ext-ref-pin-drift-automation.md) |
@@ -334,6 +335,19 @@ scripts/validate-subagent-drift.sh --regenerate
 Missing upstream cache is an ERROR, not a skip — fresh clones must run `./setup.sh` (or `scripts/lib/fetch-pi-binary.sh`) to populate `~/.cache/pi_config/pi-$(cat agent/vendor/pi/VERSION)/` before `validate.sh` can complete. Per `agent/rules/extension-type-check-and-lint.md`, environment unavailability for a required check is a validation error.
 
 **Anti-pattern:** regenerating the manifest without also updating the patch table is a documented failure mode (#582 § design fan-out). Reviewers should reject any PR whose sole diff to `agent/extensions/subagent/` is a manifest hash bump.
+
+### cocoindex-code: `agent/vendor/cocoindex-code/`
+
+Unlike the release-asset vendors above, `cocoindex-code` (`ccc`) and its local embedding model are **not fetched by `setup.sh`** — they are installed out-of-band (`pipx install --python python3.13 'cocoindex-code[full]'`). This vendor surface is therefore a **verifiable pin record**, not a download manifest: `VERSION`, `CHECKSUMS` (embedding-model file digests), and a `README.md`. The runtime source of truth is [`agent/extensions/indexing/pin.ts`](../agent/extensions/indexing/pin.ts), and the two must stay in lockstep.
+
+To bump the engine or model:
+
+1. Install the target `ccc` into a scratch pipx venv and confirm the CLI surface (`ccc search`/`index`/`status`, fixed text output) is unchanged; the parser (`parse.ts`) is version-pinned and tolerant, but a format change needs a parser review.
+2. Update `agent/vendor/cocoindex-code/VERSION` and the constants in `pin.ts` together — `PINNED_CCC_VERSION` (runtime-checked at `session_start`), `MIN_TRANSFORMERS_VERSION` (runtime CVE floor, also `session_start`), and `MODEL_REVISION` / `MODEL_SAFETENSORS_SHA256` (pin record).
+3. Refresh `agent/vendor/cocoindex-code/CHECKSUMS` for the embedding-model files and update the README citations.
+4. Run `scripts/validate-cocoindex-code-vendor.sh` (wired into `scripts/validate.sh`) and the indexing suite (`scripts/test-indexing.sh`).
+
+Runtime re-verification of the *downloaded* model against `MODEL_REVISION` / the weights SHA is tracked in #821 — today those two are pin-record + validator-cited only.
 
 ## Validation matrix
 

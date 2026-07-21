@@ -12,6 +12,12 @@
     },
     "autoRouter": {
       "preferLocalOmlx": true
+    },
+    "localLlm": {
+      "role": "full"
+    },
+    "tokenMeter": {
+      "enabled": false
     }
   },
   "enabledModels": [

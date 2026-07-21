@@ -108,68 +108,78 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 			continue;
 		}
 
-		const { frontmatter, body } = parseFrontmatter<Record<string, string>>(content);
+		// #793 review: a malformed wrapper must skip, never abort the whole
+		// discovery pass — one bad file previously crashed the subagent tool
+		// for every agent in the catalog. The try spans parse THROUGH push so
+		// no field-shape surprise can escape discovery.
+		try {
+			const { frontmatter, body } = parseFrontmatter<Record<string, string>>(content);
 
-		if (!frontmatter.name || !frontmatter.description) {
+			if (!frontmatter.name || !frontmatter.description) {
+				continue;
+			}
+
+			// LOCAL PATCH #11 (pi_config #606): comma-list frontmatter helper for
+			// the env-allow keys and the tools list. The parser YAML-types scalar
+			// values (booleans arrive as booleans, not strings), so every helper
+			// touching a string field must be type-tolerant rather than assume
+			// string (#793: `tools: true` previously threw out of discovery).
+			const parseList = (value: unknown): string[] | undefined => {
+				if (typeof value !== "string") return undefined;
+				const items = value
+					.split(",")
+					.map((v: string) => v.trim())
+					.filter(Boolean);
+				return items.length > 0 ? items : undefined;
+			};
+			const tools = parseList(frontmatter.tools);
+			const envStrictRaw: unknown = frontmatter["env-strict"];
+			const envStrict =
+				envStrictRaw === true || (typeof envStrictRaw === "string" && envStrictRaw.trim() === "true");
+			// LOCAL PATCH #12 (pi_config #685): same literal-true-only posture.
+			const localLlmRaw: unknown = frontmatter["local-llm"];
+			const localLlm =
+				localLlmRaw === true || (typeof localLlmRaw === "string" && localLlmRaw.trim() === "true");
+			// LOCAL PATCH #13 (pi_config #656): exact-value-only tier; typos yield
+			// no tier (untiered cheapest-capable selection) rather than a guess.
+			const tierRaw: unknown = frontmatter["capability-tier"];
+			const tierTrimmed = typeof tierRaw === "string" ? tierRaw.trim() : undefined;
+			const capabilityTier =
+				tierTrimmed === "frontier" || tierTrimmed === "capable" || tierTrimmed === "fast"
+					? tierTrimmed
+					: undefined;
+
+			agents.push({
+				name: frontmatter.name,
+				description: frontmatter.description,
+				tools,
+				model: frontmatter.model,
+				// LOCAL PATCH #7a (pi_config #551): guard-profile passthrough.
+				// Type-guarded like the later patches (#793: an unquoted
+				// `guard-profile: true` arrives as a boolean and `.trim()` threw).
+				guardProfile:
+					typeof frontmatter["guard-profile"] === "string"
+						? frontmatter["guard-profile"].trim() || undefined
+						: undefined,
+				// LOCAL PATCH #11 (pi_config #606): strict-env opt-in. Only a
+				// literal `true` (YAML boolean or the string "true") enables strict
+				// mode — any other value keeps the safe default, same fail-safe
+				// posture as the guard-profile typo handling (an unrecognized value
+				// must not half-arm anything).
+				envStrict: envStrict || undefined,
+				envAllow: parseList(frontmatter["env-allow"]),
+				envAllowPrefixes: parseList(frontmatter["env-allow-prefix"]),
+				// LOCAL PATCH #12 (pi_config #685, ADR-0094): local-LLM permission tag.
+				localLlm: localLlm || undefined,
+				// LOCAL PATCH #13 (pi_config #656): capability-tier quality floor.
+				capabilityTier,
+				systemPrompt: body,
+				source,
+				filePath,
+			});
+		} catch {
 			continue;
 		}
-
-		const tools = frontmatter.tools
-			?.split(",")
-			.map((t: string) => t.trim())
-			.filter(Boolean);
-
-		// LOCAL PATCH #11 (pi_config #606): comma-list frontmatter helper for
-		// the env-allow keys, mirroring the tools parsing above. The parser
-		// YAML-types scalar values (booleans arrive as booleans, not strings),
-		// so both helpers must be type-tolerant rather than assume string.
-		const parseList = (value: unknown): string[] | undefined => {
-			if (typeof value !== "string") return undefined;
-			const items = value
-				.split(",")
-				.map((v: string) => v.trim())
-				.filter(Boolean);
-			return items.length > 0 ? items : undefined;
-		};
-		const envStrictRaw: unknown = frontmatter["env-strict"];
-		const envStrict =
-			envStrictRaw === true || (typeof envStrictRaw === "string" && envStrictRaw.trim() === "true");
-		// LOCAL PATCH #12 (pi_config #685): same literal-true-only posture.
-		const localLlmRaw: unknown = frontmatter["local-llm"];
-		const localLlm =
-			localLlmRaw === true || (typeof localLlmRaw === "string" && localLlmRaw.trim() === "true");
-		// LOCAL PATCH #13 (pi_config #656): exact-value-only tier; typos yield
-		// no tier (untiered cheapest-capable selection) rather than a guess.
-		const tierRaw: unknown = frontmatter["capability-tier"];
-		const tierTrimmed = typeof tierRaw === "string" ? tierRaw.trim() : undefined;
-		const capabilityTier =
-			tierTrimmed === "frontier" || tierTrimmed === "capable" || tierTrimmed === "fast"
-				? tierTrimmed
-				: undefined;
-
-		agents.push({
-			name: frontmatter.name,
-			description: frontmatter.description,
-			tools: tools && tools.length > 0 ? tools : undefined,
-			model: frontmatter.model,
-			// LOCAL PATCH #7a (pi_config #551): guard-profile passthrough.
-			guardProfile: frontmatter["guard-profile"]?.trim() || undefined,
-			// LOCAL PATCH #11 (pi_config #606): strict-env opt-in. Only a
-			// literal `true` (YAML boolean or the string "true") enables strict
-			// mode — any other value keeps the safe default, same fail-safe
-			// posture as the guard-profile typo handling (an unrecognized value
-			// must not half-arm anything).
-			envStrict: envStrict || undefined,
-			envAllow: parseList(frontmatter["env-allow"]),
-			envAllowPrefixes: parseList(frontmatter["env-allow-prefix"]),
-			// LOCAL PATCH #12 (pi_config #685, ADR-0094): local-LLM permission tag.
-			localLlm: localLlm || undefined,
-			// LOCAL PATCH #13 (pi_config #656): capability-tier quality floor.
-			capabilityTier,
-			systemPrompt: body,
-			source,
-			filePath,
-		});
 	}
 
 	return agents;

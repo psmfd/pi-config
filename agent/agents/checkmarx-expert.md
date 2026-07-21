@@ -1,7 +1,7 @@
 ---
 name: checkmarx-expert
 description: Checkmarx One CLI — local SAST/SCA/IaC/secrets scans, results triage, CI integration. Operates the `cx` CLI in scan-and-report mode. Spawns isolated subprocess.
-tools: read, grep, find, ls, bash
+tools: read, grep, find, ls, bash, web_fetch
 capability-tier: frontier
 mode: read-only
 env-strict: true

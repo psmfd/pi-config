@@ -1,7 +1,7 @@
 ---
 name: gitflow-expert
 description: Git workflow specialist — branching strategies, PR workflows, release processes, commit conventions, git CLI for read-only inspection. Spawns isolated subprocess.
-tools: read, grep, find, ls, bash
+tools: read, grep, find, ls, bash, web_fetch
 mode: interactive
 env-strict: true
 env-allow: GH_TOKEN, GITHUB_TOKEN, SSH_AUTH_SOCK

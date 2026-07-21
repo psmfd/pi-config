@@ -21,6 +21,7 @@ import { test } from "node:test";
 
 import { computeApprovalHash } from "../../expertise-indexer/approval.ts";
 import type { CoalescedGroup } from "../../expertise-indexer/collector.ts";
+import { pendingDir } from "../lib/approval-ledger.ts";
 
 const mod = await import("../index.ts");
 
@@ -131,7 +132,8 @@ function subagentResult(groups: CoalescedGroup[]): Record<string, unknown> {
 }
 
 function pendingLines(agentDir: string): Record<string, unknown>[] {
-	const dir = join(agentDir, "extensions", "expertise-fanout-gate", "pending");
+	// Derive from the library helper, not a hardcoded literal (#815).
+	const dir = pendingDir(agentDir);
 	let files: string[];
 	try {
 		files = readdirSync(dir);
@@ -347,4 +349,97 @@ test("create gate: sanity — approval hash in the note matches computeApprovalH
 		makeCtx({ hasUI: false }).ctx,
 	);
 	assert.equal(allow, undefined);
+});
+
+// --- pending-queue redaction scope (#815) ------------------------------------
+// Redaction was previously gated on reason === "secret-detected", leaving the
+// headless and divergent-variant paths writing raw candidate content. It now
+// gates on actual secret presence, so every queue path is protected while a
+// clean candidate is still queued in full for later review.
+
+const AWS_KEY = `AKIA${"A".repeat(16)}`;
+
+test("headless secret-bearing candidate is redacted in the pending queue (#815)", async (tc) => {
+	const h = await makeHarness();
+	tc.after(() => rm(h.dir, { recursive: true, force: true }));
+	const { ctx, confirms } = makeCtx({ hasUI: false });
+
+	const leaky = group({ candidate: { ...CANDIDATE, body: `use this key: ${AWS_KEY}` } });
+	await h.toolResult(subagentResult([leaky]), ctx);
+	assert.equal(confirms.length, 0);
+	const rows = pendingLines(h.agentDir);
+	assert.equal(rows.length, 1);
+	assert.equal(rows[0].reason, "headless");
+	const body = (rows[0].candidate as { body: string }).body;
+	assert.ok(!body.includes(AWS_KEY), "headless queue must not persist the secret");
+	assert.match(body, /^\[redacted:/);
+});
+
+test("divergent-variant secret-bearing candidate is redacted in the pending queue (#815)", async (tc) => {
+	const h = await makeHarness();
+	tc.after(() => rm(h.dir, { recursive: true, force: true }));
+	const { ctx, confirms } = makeCtx({ hasUI: true, confirmResponses: [true] });
+
+	const divergent = group({
+		variantCount: 2,
+		proposalCount: 2,
+		proposedByList: ["a-expert", "b-expert"],
+		bodyHashesByProposer: { "a-expert": "1".repeat(64), "b-expert": "2".repeat(64) },
+		candidate: { ...CANDIDATE, body: `use this key: ${AWS_KEY}` },
+	});
+	await h.toolResult(subagentResult([divergent]), ctx);
+	assert.equal(confirms.length, 0);
+	const rows = pendingLines(h.agentDir);
+	assert.equal(rows.length, 1);
+	assert.equal(rows[0].reason, "divergent-variants");
+	const body = (rows[0].candidate as { body: string }).body;
+	assert.ok(!body.includes(AWS_KEY), "divergent queue must not persist the secret");
+	assert.match(body, /^\[redacted:/);
+});
+
+test("clean headless candidate is queued in FULL, not truncated or redacted (#815)", async (tc) => {
+	const h = await makeHarness();
+	tc.after(() => rm(h.dir, { recursive: true, force: true }));
+	const { ctx } = makeCtx({ hasUI: false });
+
+	// Longer than MAX_FIELD_CHARS: proves redaction gates on secrets, not on a
+	// blanket sanitizeField pass (which would truncate this to 300 chars).
+	const longBody = `Handlers fire once per play. ${"x".repeat(400)}`;
+	const clean = group({ candidate: { ...CANDIDATE, body: longBody } });
+	await h.toolResult(subagentResult([clean]), ctx);
+	const rows = pendingLines(h.agentDir);
+	assert.equal(rows.length, 1);
+	assert.equal(rows[0].reason, "headless");
+	assert.equal(
+		(rows[0].candidate as { body: string }).body,
+		longBody,
+		"clean content must reach the later reviewer intact",
+	);
+});
+
+test("a secret-shaped inline create is blocked but consumes no budget slot (#815)", async (tc) => {
+	const h = await makeHarness();
+	tc.after(() => rm(h.dir, { recursive: true, force: true }));
+
+	// A secret-shaped direct create is blocked with no dialog shown…
+	const leak = makeCtx({ hasUI: true, confirmResponses: [true] });
+	const blocked = (await h.createGate(
+		{ toolName: "expertise_create", input: { ...APPROVED_FIELDS, body: `key ${AWS_KEY}` } },
+		leak.ctx,
+	)) as { block: boolean; reason: string };
+	assert.equal(blocked.block, true);
+	assert.equal(leak.confirms.length, 0, "secret block raises no dialog");
+	assert.match(blocked.reason, /credential pattern/);
+
+	// …and the full inline budget (3) is intact: three declined confirms each
+	// still reach a dialog. Pre-fix the secret block spent a slot, so the third
+	// would have hit the cap with no dialog.
+	for (let i = 0; i < 3; i += 1) {
+		const c = makeCtx({ hasUI: true, confirmResponses: [false] });
+		await h.createGate(
+			{ toolName: "expertise_create", input: { ...APPROVED_FIELDS, title: `attempt ${i}` } },
+			c.ctx,
+		);
+		assert.equal(c.confirms.length, 1, `attempt ${i} still reaches a dialog`);
+	}
 });

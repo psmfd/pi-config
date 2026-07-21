@@ -26,6 +26,7 @@ import { computeCanonicalBlob } from "../../expertise-indexer/canonicalize.ts";
 import { parseCanonicalResultsBlock } from "../../expertise-indexer/collector.ts";
 import { deriveFanoutCanonicalInputs } from "../../expertise-indexer/fanout-derive.ts";
 import type { ExecResult, GitExecutor } from "../lib/git-info.ts";
+import { telemetryDir } from "../lib/telemetry.ts";
 
 const mod = await import("../index.ts");
 
@@ -158,7 +159,9 @@ async function makeHarness(opts: {
 }
 
 function telemetryLines(agentDir: string): Record<string, unknown>[] {
-	const dir = join(agentDir, "extensions", "expertise-fanout-gate", "telemetry");
+	// Derive the path from the library helper, not a hardcoded literal, so a
+	// change to the on-disk layout is caught in one place (#815).
+	const dir = telemetryDir(agentDir);
 	let files: string[];
 	try {
 		files = readdirSync(dir);
@@ -457,4 +460,139 @@ test("malformed tasks arrays are left for the tool's own validation", async (tc)
 	await h.handler({ toolName: "subagent", input: { tasks: [{ agent: 42, task: "x" }, "y", null] } }, h.ctx);
 	await h.handler({ toolName: "subagent", input: { tasks: "not-an-array" } }, h.ctx);
 	assert.equal(h.calls.length, 0);
+});
+
+test("overlapping fanouts racing on the git probe still spend one search (#815 TOCTOU)", async (tc) => {
+	// Gate the FIRST git rev-parse so invocation A parks inside the git probe —
+	// the window the pre-fix code left open by setting searchInFlight only after
+	// the probe. The existing 'never double-spend' test gates the fetch, which is
+	// too late to catch this race (mock git resolved same-microtask).
+	let releaseGit: (() => void) | undefined;
+	let revParseCalls = 0;
+	const gatedGit: GitExecutor = (args: readonly string[]): Promise<ExecResult> => {
+		if (args[0] === "rev-parse") {
+			revParseCalls += 1;
+			if (revParseCalls === 1) {
+				return new Promise<ExecResult>((resolve) => {
+					releaseGit = () => resolve({ exitCode: 0, stdout: `${HEAD_SHA}\n` });
+				});
+			}
+			return Promise.resolve({ exitCode: 0, stdout: `${HEAD_SHA}\n` });
+		}
+		return Promise.resolve({ exitCode: 0, stdout: `${ORIGIN}\n` });
+	};
+	const calls: string[] = [];
+	const h = await makeHarness({ git: gatedGit, calls });
+	tc.after(() => rm(h.dir, { recursive: true, force: true }));
+
+	const first = h.handler({ toolName: "subagent", input: researchInput() }, h.ctx);
+	// Let invocation A reach and park on the gated git probe.
+	await new Promise((r) => setImmediate(r));
+	const secondInput = researchInput();
+	await h.handler({ toolName: "subagent", input: secondInput }, h.ctx);
+	// searchInFlight is committed before the git probe, so B is rejected here.
+	assert.equal(
+		(secondInput.tasks as Record<string, unknown>[])[0].expertiseInjection,
+		undefined,
+		"second fanout must not inject while the first holds the one-search budget",
+	);
+	releaseGit?.();
+	await first;
+	assert.equal(calls.length, 1, "exactly one search fired across the overlap");
+	const reasons = telemetryLines(h.agentDir).map(
+		(r) => `${String(r.event)}:${typeof r.reason === "string" ? r.reason : ""}`,
+	);
+	assert.ok(reasons.includes("skip:concurrent-fanout"), "second logged concurrent-fanout");
+	assert.ok(reasons.includes("inject:"));
+});
+
+test("a rejecting git executor hits the outer catch and records event=error (#815)", async (tc) => {
+	// probeGitInfo has no internal try/catch, so a REJECTING executor (distinct
+	// from deadGit, which resolves exitCode 1) propagates into the handler's
+	// top-level catch — the load-bearing fail-open path, previously untested.
+	const rejectingGit: GitExecutor = (): Promise<ExecResult> =>
+		Promise.reject(new Error("git spawn blew up"));
+	const h = await makeHarness({ git: rejectingGit });
+	tc.after(() => rm(h.dir, { recursive: true, force: true }));
+
+	await assert.doesNotReject(async () => {
+		await h.handler({ toolName: "subagent", input: researchInput() }, h.ctx);
+	});
+	const rows = telemetryLines(h.agentDir);
+	assert.equal(rows.length, 1);
+	assert.equal(rows[0].event, "error");
+	assert.equal(typeof rows[0].detail, "string");
+});
+
+test("a secret-shaped token in a task is never sent as a query param (#815)", async (tc) => {
+	const calls: string[] = [];
+	const h = await makeHarness({ calls });
+	tc.after(() => rm(h.dir, { recursive: true, force: true }));
+
+	const token = `ghp_${"a".repeat(40)}`;
+	const input = {
+		tasks: [
+			{ agent: "ansible-expert", task: `leaked ${token} in handler notes` },
+			{ agent: "docker-expert", task: "investigate compose interplay" },
+			{ agent: "shell-expert", task: "investigate hook wiring" },
+		],
+	};
+	await h.handler({ toolName: "subagent", input }, h.ctx);
+	assert.equal(calls.length, 0, "no outbound request when the query carries a secret");
+	assert.equal((input.tasks as Record<string, unknown>[])[0].expertiseInjection, undefined);
+	const rows = telemetryLines(h.agentDir);
+	assert.equal(rows[0]?.reason, "secret-in-query");
+	// The redacted query must not carry the raw token even in telemetry.
+	assert.ok(
+		!JSON.stringify(rows).includes(token),
+		"raw token must not appear in telemetry",
+	);
+});
+
+test("source-tree .env.local wins over the installed package copy (#815)", async (tc) => {
+	// Exercises loadLegacyClientEnv's dual-source merge branch (deps.envPath
+	// undefined) via the injectable path overrides — the merge that makes the
+	// source-tree copy win was previously only tested at the path-string level.
+	const dir = await mkdtemp(join(tmpdir(), "fanout-merge-"));
+	tc.after(() => rm(dir, { recursive: true, force: true }));
+	const installed = join(dir, "installed.env");
+	const sourceTree = join(dir, "source.env");
+	writeFileSync(
+		installed,
+		"PI_EXPERTISE_API_BASE_URL=http://127.0.0.1:8080\nPI_EXPERTISE_API_KEY=installed-key\n",
+	);
+	// Source-tree copy defines only the key; the base URL falls through from the
+	// installed copy, proving the merge (not a wholesale override) and precedence.
+	writeFileSync(sourceTree, "PI_EXPERTISE_API_KEY=source-key\n");
+
+	const seen: Record<string, string>[] = [];
+	const fetchImpl = ((url: unknown, init?: RequestInit) => {
+		void url;
+		seen.push((init?.headers ?? {}) as Record<string, string>);
+		return Promise.resolve(
+			new Response(JSON.stringify({ results: [API_ROW] }), { status: 200 }),
+		);
+	}) as typeof fetch;
+
+	const pi = makePi();
+	mod.default(pi as never, {
+		fetchImpl,
+		gitExec: okGit,
+		installedClientEnvPath: installed,
+		clientEnvPath: sourceTree,
+		upstreamEnvPath: join(dir, "absent-secrets.env"),
+		agentDir: join(dir, "agent"),
+		now: () => 1_750_000_000_000,
+	});
+	const handler = pi.handlers.tool_call?.[0];
+	assert.ok(handler, "tool_call handler registered");
+
+	await handler({ toolName: "subagent", input: researchInput() }, makeCtx(dir));
+	assert.equal(seen.length, 1, "merged config produced a valid search");
+	// Local API-key profile carries the key as the bearer token.
+	assert.equal(
+		seen[0]?.authorization,
+		"Bearer source-key",
+		"source-tree key must win over the installed-package key",
+	);
 });

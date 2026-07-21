@@ -107,6 +107,7 @@ render_totals() { # render_totals <header-line> <file...>
         turns: length,
         input: (map(.input // 0) | add),
         cacheRead: (map(.cacheRead // 0) | add),
+        cacheWrite: (map(.cacheWrite // 0) | add),
         output: (map(.output // 0) | add),
         total: (map(.totalTokens // 0) | add),
         cost: (map(.costTotal // 0) | add),
@@ -117,7 +118,7 @@ render_totals() { # render_totals <header-line> <file...>
     | (any($m[]; .costSeen)) as $gcostSeen
     | (($m | map(.cost) | add) // 0) as $gcost
     | def money(seen; c): if seen then "$" + (c*100|round/100|tostring) else "n/a" end;
-      ($m[] | "INFO  \(.name): turns=\(.turns) input=\(.input) cacheRead=\(.cacheRead) output=\(.output) total=\(.total) cost=\(money(.costSeen; .cost))"),
+      ($m[] | "INFO  \(.name): turns=\(.turns) input=\(.input) cacheRead=\(.cacheRead) cacheWrite=\(.cacheWrite) output=\(.output) total=\(.total) cost=\(money(.costSeen; .cost))"),
       "==================================",
       "TOTAL — \($gturns) turns, \($gt) tokens, \(money($gcostSeen; $gcost))"
   ' "$@"
@@ -170,13 +171,13 @@ case "$MODE" in
 
     GROUP_BY="provider"
     out="$(render_totals "self-test provider" "$f2")"
-    printf '%s' "$out" | grep -q 'omlx: turns=1 input=400 cacheRead=0 output=200 total=600 cost=n/a' \
+    printf '%s' "$out" | grep -q 'omlx: turns=1 input=400 cacheRead=0 cacheWrite=0 output=200 total=600 cost=n/a' \
       && ok self-test "provider grouping keeps null cost as n/a" || { err self-test "provider grouping wrong"; fails=1; }
 
     GROUP_BY="tier"
     TIERS_JSON="$(jq -c '.tiers // {}' "$tiersf")"
     out="$(render_totals "self-test tier" "$f2")"
-    printf '%s' "$out" | grep -q 'frontier: turns=2 input=300 cacheRead=0 output=150 total=450 cost=\$0.05' \
+    printf '%s' "$out" | grep -q 'frontier: turns=2 input=300 cacheRead=0 cacheWrite=0 output=150 total=450 cost=\$0.05' \
       && ok self-test "tier grouping sums frontier providers" || { err self-test "frontier tier wrong"; fails=1; }
     printf '%s' "$out" | grep -q 'local: turns=1 .* total=600 cost=n/a' \
       && ok self-test "local tier stays token-count-based (n/a cost)" || { err self-test "local tier wrong"; fails=1; }

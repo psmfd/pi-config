@@ -41,6 +41,12 @@ agent/extensions/*/sessions/
 # into this repo via the setup.sh `~/.pi → repo` symlink; without these entries
 # a stray `git add -A` would commit raw session transcripts.
 agent/extensions/compaction-optimizer/archive/
+# expertise-fanout-gate local runtime data (ADR-0019 subtree; #781/#815 review).
+# telemetry/ is the audit log; pending/ holds queued candidate expertise content
+# (real domain/title/body) for later interactive approval — a stray `git add -A`
+# would otherwise stage it and the pi-config umbrella mirror would publish it.
+agent/extensions/expertise-fanout-gate/telemetry/
+agent/extensions/expertise-fanout-gate/pending/
 agent/extensions/compaction-optimizer/failure.log
 
 # agent-expertise-api client local secrets (ADR-0028). The real env file holds

@@ -18,7 +18,7 @@ mirror in sync:
 | Mirror | Mode | Source |
 |---|---|---|
 | `psmfd/pi-config` | replace | curated config surface (agent/, setup.sh, install.sh, install-expertise.sh, adrs/, docs/, scripts/, hooks/, …) minus the twelve extension dirs and all dev-internal surfaces |
-| `psmfd/pi-secrets-guard` … `pi-auto-router` | overlay | the matching `agent/extensions/<name>/` source (packaging overlay in the mirror is preserved; `pi-bash-destructive-guard`, `pi-expertise-client`, `pi-indexing`, `pi-context-manager`, `pi-auto-router` also inline their `shared/` closure per ADR-0065 — `pi-expertise-client` inlines `secret-scan` per ADR-0088) |
+| `psmfd/pi-secrets-guard` … `pi-auto-router` | overlay | the matching `agent/extensions/<name>/` source (packaging overlay in the mirror is preserved; `pi-bash-destructive-guard`, `pi-expertise-client`, `pi-indexing`, `pi-context-manager`, `pi-compaction-optimizer`, `pi-auto-router` also inline their `shared/` closure per ADR-0065 — `pi-expertise-client` inlines `secret-scan` per ADR-0088) |
 
 Safety properties (see ADR-0050 for the full rationale):
 
@@ -159,8 +159,9 @@ long-lived `MIRROR_SYNC_TOKEN` PAT). One-time setup:
 
 ## Inlining `shared/` for coupled extension mirrors ([ADR-0065](../adrs/0065-inline-shared-modules-for-coupled-extension-mirrors.md))
 
-Three extensions — `auto-router`, `context-manager`, `indexing` — import the
-in-repo [`agent/extensions/shared/`](../agent/extensions/shared) library by
+Six extensions — `auto-router`, `context-manager`, `indexing`,
+`bash-destructive-guard`, `expertise-client`, `compaction-optimizer` — import
+the in-repo [`agent/extensions/shared/`](../agent/extensions/shared) library by
 relative path (`../shared/<mod>.ts`). `shared/` is deliberately **not published**
 ([ADR-0030](../adrs/0030-shared-foundation.md)), so each mirror carries an
 **inlined copy** of just the modules it needs, produced at sync time.
@@ -181,8 +182,10 @@ A coupled target declares its **direct** `../shared/` imports in the manifest's
 At sync time `inline_stage` (between staging and sanitize):
 
 1. **Resolves the transitive closure** of the seeds by following intra-`shared/`
-   `./<mod>.ts` imports — e.g. `auto-router`'s `inline: [candidates, signals,
-   notify, state]` pulls in `cost.ts` because `candidates.ts` imports it.
+   `./<mod>.ts` imports — e.g. `auto-router`'s 13-module `inline:` seed list
+   (see `mirror/targets.yml`) pulls in `cost.ts` because `candidates.ts`
+   imports it, and `local-role.ts` also arrives via `model-ranking.ts` even
+   though it is a seed in its own right.
 2. **Stages the closure tracked-only** under a `shared/` subdir of the mirror.
 3. **Rewrites the import specifiers** to the right relative prefix per file depth:
    root files `../shared/` → `./shared/`, `test/` files `../../shared/` →

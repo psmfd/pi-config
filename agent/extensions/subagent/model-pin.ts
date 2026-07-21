@@ -49,29 +49,10 @@ export interface CopilotFallback {
   readonly registryAvailable?: boolean;
 }
 
-/** The slice of `ExtensionContext.modelRegistry` the gate reads. */
-export interface PinRegistry {
-  getAvailable(): Promise<readonly { provider: string; id: string }[]> | readonly { provider: string; id: string }[];
-}
-
 /** True when the pin is `provider/id`-qualified (a non-edge slash exists). */
 export function isQualifiedPin(pin: string): boolean {
   const slash = pin.indexOf("/");
   return slash > 0 && slash < pin.length - 1;
-}
-
-/**
- * Build the `provider/id` set of credentialed models, or null when the
- * registry cannot be read (the gate then fails open — pi's own resolution
- * decides, preserving pre-gate behavior).
- */
-export async function getAvailableModelIds(registry: PinRegistry): Promise<ReadonlySet<string> | null> {
-  try {
-    const models = await registry.getAvailable();
-    return new Set(models.map((m) => `${m.provider}/${m.id}`));
-  } catch {
-    return null;
-  }
 }
 
 /**

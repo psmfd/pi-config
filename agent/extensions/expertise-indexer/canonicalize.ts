@@ -197,22 +197,35 @@ export function computeCanonicalBlob(inputs: CanonicalInputs): CanonicalBlob {
 	if (!isValidGitSha(inputs.headSha)) {
 		throw new Error(`canonicalize: invalid headSha: ${inputs.headSha}`);
 	}
-	// Validate files and detect duplicate paths deterministically.
-	const seenPaths = new Set<string>();
-	for (const f of inputs.files) {
+	// Normalize each entry UP FRONT so duplicate detection, sort order, and the
+	// serialized output all operate on the same bytes. Normalizing only after
+	// dedup/sort let two paths that differ solely in Unicode form (NFC vs NFD —
+	// the macOS-APFS-vs-Linux filesystem split) escape the raw-string duplicate
+	// check, then collapse to one path in the blob: two conflicting entries and a
+	// platform-dependent order, breaking the byte-identical-across-platforms
+	// contract (#817). blobSha is already lowercase after isValidGitSha, but the
+	// .toLowerCase() is retained as defensive normalization so the canonical form
+	// stays robust if that validator is ever relaxed to accept mixed case.
+	const normalizedFiles = inputs.files.map((f) => {
 		if (!isValidGitSha(f.blobSha)) {
 			throw new Error(`canonicalize: invalid blobSha for path '${f.path}': ${f.blobSha}`);
 		}
+		return { path: normalizeText(f.path), blobSha: f.blobSha.toLowerCase() };
+	});
+
+	// Detect duplicate paths on the normalized value that actually reaches the blob.
+	const seenPaths = new Set<string>();
+	for (const f of normalizedFiles) {
 		if (seenPaths.has(f.path)) {
 			throw new Error(`canonicalize: duplicate file path in inputs: ${f.path}`);
 		}
 		seenPaths.add(f.path);
 	}
 
-	// Sort files lexicographically by path.
-	const sortedFiles = [...inputs.files]
-		.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-		.map((f) => ({ path: normalizeText(f.path), blobSha: f.blobSha.toLowerCase() }));
+	// Sort files lexicographically by normalized path.
+	const sortedFiles = [...normalizedFiles].sort((a, b) =>
+		a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+	);
 
 	// Normalize frontmatter values that are strings; arrays of scalars pass
 	// through with their string elements normalized.

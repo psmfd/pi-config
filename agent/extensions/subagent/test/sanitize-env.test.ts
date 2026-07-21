@@ -285,3 +285,38 @@ test("strict:false is identical to default (passthrough with denies)", () => {
   const b = buildSanitizedEnv(parent, { strict: false });
   assert.deepEqual(a, b);
 });
+
+// -----------------------------------------------------------------------------
+// #793: credential names the suffix-anchored patterns previously missed.
+// -----------------------------------------------------------------------------
+
+test("strict mode: AWS credential pair is denied even under an AWS_ prefix allow", () => {
+  const parent = {
+    AWS_SECRET_ACCESS_KEY: "shh",
+    AWS_ACCESS_KEY_ID: "AKIAEXAMPLE",
+    AWS_SESSION_TOKEN: "tok",
+    AWS_REGION: "us-east-1",
+    PATH: "/usr/bin",
+  } as NodeJS.ProcessEnv;
+  const out = buildSanitizedEnv(parent, { strict: true, extraAllowPrefixes: ["AWS_"] });
+  assert.equal(out.AWS_SECRET_ACCESS_KEY, undefined);
+  assert.equal(out.AWS_ACCESS_KEY_ID, undefined);
+  assert.equal(out.AWS_SESSION_TOKEN, undefined);
+  // Non-secret namespace members still ride the prefix allow.
+  assert.equal(out.AWS_REGION, "us-east-1");
+});
+
+test("strict mode: credential-pointer vars are denied unless exactly re-allowed", () => {
+  const parent = {
+    GOOGLE_APPLICATION_CREDENTIALS: "/keys/sa.json",
+    PATH: "/usr/bin",
+  } as NodeJS.ProcessEnv;
+  const denied = buildSanitizedEnv(parent, { strict: true, extraAllowPrefixes: ["GOOGLE_"] });
+  assert.equal(denied.GOOGLE_APPLICATION_CREDENTIALS, undefined);
+  // Exact env-allow remains the documented escape hatch.
+  const allowed = buildSanitizedEnv(parent, {
+    strict: true,
+    extraAllow: ["GOOGLE_APPLICATION_CREDENTIALS"],
+  });
+  assert.equal(allowed.GOOGLE_APPLICATION_CREDENTIALS, "/keys/sa.json");
+});

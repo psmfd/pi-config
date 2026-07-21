@@ -77,6 +77,33 @@ Modes (user-selectable via settings; default `hybrid`):
 
 Hybrid fall-through heuristics (all configurable, defaults shown):
 
+> **Amended by [ADR-0107](0107-compaction-hybrid-relative-token-gate.md)**
+> (2026-07-20): the token gate is now context-window-relative
+> (`max(maxTokens, maxTokensFraction × contextWindow)`), and the defaults
+> below — plus the `maxMessages`/`maxTokens` gates the implementation always
+> had but this table omitted — were re-grounded in on-host measurement
+> (#244). Current defaults live in ADR-0107 and `lib/settings.ts`; the table
+> below is preserved as originally decided.
+>
+> **Amended by [ADR-0108](0108-compaction-output-shrink-ladder.md)**
+> (2026-07-20): the deterministic builder gained an output-side token budget
+> (`hybrid.maxOutputTokens`) with a cumulative shrink ladder — the summary
+> re-renders at progressively lower fidelity rungs until it fits; in hybrid
+> mode an exhausted ladder falls through to the LLM, in deterministic mode
+> the stub is emitted anyway (air-gap preserved). `## Goal` was removed as
+> dedup of User Turns #1 and the Turn Prefix section gained an aggregate
+> message cap. The mode taxonomy reframes from binary dispatch to a
+> graceful-degradation ladder; `HybridResult.reason` remains unchanged.
+>
+> **Amended by [ADR-0109](0109-compaction-when-policy.md)** (2026-07-20):
+> the extension's charter expands from summary construction (*how*) to
+> compaction timing (*when + how*): an off-by-default, user-layer-only
+> `timing.*` when-policy defers mid-phase `reason:"threshold"` fires on
+> prefix-cached local providers (`{cancel: true}` under a fraction-of-window
+> ceiling) and proactively triggers `ctx.compact()` at fresh task-type
+> boundaries, with phase signals from the new `shared/phase-state.ts`.
+> `reason:"overflow"` is never cancelled.
+
 | Trigger | Default | Rationale |
 |---|---|---|
 | `event.customInstructions?.trim()` non-empty | always fall through | User-supplied `/compact <instructions>` cannot be honored deterministically; LLM must receive them |

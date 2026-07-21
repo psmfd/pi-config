@@ -20,6 +20,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import type { CoalescedGroup } from "../../expertise-indexer/collector.ts";
+import { scanRawString } from "../../shared/secret-scan.ts";
 import { stateDir } from "../../shared/state.ts";
 import { sanitizeField, TELEMETRY_NAMESPACE } from "./telemetry.ts";
 
@@ -33,6 +34,13 @@ export interface ApprovalLedger {
 }
 
 export function makeLedger(): ApprovalLedger {
+	// A Set keys approvals by full-field hash, so approval is single-use PER
+	// CONTENT: two separate approvals of candidates that serialize to the same
+	// ApprovalFields grant exactly one create, not two. This is intentional —
+	// identical expertise content only ever needs to be written once, and
+	// collapsing duplicates keeps the gate's "exactly the approved field set"
+	// contract simple. Switch to a Map<hash,count> only if N distinct approvals
+	// of identical content must permit N creates (not a current requirement).
 	const hashes = new Set<string>();
 	return {
 		record(hash) {
@@ -74,12 +82,16 @@ export function queuePending(
 					ts: now.toISOString(),
 					reason,
 					fingerprint: g.fingerprint,
-					// A secret-detected group must not persist the very content the
-					// pre-display scan refused to show (review finding, ADR-0095) —
-					// queue a field-wise redacted copy; the fingerprint + body
-					// hashes still identify it for the later manual review.
-					candidate:
-						reason === "secret-detected" ? redactCandidate(g.candidate) : g.candidate,
+					// Redact any candidate carrying secret-shaped content, regardless
+					// of WHY it was queued. The "headless" and "divergent-variants"
+					// paths reach this writer WITHOUT the interactive display scan, so a
+					// reason-scoped check wrote real credentials raw to the pending JSONL
+					// (#815). Scan every queued candidate: a clean one is written in full
+					// (the later reviewer needs the whole body), a secret-bearing one is
+					// field-wise redacted. Fingerprint + body hashes still identify it.
+					candidate: candidateHasSecret(g.candidate)
+						? redactCandidate(g.candidate)
+						: g.candidate,
 					proposedByList: g.proposedByList,
 					proposalCount: g.proposalCount,
 					variantCount: g.variantCount,
@@ -94,8 +106,26 @@ export function queuePending(
 	}
 }
 
-/** Field-wise redaction of a candidate's free-text values (secret-detected
- * queue path only — every string runs through the shared pattern scan). */
+/** True when any string field (or string array element) of a candidate carries
+ * secret-shaped content. Gates redaction on actual secret presence rather than
+ * on the queue `reason`, so the headless and divergent-variant paths — which
+ * never pass the interactive display scan — are protected too (#815). */
+function candidateHasSecret(candidate: CoalescedGroup["candidate"]): boolean {
+	for (const value of Object.values(candidate)) {
+		if (typeof value === "string") {
+			if (scanRawString(value).length > 0) return true;
+		} else if (Array.isArray(value)) {
+			for (const v of value) {
+				if (typeof v === "string" && scanRawString(v).length > 0) return true;
+			}
+		}
+	}
+	return false;
+}
+
+/** Field-wise redaction of a candidate's free-text values (used whenever
+ * candidateHasSecret flags a candidate — every string runs through the shared
+ * pattern scan). */
 function redactCandidate(candidate: CoalescedGroup["candidate"]): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(candidate)) {
@@ -104,6 +134,9 @@ function redactCandidate(candidate: CoalescedGroup["candidate"]): Record<string,
 			out[key] = (value as unknown[]).map((v): unknown =>
 				typeof v === "string" ? sanitizeField(v) : v,
 			);
+		// Every ProjectedCandidate field is a string / string[] today, so this
+		// branch is unreachable under the current schema — kept as defensive
+		// pass-through in case a non-string field is added later (#815).
 		else out[key] = value;
 	}
 	return out;

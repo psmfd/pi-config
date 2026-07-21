@@ -97,6 +97,8 @@ is_sensitive_path() {
   local base="${1##*/}"
   case "$base" in
     id_rsa|id_dsa|id_ecdsa|id_ed25519) return 0 ;;
+    # FIDO2 hardware-backed keys, OpenSSH 8.2+ (#796, ADR-0111).
+    id_ecdsa_sk|id_ed25519_sk) return 0 ;;
     id_rsa.pem|id_dsa.pem|id_ecdsa.pem|id_ed25519.pem) return 0 ;;
   esac
   case "$1" in

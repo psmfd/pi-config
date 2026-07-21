@@ -3,7 +3,6 @@ import { test } from "node:test";
 
 import {
   filterDownOmlxIds,
-  getAvailableModelIds,
   isQualifiedPin,
   resolveModelPin,
   sanitizeFallbackModelId,
@@ -59,25 +58,7 @@ test("registry unreadable (null) fails open: pin passes through", () => {
   });
 });
 
-test("getAvailableModelIds builds provider/id keys from sync or async registries", async () => {
-  const models = [{ provider: "omlx", id: "coding-workhorse" }];
-  assert.deepEqual(await getAvailableModelIds({ getAvailable: () => models }), new Set(["omlx/coding-workhorse"]));
-  assert.deepEqual(
-    await getAvailableModelIds({ getAvailable: () => Promise.resolve(models) }),
-    new Set(["omlx/coding-workhorse"]),
-  );
-});
 
-test("getAvailableModelIds returns null when the registry throws", async () => {
-  assert.equal(
-    await getAvailableModelIds({
-      getAvailable: () => {
-        throw new Error("registry unavailable");
-      },
-    }),
-    null,
-  );
-});
 
 // --- #536: the Copilot fallback rung ----------------------------------------
 

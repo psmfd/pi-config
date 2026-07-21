@@ -83,6 +83,17 @@ test("hasMinusC detects -c and short-option clusters", () => {
   assert.equal(hasMinusC(["bash", "script.sh"]), false);
 });
 
+test("hasMinusC is scoped to the option region, not script args (#798)", () => {
+  // -c still matched when it precedes the script/command-string.
+  assert.equal(hasMinusC(["bash", "--norc", "-c", "x"]), true);
+  // A `c`-bearing token AFTER the script path is a script arg, not a bash
+  // option — must not read as -c (the over-block the old whole-list scan hit).
+  assert.equal(hasMinusC(["bash", "run.sh", "-clean"]), false);
+  assert.equal(hasMinusC(["bash", "build.sh", "-cache"]), false);
+  // No double-dash long option ever matches the short-cluster form.
+  assert.equal(hasMinusC(["bash", "--color", "script.sh"]), false);
+});
+
 test("preprocessCommand normalizes literal $IFS but not $IFSX", () => {
   assert.equal(preprocessCommand("rm$IFS/etc/passwd"), "rm /etc/passwd");
   assert.equal(preprocessCommand("rm${IFS}/etc/passwd"), "rm /etc/passwd");

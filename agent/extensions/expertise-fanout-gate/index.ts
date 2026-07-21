@@ -84,6 +84,15 @@ import { appendTelemetry, sanitizeField, type TelemetryRecord } from "./lib/tele
 /** Injected-block result cap: mirrors the rule doc's ≤5-results sizing. */
 export const CANONICAL_SEARCH_LIMIT = 5;
 
+/** Upper bound on the one canonical search's wall-clock. The pi runtime does
+ * NOT wrap a `tool_call` handler in a timeout, so a TCP-connected-but-hung
+ * endpoint would otherwise stall the handler indefinitely and break the turn —
+ * the exact fail-open contract this module promises to uphold. ~3× the git
+ * probe's bound (a semantic search legitimately runs longer than a local
+ * subprocess); on abort, searchExpertise's own catch turns it into a normal
+ * `search-failed` skip (#815). */
+export const SEARCH_TIMEOUT_MS = 10_000;
+
 /** Session backoff after a 429 with no usable Retry-After (token bucket is
  * 10/min, so one bucket window). */
 export const DEFAULT_RATE_LIMIT_BACKOFF_MS = 60_000;
@@ -96,8 +105,13 @@ export const MAX_INLINE_CONFIRMS_PER_SESSION = 3;
 export interface GateDeps {
 	readonly fetchImpl?: typeof fetch;
 	readonly gitExec?: GitExecutor;
-	/** Override the legacy `.env.local` path (tests). */
+	/** Override the legacy `.env.local` path — single-path branch (tests). */
 	readonly envPath?: string;
+	/** Override the installed-package `.env.local` path — exercises the
+	 * source-tree-wins merge branch in loadLegacyClientEnv (tests). */
+	readonly installedClientEnvPath?: string;
+	/** Override the source-tree sibling `.env.local` path — merge branch (tests). */
+	readonly clientEnvPath?: string;
 	/** Override the upstream `secrets.env` path (tests). */
 	readonly upstreamEnvPath?: string;
 	/** Override the telemetry base dir (tests). */
@@ -131,8 +145,8 @@ function loadLegacyClientEnv(deps: GateDeps): Record<string, string> {
 	// Source-tree config wins when present; the package path closes the real
 	// distributed-install topology where the sibling extension is absent.
 	return {
-		...loadEnvLocal(resolveInstalledClientEnvPath()),
-		...loadEnvLocal(resolveClientEnvPath()),
+		...loadEnvLocal(deps.installedClientEnvPath ?? resolveInstalledClientEnvPath()),
+		...loadEnvLocal(deps.clientEnvPath ?? resolveClientEnvPath()),
 	};
 }
 
@@ -229,94 +243,121 @@ export default function (pi: ExtensionAPI, deps: GateDeps = {}) {
 				return undefined;
 			}
 
-			const cfg = buildClientConfig(
-				process.env,
-				loadLegacyClientEnv(deps),
-				deps.upstreamEnvPath !== undefined
-					? loadEnvLocal(deps.upstreamEnvPath)
-					: loadUpstreamSecrets(process.env),
-			);
-			if (!cfg.ok) {
-				record({ event: "skip", reason: "no-config", detail: cfg.reason, ...base });
-				if (!configNotified && ctx.hasUI) {
-					configNotified = true;
-					notify(
-						ctx,
-						"expertise-fanout-gate",
-						`canonical expertise pre-fetch disabled: ${sanitizeField(cfg.reason)}`,
-						"warning",
-					);
-				}
-				return undefined;
-			}
-
-			const git = await probeGitInfo(ctx.cwd, deps.gitExec ?? defaultGitExecutor);
-			if (git === null) {
-				record({ event: "skip", reason: "no-git", ...base });
-				return undefined;
-			}
-
-			const query = buildCanonicalQuery(deriveQueryInputs(tasks));
-			if (query === "") {
-				// Rule-doc exemption: never send a garbage query.
-				record({ event: "skip", reason: "empty-query", ...base });
-				return undefined;
-			}
-
-			const blob = computeCanonicalBlob(
-				deriveFanoutCanonicalInputs({ repoOrigin: git.origin, headSha: git.headSha, tasks }),
-			);
-
+			// Commit the one-search budget BEFORE the first await (the git probe
+			// below is a real subprocess). Setting the flag only just before the
+			// network call left a TOCTOU window two overlapping fanouts could both
+			// pass, double-spending the 10-req/min budget (#815). The finally
+			// wrapping the remainder resets it on every exit path.
 			searchInFlight = true;
-			let search: Awaited<ReturnType<typeof searchExpertise>>;
 			try {
-				search = await searchExpertise(
-					cfg.config,
-					{ query, limit: CANONICAL_SEARCH_LIMIT },
-					deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {},
+				const cfg = buildClientConfig(
+					process.env,
+					loadLegacyClientEnv(deps),
+					deps.upstreamEnvPath !== undefined
+						? loadEnvLocal(deps.upstreamEnvPath)
+						: loadUpstreamSecrets(process.env),
 				);
+				if (!cfg.ok) {
+					record({ event: "skip", reason: "no-config", detail: cfg.reason, ...base });
+					if (!configNotified && ctx.hasUI) {
+						configNotified = true;
+						notify(
+							ctx,
+							"expertise-fanout-gate",
+							`canonical expertise pre-fetch disabled: ${sanitizeField(cfg.reason)}`,
+							"warning",
+						);
+					}
+					return undefined;
+				}
+
+				const git = await probeGitInfo(ctx.cwd, deps.gitExec ?? defaultGitExecutor);
+				if (git === null) {
+					record({ event: "skip", reason: "no-git", ...base });
+					return undefined;
+				}
+
+				const query = buildCanonicalQuery(deriveQueryInputs(tasks));
+				if (query === "") {
+					// Rule-doc exemption: never send a garbage query.
+					record({ event: "skip", reason: "empty-query", ...base });
+					return undefined;
+				}
+				// Scan the query BEFORE egress. It is built from model-controlled
+				// tasks[].agent / tasks[0].task text, and buildCanonicalQuery's
+				// lowercase+strip does not destroy `ghp_`/`github_pat_` shapes — an
+				// unscanned token would otherwise leave as a `?q=` param to a
+				// possibly non-loopback endpoint. Telemetry's sanitizeField only
+				// redacts the logged copy, after the request has already fired (#815).
+				if (scanRawString(query).length > 0) {
+					record({ event: "skip", reason: "secret-in-query", ...base });
+					return undefined;
+				}
+
+				const blob = computeCanonicalBlob(
+					deriveFanoutCanonicalInputs({ repoOrigin: git.origin, headSha: git.headSha, tasks }),
+				);
+
+				// Bound the one search: the runtime does not time out a tool_call
+				// handler, so a hung endpoint must not stall the turn (#815).
+				const ac = new AbortController();
+				const timer = setTimeout(() => ac.abort(), SEARCH_TIMEOUT_MS);
+				timer.unref?.();
+				let search: Awaited<ReturnType<typeof searchExpertise>>;
+				try {
+					search = await searchExpertise(
+						cfg.config,
+						{ query, limit: CANONICAL_SEARCH_LIMIT },
+						{
+							signal: ac.signal,
+							...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
+						},
+					);
+				} finally {
+					clearTimeout(timer);
+				}
+				if (!search.ok) {
+					if (search.rateLimited) {
+						const backoffMs =
+							search.retryAfterSeconds !== undefined
+								? Math.min(search.retryAfterSeconds, 600) * 1000
+								: DEFAULT_RATE_LIMIT_BACKOFF_MS;
+						rateLimitedUntil = now() + backoffMs;
+					}
+					record({
+						event: "skip",
+						reason: search.rateLimited ? "rate-limited" : "search-failed",
+						query,
+						detail: search.reason,
+						...base,
+					});
+					return undefined;
+				}
+
+				const results = projectSearchResults(search.text);
+				const block = renderCanonicalResultsBlock(results, blob.sha);
+
+				// Mutate in place — later handlers and the tool itself see the
+				// injected tasks (SDK contract: input is mutable pre-execution).
+				for (const item of input.tasks as unknown[]) {
+					(item as Record<string, unknown>).expertiseInjection = block;
+				}
+
+				record({
+					event: "inject",
+					query,
+					canonicalBlobSha: blob.sha,
+					resultCount: results.length,
+					...base,
+				});
+				auditLine(
+					ctx,
+					`canonical expertise injected: query="${sanitizeField(query)}" results=${results.length} sha=${blob.sha.slice(0, 12)}…`,
+				);
+				return undefined;
 			} finally {
 				searchInFlight = false;
 			}
-			if (!search.ok) {
-				if (search.rateLimited) {
-					const backoffMs =
-						search.retryAfterSeconds !== undefined
-							? Math.min(search.retryAfterSeconds, 600) * 1000
-							: DEFAULT_RATE_LIMIT_BACKOFF_MS;
-					rateLimitedUntil = now() + backoffMs;
-				}
-				record({
-					event: "skip",
-					reason: search.rateLimited ? "rate-limited" : "search-failed",
-					query,
-					detail: search.reason,
-					...base,
-				});
-				return undefined;
-			}
-
-			const results = projectSearchResults(search.text);
-			const block = renderCanonicalResultsBlock(results, blob.sha);
-
-			// Mutate in place — later handlers and the tool itself see the
-			// injected tasks (SDK contract: input is mutable pre-execution).
-			for (const item of input.tasks as unknown[]) {
-				(item as Record<string, unknown>).expertiseInjection = block;
-			}
-
-			record({
-				event: "inject",
-				query,
-				canonicalBlobSha: blob.sha,
-				resultCount: results.length,
-				...base,
-			});
-			auditLine(
-				ctx,
-				`canonical expertise injected: query="${sanitizeField(query)}" results=${results.length} sha=${blob.sha.slice(0, 12)}…`,
-			);
-			return undefined;
 		} catch (err) {
 			// tool_call handler exceptions are NOT caught by the runtime —
 			// swallow everything; the fanout must proceed uninjected.
@@ -489,7 +530,6 @@ export default function (pi: ExtensionAPI, deps: GateDeps = {}) {
 							`to restart the session if more direct creates are genuinely intended.`,
 					};
 				}
-				inlineConfirmsUsed += 1;
 				const paramsJson = JSON.stringify(fields, null, 2);
 				if (scanRawString(paramsJson).length > 0) {
 					record({ event: "create-block", reason: "secret-detected" });
@@ -500,6 +540,10 @@ export default function (pi: ExtensionAPI, deps: GateDeps = {}) {
 							"entry content. Remove the secret material and retry.",
 					};
 				}
+				// Spend a budget slot only when the attempt genuinely reaches the
+				// operator: a secret-shaped attempt is blocked above with no dialog
+				// shown and must not silently narrow the remaining budget (#815).
+				inlineConfirmsUsed += 1;
 				const approved = await ctx.ui.confirm(
 					"Approve expertise_create?",
 					`The model wants to create this expertise entry (no prior fanout approval on record):\n\n` +
@@ -547,7 +591,12 @@ export default function (pi: ExtensionAPI, deps: GateDeps = {}) {
 /** Bounded body slice for dialog display (never truncates mid-code-unit). */
 function boundedForDialog(text: string, cap = 1500): string {
 	if (text.length <= cap) return text;
-	return `${text.slice(0, cap)}\n…[${text.length - cap} more chars — full body in the pending/telemetry record]`;
+	// Slice on whole code points so an astral character (e.g. an emoji) sitting
+	// at the cut boundary cannot leave a lone unpaired surrogate in the
+	// operator-facing dialog text (#815).
+	const head = Array.from(text).slice(0, cap).join("");
+	const remaining = text.length - head.length;
+	return `${head}\n…[${remaining} more chars — full body in the pending/telemetry record]`;
 }
 
 function formatGroupForDialog(

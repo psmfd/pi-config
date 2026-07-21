@@ -134,6 +134,7 @@ export type RejectionReason =
 	| "missing-required-field"
 	| "wrong-type"
 	| "invalid-enum-value"
+	| "invalid-canonical-blob-sha"
 	| "info-severity-requires-justification"
 	| "secret-detected";
 
@@ -328,8 +329,11 @@ function projectCandidate(raw: unknown, index: number): ProjectOutcome {
 	// canonical_blob_sha shape — delegates to isValidGitSha (canonicalize.ts)
 	// so any future tightening (prefix, length, encoding) tracks the anchor
 	// authoritatively rather than drifting in a duplicated local regex.
+	// Already confirmed to be a string by REQUIRED_STRING_FIELDS above, so a
+	// failure here is a malformed-hex shape, not a type mismatch — give it a
+	// dedicated reason so rejection-log consumers can tell the two apart (#817).
 	if (!isValidGitSha(obj.canonical_blob_sha as string)) {
-		return rej(index, "wrong-type", "field='canonical_blob_sha' expected=hex(40|64)");
+		return rej(index, "invalid-canonical-blob-sha", "field='canonical_blob_sha' expected=hex(40|64)");
 	}
 
 	// tags validation moved here — must run AFTER the Info-severity block so
