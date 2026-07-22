@@ -88,6 +88,12 @@ Serialization: **manual recursive sorted-key serializer**, not `JSON.stringify(x
 
 Persists the serialized JSON, gzip-encoded, at `${PI_CODING_AGENT_DIR:-$HOME/.pi}/expertise_cache/<sha>.json.gz`.
 
+> **Status: library-only, deliberately not yet wired** ([ADR-0116](../../../adrs/0116-writecanonicalblob-deferred-library-only.md), #818).
+> No runtime consumer calls `writeCanonicalBlob`/`resolveCacheDir` today — only the test
+> suite exercises them. Persistence is deferred until a tracked consumer (#604 pre-push
+> hook or #601 CI expertise-audit) wires both the write **and** a read of the cache in
+> the same change. The read half (`computeCanonicalBlob`) is wired and live.
+
 Invariants:
 
 | Guarantee | Mechanism |

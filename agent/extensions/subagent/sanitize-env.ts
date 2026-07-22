@@ -138,14 +138,24 @@ const BASE_ALLOWLIST: ReadonlySet<string> = new Set([
 	"NODE_PATH",
 	"NODE_OPTIONS",
 	// Proxy plumbing (#606): the child's web_fetch and provider HTTP calls
-	// must honor the same egress path as the parent. Both spellings — Node
-	// and most CLIs accept either.
+	// honor the same egress path as the parent. pi's runtime is bun-compiled,
+	// and bun's fetch respects these env vars natively (#827) — so the
+	// pass-through here is all web_fetch needs to route a child through the
+	// operator's proxy. Both cases pass; bun and most CLIs accept either.
 	"HTTP_PROXY",
 	"HTTPS_PROXY",
 	"NO_PROXY",
 	"http_proxy",
 	"https_proxy",
 	"no_proxy",
+	// Cache-ratio measurement (ADR-0114, #760): the cache-meter twin of the
+	// TOKEN_METER_ carve-out below. cache-meter's suite-wide prefix-churn gate
+	// only sees subagent turns if child pi processes inherit the config var
+	// that arms the recorder. CACHE_METER_CONFIG is a non-secret operator-set
+	// measurement-config name (inert when unset), the same observational
+	// category as the token-meter vars — unconditional cross-cutting infra, not
+	// a per-wrapper credential. Exact key (cache-meter reads only this one).
+	"CACHE_METER_CONFIG",
 ]);
 
 /** Prefixes always allowed under strict mode (in addition to `BASE_ALLOWLIST`). */
@@ -235,12 +245,43 @@ export function applyGuardProfile(
 }
 
 /**
+ * Spawn-depth signal (pi_config #841, ADR-0118). The parent stamps every
+ * child with its own depth + 1; the tool's execute() refuses to spawn once
+ * the process's depth has reached the configured maximum (default 1). This
+ * mechanically backs the orchestrator-protocol sub-agent obligation ("do
+ * not spawn additional agents on your own initiative") that was previously
+ * behavioral-only: without it a wrapper whose tool surface includes
+ * `subagent` lets children fan out grandchildren invisibly — unbounded
+ * depth, no orchestrator visibility, multiplying token spend.
+ */
+export const SUBAGENT_DEPTH_ENV = "PI_SUBAGENT_DEPTH";
+
+/**
+ * Current spawn depth of this process: 0 at the orchestrator (var absent),
+ * n for a child spawned by a depth-(n-1) process. Anything non-numeric,
+ * negative, or fractional reads as 0 — the value is always re-stamped by
+ * buildChildEnv below, so a mangled inherited value cannot compound.
+ */
+export function readSpawnDepth(env: NodeJS.ProcessEnv): number {
+	const raw = env[SUBAGENT_DEPTH_ENV];
+	if (typeof raw !== "string" || !/^\d+$/.test(raw.trim())) return 0;
+	return Number.parseInt(raw.trim(), 10);
+}
+
+/**
  * LOCAL PATCH #11 (pi_config #606): single composing seam for the spawn
  * call site — translates a wrapper's AgentConfig env fields into
  * SanitizeEnvOptions and applies the guard-profile signal, so index.ts
  * passes `spawn(..., { env: buildChildEnv(process.env, agent) })` and the
  * whole translation stays unit-testable without a spawn harness (same
  * pattern applyGuardProfile established).
+ *
+ * LOCAL PATCH #15 (pi_config #841, ADR-0118): also stamps the child's
+ * spawn depth. Set-or-increment semantics, same philosophy as
+ * applyGuardProfile's set-or-delete: the child's value is always computed
+ * from the parent's parsed depth, never inherited verbatim (the `PI_`
+ * prefix passes strict mode, but the recompute here overwrites whatever
+ * passed through).
  */
 export function buildChildEnv(
 	parent: NodeJS.ProcessEnv,
@@ -256,6 +297,7 @@ export function buildChildEnv(
 		extraAllow: agent.envAllow,
 		extraAllowPrefixes: agent.envAllowPrefixes,
 	});
+	env[SUBAGENT_DEPTH_ENV] = String(readSpawnDepth(parent) + 1);
 	return applyGuardProfile(env, agent.guardProfile);
 }
 

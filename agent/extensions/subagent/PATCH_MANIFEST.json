@@ -5,9 +5,9 @@
   "trackedFiles": {
     "index.ts": {
       "upstreamSha256": "d7f717bcdc6d335363ea3719dcb3fcfc0b5ee791eae81e3f803af2ff0d0d22a4",
-      "localSha256": "74587e8e99225bf7484fcfddf28b3640df390d5b1304f96aca20b171d538a58a",
-      "hunks": 34,
-      "netLines": 345
+      "localSha256": "4890ff9f64e290e17d27e58ca1c3971bd79b98c659419a246ba6a8cf2c159f05",
+      "hunks": 33,
+      "netLines": 396
     },
     "agents.ts": {
       "upstreamSha256": "e1ab7addbd4c0dcd11a2acd11ad21e1aef8b91d61c0a2216f8b6c29a0bfde904",
@@ -16,6 +16,6 @@
       "netLines": 214
     }
   },
-  "generatedAt": "2026-07-20T15:14:42Z",
+  "generatedAt": "2026-07-21T23:53:10Z",
   "note": "See agent/extensions/subagent/README.md for the patch table. Regenerate with: scripts/validate-subagent-drift.sh --regenerate"
 }

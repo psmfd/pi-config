@@ -26,6 +26,8 @@ This vendored copy carries downstream patches that diverge from upstream `earend
 | 12 | Local-LLM role lever + `local-llm` tag | `agents.ts` (`localLlm` on `AgentConfig`, parsed from `local-llm` frontmatter, literal-true only), `index.ts` (`readLocalRole` per tool call, `localRole` threaded to `runSingleAgent`, `applyLocalRole` pin backstop ahead of the spawn-time gate), `policy-model.ts` + `model-pin.ts` (first-party siblings), `test/policy-model.test.ts` | ADR-0094 (#685): local eligibility = global `extensionSettings.localLlm.role` lever (`full`/`classifier-only`/`off`) ∧ `local-llm: true` wrapper tag (default false — untagged/third-party wrappers never ride local) ∧ not structurally local-forbidden (the tag can never override the bash floor). The `applyLocalRole` backstop drops a local `model:` pin fail-closed — even when the registry is unreadable — with a visible pin note; children never run the classifier, so any restricted lever value strips local entirely here. The 13 first-party `model: omlx/coding-workhorse` pins were migrated to `local-llm: true` tags (pinned by test). | pi_config #685, [ADR-0094](../../../adrs/0094-local-llm-role-lever.md) |
 | 13 | Capability-tier quality floor | `agents.ts` (`capabilityTier` on `AgentConfig`, parsed from `capability-tier` frontmatter — exact enum values only, typos yield untiered selection), `policy-model.ts` (tier branch via `shared/model-ranking.ts` `resolveTierPick`), `test/policy-model.test.ts` | #656: a wrapper declaring `capability-tier: frontier\|capable\|fast` asks the provider matrix for the highest-quality credentialed model at or above that tier — quality-first ordering (tier rank desc, window desc, lexical; cost drops out), or-better semantics, falling through to untiered cheapest-capable when no tiered row qualifies, still respecting the ADR-0094 local-eligibility pool. Provider-agnostic rows remain inert when absent from ADR-0104's live-filtered candidates. | pi_config #656, [ADR-0094](../../../adrs/0094-local-llm-role-lever.md), [ADR-0090](../../../adrs/0090-stable-router-subagent-model-policy.md) |
 | 14 | Canonical parent/child availability generation | `index.ts` (`getAvailabilitySnapshot`, live-filtered IDs for pin/fallback/policy, all-cache clear on `session_start`), `test/policy-model.test.ts` (wiring pin) | Parent routing and every child-selection seam consume one immutable registry observation with identical Copilot, Anthropic, and oMLX filters. Snapshot failure retains qualified-pin fail-open behavior; provider-matrix candidates fail empty. This removes the former oMLX-only policy filtering and separate Copilot fallback probe. Operator status/review/refresh semantics are defined in [the standalone matrix lifecycle reference](https://github.com/psmfd/pi-auto-router/blob/main/MATRIX_LIFECYCLE_V1.md). | pi_config #748, [ADR-0104](../../../adrs/0104-deterministic-model-availability-snapshots.md) |
+| 15 | Spawn-depth guard | `index.ts` (`DEFAULT_MAX_SPAWN_DEPTH`/`MAX_SPAWN_DEPTH_CEILING`, `readMaxDepthSetting`, refusal gate at the top of `execute()`), `sanitize-env.ts` (`SUBAGENT_DEPTH_ENV`, `readSpawnDepth`, depth stamp in `buildChildEnv`), `test/sanitize-env.test.ts`, `test/spawn-integration.test.ts` | Children previously loaded the full extension set — including this `subagent` tool — so a wrapper whose tool surface grants (or defaults to) `subagent` let children fan out grandchildren invisibly: unbounded depth, no orchestrator visibility, multiplying token spend. Every child is now stamped `PI_SUBAGENT_DEPTH` = parent depth + 1 (set-or-increment, recomputed from the parsed parent value — a mangled inherited value resets to 0 rather than compounding), and `execute()` refuses before any discovery/spawn work once the process's depth has reached the user-layer `maxSpawnDepth` limit (default 1: children exist, grandchildren do not). Mechanically backs the orchestrator-protocol sub-agent obligation ("do not spawn additional agents on your own initiative"). See § Spawn-depth guard. | pi_config #841, [ADR-0118](../../../adrs/0118-subagent-spawn-depth-guard.md) |
+| 16 | Shared chain/parallel result-row rendering | `index.ts` (`RowOpts`, `chainRowOpts`/`parallelRowOpts`, `appendExpandedRows`, `renderCollapsedRows`, `appendTotals` closures inside `renderResult`; chain + parallel branches reduced to header/status logic + shared-row calls), `test/render.test.ts` | The chain (~1156-1235) and parallel (~1238-1325) `renderResult` branches duplicated ~170 lines of per-row construction — icon selection, step/task headers, tool-call arrows, final-output markdown, per-row usage, totals. The real differences are three parameters (row icon, header prefix `"Step N: "` vs none, collapsed empty-row sentinel `(running...)` vs `(no output)`), now captured in `RowOpts`. Output is byte-identical (the finished-parallel expanded path cannot reach the shared icon's running arm); `test/render.test.ts` pins streaming and finished states, expanded and collapsed, for both modes — the mid-stream coverage the #793 review flagged as absent. | pi_config #794 (from the #793 review, epic #780) |
 
 > Prior to the pi 0.80.2 re-pair, patches #4a–d were present in the vendored source but **not registered** in this table. This corrective inventory landed in pi_config #396; the mechanical check preventing recurrence — the diff-signature manifest at [`PATCH_MANIFEST.json`](./PATCH_MANIFEST.json) validated by [`scripts/validate-subagent-drift.sh`](../../../scripts/validate-subagent-drift.sh) — landed in pi_config #582.
 
@@ -138,6 +140,35 @@ env-allow-prefix: CX_                 # namespaces without secret-shaped names
 ```
 
 Only a literal `true` enables strict mode — typos keep the safe default. If a strict child fails at startup, read `SingleResult.stderr`, add the one missing var to that wrapper's `env-allow`, and re-run; never disable strict mode wholesale. All 21 first-party wrappers are strict (pinned by `test/strict-env-wiring.test.ts`); the credential-bearing ones carry exactly: `gh-cli-expert`/`work-item-management-expert` (`GH_TOKEN`, `GITHUB_TOKEN`; the latter also `AZURE_DEVOPS_EXT_PAT` for `az boards`), `gitflow-expert` (+ `SSH_AUTH_SOCK` — live signing capability, treated like a bearer token), `checkmarx-expert` (`CX_APIKEY`, `CX_CLIENT_SECRET`, `CX_` prefix), `helm-expert` (`KUBECONFIG` — a path override, not a secret).
+
+### Spawn-depth guard (local patch #15, pi_config #841, [ADR-0118](../../../adrs/0118-subagent-spawn-depth-guard.md))
+
+Every spawned child is stamped with `PI_SUBAGENT_DEPTH` = parent depth + 1
+(`buildChildEnv`, set-or-increment: the value is recomputed from the parsed
+parent depth, never inherited verbatim). The tool refuses to spawn — before
+any agent discovery or process work — once the invoking process's own depth
+has reached the configured maximum:
+
+- **Default limit: 1.** The orchestrator (depth 0) spawns children; a child
+  (depth 1) that invokes `subagent` gets a refusal telling it to return its
+  findings — including cross-domain concerns — to the parent, which owns all
+  further delegation. This is the mechanical twin of the orchestrator-protocol
+  sub-agent obligations ("do not spawn additional agents on your own
+  initiative"): previously behavioral-only, since children load the full
+  extension set and a wrapper granting the `subagent` tool could fan out
+  grandchildren with no orchestrator visibility and multiplying token spend.
+- **Operator override** in `~/.pi/agent/settings.json` (user layer only —
+  same trust boundary as `copilotFallbackModel`; a project's
+  `.pi/settings.json` cannot deepen the fan-out tree):
+
+```jsonc
+{ "extensionSettings": { "subagent": { "maxSpawnDepth": 2 } } }
+```
+
+Only integers 1–5 are honored; anything else keeps the default. A garbage or
+absent `PI_SUBAGENT_DEPTH` reads as depth 0 (top-level) — the guard is
+defense-in-depth against runaway nested fan-out, not a security boundary
+against a hostile child, which already has arbitrary code execution.
 
 ## Usage
 

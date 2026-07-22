@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { __testing, buildSanitizedEnv } from "../sanitize-env.ts";
+import {
+	__testing,
+	buildChildEnv,
+	buildSanitizedEnv,
+	readSpawnDepth,
+	SUBAGENT_DEPTH_ENV,
+} from "../sanitize-env.ts";
 
 // -----------------------------------------------------------------------------
 // Load-bearing invariants (guard against accidental drift in the denylist).
@@ -243,6 +249,17 @@ test("strict mode: TOKEN_METER_* carrier vars survive (whole-tree accounting, AD
   assert.equal(out.TOKEN_METER_POLICY_TAG, "phase3-on");
 });
 
+test("strict mode: CACHE_METER_CONFIG survives (cache-ratio subagent coverage, ADR-0114)", () => {
+  // #760 (cache-meter twin of the token-meter break): the suite-wide
+  // cache-ratio gate only sees subagent turns if child pi processes inherit
+  // the config var that arms the recorder.
+  const out = buildSanitizedEnv(
+    { PATH: "/usr/bin", CACHE_METER_CONFIG: "phase3-run" },
+    { strict: true },
+  );
+  assert.equal(out.CACHE_METER_CONFIG, "phase3-run");
+});
+
 test("strict mode: secret-suffixed TOKEN_METER_ names are still stripped", () => {
   // The prefix allow must not become a secret smuggling channel:
   // STRICT_DENY_PATTERNS runs before the allowlist check.
@@ -319,4 +336,36 @@ test("strict mode: credential-pointer vars are denied unless exactly re-allowed"
     extraAllow: ["GOOGLE_APPLICATION_CREDENTIALS"],
   });
   assert.equal(allowed.GOOGLE_APPLICATION_CREDENTIALS, "/keys/sa.json");
+});
+
+// -----------------------------------------------------------------------------
+// #841 (ADR-0118): spawn-depth signal — parsing and set-or-increment stamping.
+// -----------------------------------------------------------------------------
+
+test("readSpawnDepth: absent, garbage, negative, and fractional all read as 0", () => {
+  assert.equal(readSpawnDepth({}), 0);
+  assert.equal(readSpawnDepth({ [SUBAGENT_DEPTH_ENV]: "" }), 0);
+  assert.equal(readSpawnDepth({ [SUBAGENT_DEPTH_ENV]: "banana" }), 0);
+  assert.equal(readSpawnDepth({ [SUBAGENT_DEPTH_ENV]: "-1" }), 0);
+  assert.equal(readSpawnDepth({ [SUBAGENT_DEPTH_ENV]: "1.5" }), 0);
+  assert.equal(readSpawnDepth({ [SUBAGENT_DEPTH_ENV]: "0" }), 0);
+  assert.equal(readSpawnDepth({ [SUBAGENT_DEPTH_ENV]: "2" }), 2);
+  assert.equal(readSpawnDepth({ [SUBAGENT_DEPTH_ENV]: " 3 " }), 3);
+});
+
+test("buildChildEnv stamps depth+1 in default mode (orchestrator -> child = 1)", () => {
+  const out = buildChildEnv({ PATH: "/usr/bin" }, {});
+  assert.equal(out[SUBAGENT_DEPTH_ENV], "1");
+});
+
+test("buildChildEnv stamps depth+1 in strict mode and recomputes, never inherits", () => {
+  // A depth-1 parent stamps its (hypothetical) child as depth 2 …
+  const strictOut = buildChildEnv(
+    { PATH: "/usr/bin", [SUBAGENT_DEPTH_ENV]: "1" },
+    { envStrict: true },
+  );
+  assert.equal(strictOut[SUBAGENT_DEPTH_ENV], "2");
+  // … and a mangled inherited value resets the chain instead of compounding.
+  const mangled = buildChildEnv({ PATH: "/usr/bin", [SUBAGENT_DEPTH_ENV]: "lots" }, {});
+  assert.equal(mangled[SUBAGENT_DEPTH_ENV], "1");
 });

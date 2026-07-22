@@ -39,6 +39,18 @@ Safety properties (see ADR-0050 for the full rationale):
   **`verify_portable`** gate then runs over every **overlay** staged tree and
   **hard-fails** the sync if any `](../` link or `(TheSemicolon|psmfd)/pi_config`
   slug survives.
+- **Stale-file pruning for overlay mirrors** ([ADR-0115](../adrs/0115-overlay-mirror-stale-file-prune.md)) —
+  overlay apply keeps the additive `rsync -a` copy (packaging is preserved) and
+  then `git rm`s the files git-tracked in the mirror that the current stage no
+  longer produces, scoped to top-level names the stage actually produced — so a
+  source file removed upstream no longer lingers forever, while packaging
+  (`.github/`, `package.json`, …) stays structurally unprunable. Backed by an
+  independent empty-stage recheck, an `OVERLAY_PRUNE_MAX` magnitude gate (a
+  suspiciously large prune set is refused and printed for review), and
+  `--self-test` fixtures. Note: the `--changed` early-skip returns before the
+  apply block, so this prunes *future* removals — an already-orphaned mirror
+  needs a one-time manual `git rm` + push (its source no longer contains the
+  files, so no sync can re-add them).
 - **Private-slug enforcement for the config mirror** ([ADR-0063](../adrs/0063-config-mirror-portability.md)) —
   the config mirror ships the ADR/doc/rule corpus, which references the private
   source repo (`psmfd/pi-config`, formerly `psmfd/pi-config`) ~1,700 times.
@@ -509,5 +521,7 @@ PR is deferred to #473; until then,
 
 - A target's mirror repo must already exist — a missing mirror fails its clone
   loudly rather than being created automatically.
-- `overlay` mode has no `--delete`: a source file removed upstream must be pruned
-  from the extension mirror by hand. The `replace`-mode config mirror is exact.
+- Overlay stale-file pruning ([ADR-0115](../adrs/0115-overlay-mirror-stale-file-prune.md))
+  runs only on pushes that reach the apply block — the `--changed` early-skip
+  prunes nothing, so orphans that predate ADR-0115 need a one-time manual
+  `git rm` + push. The `replace`-mode config mirror is exact.

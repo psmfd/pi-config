@@ -48,7 +48,7 @@ import {
 	sanitizeFallbackModelId,
 	type CopilotFallback,
 } from "./model-pin.ts";
-import { buildChildEnv } from "./sanitize-env.ts";
+import { buildChildEnv, readSpawnDepth } from "./sanitize-env.ts";
 
 const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
@@ -342,6 +342,40 @@ async function readFallbackModelSetting(): Promise<string> {
 		);
 	} catch {
 		return DEFAULT_COPILOT_FALLBACK;
+	}
+}
+
+/**
+ * Spawn-depth ceiling (pi_config #841, ADR-0118): how deep the subagent
+ * tree may grow. Depth 0 is the orchestrator; the default of 1 means
+ * children exist but cannot fan out grandchildren — the mechanical twin of
+ * the orchestrator-protocol "do not spawn additional agents on your own
+ * initiative" obligation.
+ */
+const DEFAULT_MAX_SPAWN_DEPTH = 1;
+const MAX_SPAWN_DEPTH_CEILING = 5;
+
+/**
+ * Read the USER-layer `extensionSettings.subagent.maxSpawnDepth` override
+ * (#841). Project-layer settings are deliberately not consulted — same
+ * trust boundary as readFallbackModelSetting (ADR-0073): a hostile repo
+ * must not be able to deepen the fan-out tree. Only integers in
+ * [1, MAX_SPAWN_DEPTH_CEILING] are honored; anything else falls back to
+ * the built-in default.
+ */
+async function readMaxDepthSetting(): Promise<number> {
+	try {
+		const p = path.join(getAgentDir(), "settings.json");
+		const j = JSON.parse(await fs.promises.readFile(p, "utf8")) as {
+			extensionSettings?: { subagent?: { maxSpawnDepth?: unknown } };
+		};
+		const v = j?.extensionSettings?.subagent?.maxSpawnDepth;
+		if (typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= MAX_SPAWN_DEPTH_CEILING) {
+			return v;
+		}
+		return DEFAULT_MAX_SPAWN_DEPTH;
+	} catch {
+		return DEFAULT_MAX_SPAWN_DEPTH;
 	}
 }
 
@@ -699,6 +733,31 @@ export default function (pi: ExtensionAPI) {
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const agentScope: AgentScope = params.agentScope ?? "user";
+
+			// LOCAL PATCH #15 (pi_config #841, ADR-0118): spawn-depth guard.
+			// Refuse before any discovery/spawn work when this process is already
+			// at the configured depth — children return findings to their parent
+			// instead of fanning out grandchildren (orchestrator-protocol
+			// sub-agent obligations, enforced mechanically).
+			const spawnDepth = readSpawnDepth(process.env);
+			const maxSpawnDepth = await readMaxDepthSetting();
+			if (spawnDepth >= maxSpawnDepth) {
+				return {
+					content: [
+						{
+							type: "text",
+							text:
+								`Refused: this process is already a depth-${spawnDepth} subagent and the spawn-depth limit is ${maxSpawnDepth}. ` +
+								"Nested fan-out is blocked — return your findings (including any cross-domain concerns) to the parent orchestrator, " +
+								"which owns all further delegation. Operators can raise the limit via user-layer " +
+								"extensionSettings.subagent.maxSpawnDepth (1-5).",
+						},
+					],
+					details: { mode: "single", agentScope, projectAgentsDir: null, results: [] } satisfies SubagentDetails,
+					isError: true,
+				};
+			}
+
 			const discovery = discoverAgents(ctx.cwd, agentScope);
 			const agents = discovery.agents;
 			// One shared, frozen registry + provider-discovery generation feeds the
@@ -1167,6 +1226,103 @@ export default function (pi: ExtensionAPI) {
 				return total;
 			};
 
+			// ---------------------------------------------------------------
+			// LOCAL PATCH #16 (pi_config #794): shared chain/parallel row
+			// rendering. The two multi-result branches previously duplicated
+			// ~170 lines of per-row construction (header, Task line, tool-call
+			// arrows, final-output markdown, usage footers, totals); the only
+			// real differences — row icon, header prefix ("Step N: " vs none),
+			// and the collapsed empty-row sentinel — are parameterized here.
+			// test/render.test.ts pins the rendered output for both modes,
+			// streaming and finished, expanded and collapsed.
+			// ---------------------------------------------------------------
+			type RowOpts = {
+				rowIcon: (r: SingleResult) => string;
+				rowPrefix: (r: SingleResult) => string;
+				/** Collapsed rows with no display items render this sentinel. */
+				emptyText: (r: SingleResult) => string;
+			};
+
+			const chainRowOpts: RowOpts = {
+				rowIcon: (r) =>
+					r.exitCode === -1
+						? theme.fg("warning", "⏳")
+						: r.exitCode === 0
+							? theme.fg("success", "✓")
+							: theme.fg("error", "✗"),
+				rowPrefix: (r) => `─── Step ${r.step}: `,
+				emptyText: () => "(no output)",
+			};
+
+			const parallelRowOpts: RowOpts = {
+				rowIcon: (r) =>
+					r.exitCode === -1
+						? theme.fg("warning", "⏳")
+						: isFailedResult(r)
+							? theme.fg("error", "✗")
+							: theme.fg("success", "✓"),
+				rowPrefix: () => "─── ",
+				emptyText: (r) => (r.exitCode === -1 ? "(running...)" : "(no output)"),
+			};
+
+			const appendExpandedRows = (container: Container, results: SingleResult[], opts: RowOpts): void => {
+				for (const r of results) {
+					const displayItems = getDisplayItems(r.messages);
+					const finalOutput = getFinalOutput(r.messages);
+
+					container.addChild(new Spacer(1));
+					container.addChild(
+						new Text(
+							`${theme.fg("muted", opts.rowPrefix(r)) + theme.fg("accent", formatAgentModelLabel(r))} ${opts.rowIcon(r)}`,
+							0,
+							0,
+						),
+					);
+					container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", r.task), 0, 0));
+
+					// Show tool calls
+					for (const item of displayItems) {
+						if (item.type === "toolCall") {
+							container.addChild(
+								new Text(
+									theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)),
+									0,
+									0,
+								),
+							);
+						}
+					}
+
+					// Show final output as markdown
+					if (finalOutput) {
+						container.addChild(new Spacer(1));
+						container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme));
+					}
+
+					const rowUsage = formatUsageStats(r.usage, r.model);
+					if (rowUsage) container.addChild(new Text(theme.fg("dim", rowUsage), 0, 0));
+				}
+			};
+
+			const renderCollapsedRows = (results: SingleResult[], opts: RowOpts): string => {
+				let text = "";
+				for (const r of results) {
+					const displayItems = getDisplayItems(r.messages);
+					text += `\n\n${theme.fg("muted", opts.rowPrefix(r))}${theme.fg("accent", formatAgentModelLabel(r))} ${opts.rowIcon(r)}`;
+					if (displayItems.length === 0) text += `\n${theme.fg("muted", opts.emptyText(r))}`;
+					else text += `\n${renderDisplayItems(displayItems, 5)}`;
+				}
+				return text;
+			};
+
+			const appendTotals = (container: Container, results: SingleResult[]): void => {
+				const usageStr = formatUsageStats(aggregateUsage(results));
+				if (usageStr) {
+					container.addChild(new Spacer(1));
+					container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0));
+				}
+			};
+
 			if (details.mode === "chain") {
 				const chainRunning = details.results.some((r) => r.exitCode === -1);
 				const successCount = details.results.filter((r) => r.exitCode === 0).length;
@@ -1188,55 +1344,8 @@ export default function (pi: ExtensionAPI) {
 							0,
 						),
 					);
-
-					for (const r of details.results) {
-						const rIcon =
-						r.exitCode === -1
-							? theme.fg("warning", "⏳")
-							: r.exitCode === 0
-								? theme.fg("success", "✓")
-								: theme.fg("error", "✗");
-						const displayItems = getDisplayItems(r.messages);
-						const finalOutput = getFinalOutput(r.messages);
-
-						container.addChild(new Spacer(1));
-						container.addChild(
-							new Text(
-								`${theme.fg("muted", `─── Step ${r.step}: `) + theme.fg("accent", formatAgentModelLabel(r))} ${rIcon}`,
-								0,
-								0,
-							),
-						);
-						container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", r.task), 0, 0));
-
-						// Show tool calls
-						for (const item of displayItems) {
-							if (item.type === "toolCall") {
-								container.addChild(
-									new Text(
-										theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)),
-										0,
-										0,
-									),
-								);
-							}
-						}
-
-						// Show final output as markdown
-						if (finalOutput) {
-							container.addChild(new Spacer(1));
-							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme));
-						}
-
-						const stepUsage = formatUsageStats(r.usage, r.model);
-						if (stepUsage) container.addChild(new Text(theme.fg("dim", stepUsage), 0, 0));
-					}
-
-					const usageStr = formatUsageStats(aggregateUsage(details.results));
-					if (usageStr) {
-						container.addChild(new Spacer(1));
-						container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0));
-					}
+					appendExpandedRows(container, details.results, chainRowOpts);
+					appendTotals(container, details.results);
 					return container;
 				}
 
@@ -1246,18 +1355,7 @@ export default function (pi: ExtensionAPI) {
 					" " +
 					theme.fg("toolTitle", theme.bold("chain ")) +
 					theme.fg("accent", `${successCount}/${details.results.length} steps`);
-				for (const r of details.results) {
-					const rIcon =
-						r.exitCode === -1
-							? theme.fg("warning", "⏳")
-							: r.exitCode === 0
-								? theme.fg("success", "✓")
-								: theme.fg("error", "✗");
-					const displayItems = getDisplayItems(r.messages);
-					text += `\n\n${theme.fg("muted", `─── Step ${r.step}: `)}${theme.fg("accent", formatAgentModelLabel(r))} ${rIcon}`;
-					if (displayItems.length === 0) text += `\n${theme.fg("muted", "(no output)")}`;
-					else text += `\n${renderDisplayItems(displayItems, 5)}`;
-				}
+				text += renderCollapsedRows(details.results, chainRowOpts);
 				const usageStr = formatUsageStats(aggregateUsage(details.results));
 				if (usageStr) text += `\n\n${theme.fg("dim", `Total: ${usageStr}`)}`;
 				text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
@@ -1287,64 +1385,17 @@ export default function (pi: ExtensionAPI) {
 							0,
 						),
 					);
-
-					for (const r of details.results) {
-						const rIcon = isFailedResult(r) ? theme.fg("error", "✗") : theme.fg("success", "✓");
-						const displayItems = getDisplayItems(r.messages);
-						const finalOutput = getFinalOutput(r.messages);
-
-						container.addChild(new Spacer(1));
-						container.addChild(
-							new Text(`${theme.fg("muted", "─── ") + theme.fg("accent", formatAgentModelLabel(r))} ${rIcon}`, 0, 0),
-						);
-						container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", r.task), 0, 0));
-
-						// Show tool calls
-						for (const item of displayItems) {
-							if (item.type === "toolCall") {
-								container.addChild(
-									new Text(
-										theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)),
-										0,
-										0,
-									),
-								);
-							}
-						}
-
-						// Show final output as markdown
-						if (finalOutput) {
-							container.addChild(new Spacer(1));
-							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme));
-						}
-
-						const taskUsage = formatUsageStats(r.usage, r.model);
-						if (taskUsage) container.addChild(new Text(theme.fg("dim", taskUsage), 0, 0));
-					}
-
-					const usageStr = formatUsageStats(aggregateUsage(details.results));
-					if (usageStr) {
-						container.addChild(new Spacer(1));
-						container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0));
-					}
+					// A finished run has no exitCode:-1 rows, so the shared icon's
+					// running arm is unreachable here — output is byte-identical to
+					// the previous ✗/✓-only expanded logic.
+					appendExpandedRows(container, details.results, parallelRowOpts);
+					appendTotals(container, details.results);
 					return container;
 				}
 
 				// Collapsed view (or still running)
 				let text = `${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`;
-				for (const r of details.results) {
-					const rIcon =
-						r.exitCode === -1
-							? theme.fg("warning", "⏳")
-							: isFailedResult(r)
-								? theme.fg("error", "✗")
-								: theme.fg("success", "✓");
-					const displayItems = getDisplayItems(r.messages);
-					text += `\n\n${theme.fg("muted", "─── ")}${theme.fg("accent", formatAgentModelLabel(r))} ${rIcon}`;
-					if (displayItems.length === 0)
-						text += `\n${theme.fg("muted", r.exitCode === -1 ? "(running...)" : "(no output)")}`;
-					else text += `\n${renderDisplayItems(displayItems, 5)}`;
-				}
+				text += renderCollapsedRows(details.results, parallelRowOpts);
 				if (!isRunning) {
 					const usageStr = formatUsageStats(aggregateUsage(details.results));
 					if (usageStr) text += `\n\n${theme.fg("dim", `Total: ${usageStr}`)}`;
