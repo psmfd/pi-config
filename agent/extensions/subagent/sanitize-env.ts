@@ -38,6 +38,7 @@
  * ----------------------------------
  * - `PI_EXPERTISE_ALLOW_LOCALDEV_WRITE` — the create opt-in gate.
  * - `EXPERTISE_API_TOKEN` — the upstream pre-provisioned bearer/JWT.
+ * - `EXPERTISE_API_TOKEN_FILE` — a pointer to a mounted bearer/JWT.
  * - the caller's `EXPERTISE_API_SECRETS_FILE` path. Children receive a
  *   `/dev/null` sentinel instead so upstream extensions cannot fall back to
  *   the default token-bearing file. Canonical expertise is parent-fetched and
@@ -75,8 +76,9 @@ export interface SanitizeEnvOptions {
 const ALWAYS_DENY_EXACT: ReadonlySet<string> = new Set([
 	// Create gate: stripping enforces orchestrator-only expertise_create.
 	"PI_EXPERTISE_ALLOW_LOCALDEV_WRITE",
-	// ADR-0103 upstream bearer: canonical search stays parent-owned.
+	// ADR-0103/ADR-0121 upstream bearer: canonical search stays parent-owned.
 	"EXPERTISE_API_TOKEN",
+	"EXPERTISE_API_TOKEN_FILE",
 	// The caller-controlled value is replaced with a safe sentinel below.
 	"EXPERTISE_API_SECRETS_FILE",
 ]);

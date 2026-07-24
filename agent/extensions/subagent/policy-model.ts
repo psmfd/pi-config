@@ -53,6 +53,7 @@ export function selectSubagentPolicyModel(
 	candidates: readonly Candidate[],
 	matrix: RoutingMatrix | null,
 	localRole: LocalRole,
+	unavailable: ReadonlySet<string> = new Set<string>(),
 ): SubagentPolicySelection | null {
 	// Explicit wrapper pins remain authoritative; this seam covers unpinned
 	// wrappers and project-local agents so the parent chooses a concrete child
@@ -69,7 +70,7 @@ export function selectSubagentPolicyModel(
 	// highest-tier credentialed pick wins, cost dropping out. Falls through
 	// to the untiered cheapest-capable path when no tiered row qualifies.
 	if (agent.capabilityTier) {
-		const tierPick = resolveTierPick(pool, agent.capabilityTier, SUBAGENT_PROVIDER_TASK_TYPE, matrix, new Set<string>());
+		const tierPick = resolveTierPick(pool, agent.capabilityTier, SUBAGENT_PROVIDER_TASK_TYPE, matrix, unavailable);
 		if (tierPick) {
 			return {
 				model: candidateKey(tierPick),
@@ -78,7 +79,7 @@ export function selectSubagentPolicyModel(
 		}
 	}
 
-	const pick = resolveCapabilityPick(pool, SUBAGENT_PROVIDER_TASK_TYPE, matrix, new Set<string>(), null, {
+	const pick = resolveCapabilityPick(pool, SUBAGENT_PROVIDER_TASK_TYPE, matrix, unavailable, null, {
 		preferLocal: localEligible,
 	});
 	if (pick) {

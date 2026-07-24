@@ -95,11 +95,16 @@ snapshot and the reviewed routing matrix:
    registry/live gate. A dropped non-Copilot model may use the configured
    Copilot fallback rung before session-default behavior; the result note names
    the effective rung.
+6. ADR-0122 runtime failover applies only to an unpinned policy-selected child:
+   one structured 429 before any tool edge marks the exact model in the shared
+   session deny set and permits one deterministic reselection. Explicit pins,
+   session-default children, generic errors, and post-tool failures never replay.
 
 Parent and child policy share Copilot, Anthropic, and oMLX evidence from one
-frozen generation. Provider discovery is not repeated per child. Session start
-clears snapshot/provider caches; parent `/auto matrix refresh` explicitly
-replaces them in-process.
+frozen generation plus one process-local dynamic session deny set. Provider
+discovery is not repeated per child. Session start clears snapshot/provider and
+deny state; parent `/auto matrix refresh` explicitly replaces snapshot evidence
+and clears deny state only with `--retry-unavailable`.
 
 ## Child environment and prompt boundary
 
@@ -129,7 +134,9 @@ the parent UI without being added to final message accumulation.
 
 The effective model appears in invocation/progress/result labels. A selected
 model is known at spawn; otherwise the label remains `model pending` until child
-telemetry identifies it.
+telemetry identifies it. Runtime failover details retain attempted models,
+failed/fallback IDs, outcome, and snapshot generation/hash; rendering shows the
+model path while usage aggregates both bounded attempts.
 
 Collapsed rendering shows per-agent usage summaries. Expanded rendering shows
 full transcripts and tool previews. Parallel result text is capped at 50 KiB per

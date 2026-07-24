@@ -1414,6 +1414,27 @@ else
   err "payload-tuner: scripts/test-payload-tuner.sh missing or not executable; required check skipped"
 fi
 
+# --- 9b-worktree. worktree test suite (#859, ADR-0120) ---------------------
+info "Running worktree test suite"
+if [ -x scripts/test-worktree.sh ]; then
+  if wtt_output="$(scripts/test-worktree.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$wtt_output"
+    fi
+    ok "worktree: tests passed"
+  else
+    wtt_status=$?
+    printf '%s\n' "$wtt_output" >&2
+    if [ "$wtt_status" -eq 2 ]; then
+      err "worktree: test environment unavailable (node/npx/git); required check skipped"
+    else
+      err "worktree: test suite failed (exit $wtt_status)"
+    fi
+  fi
+else
+  err "worktree: scripts/test-worktree.sh missing or not executable; required check skipped"
+fi
+
 # --- 9b-token-cli. token-meter CLI self-test (ADR-0073) --------------------
 info "Running token-meter CLI self-test"
 if [ -x scripts/token-meter.sh ]; then

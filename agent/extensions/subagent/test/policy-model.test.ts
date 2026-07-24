@@ -67,6 +67,27 @@ test("untagged agent never rides local — matrix picks the non-local row", () =
   assert.equal(sel.model, "github-copilot/frontier");
 });
 
+test("session-unavailable models are excluded from policy reselection", () => {
+  const matrix: RoutingMatrix = {
+    v: 1,
+    lastReviewed: "2026-07-23",
+    models: {
+      "github-copilot/cheap": { capable: ["agentic-loop"] },
+      "openai-codex/fallback": { capable: ["agentic-loop"] },
+    },
+  };
+  const pool = [cand("github-copilot", "cheap", 1), cand("openai-codex", "fallback", 2)];
+  const sel = selectSubagentPolicyModel(
+    agentCfg(),
+    pool,
+    matrix,
+    "full",
+    new Set(["github-copilot/cheap"]),
+  );
+  assert.ok(sel && "model" in sel);
+  assert.equal(sel.model, "openai-codex/fallback");
+});
+
 test("the tag cannot override the structural bash floor", () => {
   const bashAgent = agentCfg({ localLlm: true, tools: ["read", "bash"] });
   assert.equal(isLocalForbiddenAgent(bashAgent), true);

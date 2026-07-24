@@ -34,6 +34,12 @@ import { clearCopilotCache } from "../shared/copilot-discovery.ts";
 import { readLocalRole, type LocalRole } from "../shared/local-role.ts";
 import { clearOmlxCache } from "../shared/omlx-discovery.ts";
 import { loadRoutingMatrix, type RoutingMatrix } from "../shared/routing-matrix.ts";
+import {
+	clearSessionUnavailable,
+	isProviderRateLimited,
+	markSessionUnavailable,
+	sessionUnavailableModels,
+} from "../shared/session-unavailable.ts";
 import { type AgentConfig, type AgentScope, discoverAgents, evaluateShadowGate } from "./agents.ts";
 import { selectSubagentPolicyModel } from "./policy-model.ts";
 import {
@@ -65,6 +71,21 @@ function formatTokens(count: number): string {
 function formatAgentModelLabel(result: { agent: string; model?: string; exitCode?: number }): string {
 	if (result.model) return `${result.agent} · ${result.model}`;
 	return result.exitCode === -1 ? `${result.agent} · model pending` : result.agent;
+}
+
+function formatRuntimeFailover(details: RuntimeFailoverDetails | undefined): string | undefined {
+	if (!details) return undefined;
+	const path = details.attemptedModels.join(" → ");
+	switch (details.outcome) {
+		case "succeeded":
+			return `runtime failover succeeded: ${path}`;
+		case "fallback-failed":
+			return `runtime failover failed: ${path}`;
+		case "no-alternate":
+			return `runtime failover unavailable: ${path} → no eligible alternate`;
+		case "not-retried-after-tool":
+			return `runtime failover refused after tool execution: ${path}`;
+	}
 }
 
 function formatUsageStats(
@@ -171,6 +192,31 @@ interface UsageStats {
 	turns: number;
 }
 
+type RuntimeFailoverOutcome =
+	| "succeeded"
+	| "fallback-failed"
+	| "no-alternate"
+	| "not-retried-after-tool";
+
+interface RuntimeFailoverDetails {
+	attemptedModels: string[];
+	failedModel: string;
+	fallbackModel?: string;
+	outcome: RuntimeFailoverOutcome;
+	snapshotGeneration?: number;
+	snapshotHash?: string;
+}
+
+interface RuntimeFailoverState {
+	attemptedModels: string[];
+	priorUsage: UsageStats;
+}
+
+interface SnapshotIdentity {
+	generation: number;
+	hash: string;
+}
+
 interface SingleResult {
 	agent: string;
 	agentSource: "user" | "project" | "unknown";
@@ -185,6 +231,8 @@ interface SingleResult {
 	step?: number;
 	/** Set when a frontmatter model pin was omitted by the spawn-time gate (#519). */
 	pinNote?: string;
+	/** Bounded runtime provider failover telemetry (#868). */
+	failover?: RuntimeFailoverDetails;
 	/**
 	 * LOCAL PATCH #6 (pi_config #611, epic #595): Form B expertise
 	 * candidates extracted from this child's assistant output. Absent
@@ -209,6 +257,16 @@ interface SubagentDetails {
 	 * group carries `bodyHashesByProposer` (variantCount > 1).
 	 */
 	expertiseCandidates?: ReturnType<typeof collectCoalescedExpertise>;
+}
+
+function addUsage(target: UsageStats, prior: UsageStats): void {
+	target.input += prior.input;
+	target.output += prior.output;
+	target.cacheRead += prior.cacheRead;
+	target.cacheWrite += prior.cacheWrite;
+	target.cost += prior.cost;
+	target.contextTokens = Math.max(target.contextTokens, prior.contextTokens);
+	target.turns += prior.turns;
 }
 
 function getFinalOutput(messages: Message[]): string {
@@ -411,6 +469,8 @@ async function runSingleAgent(
 	onUpdate: OnUpdateCallback | undefined,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
 	expertiseInjection?: string,
+	snapshotIdentity?: SnapshotIdentity,
+	failoverState?: RuntimeFailoverState,
 ): Promise<SingleResult> {
 	const agent = agents.find((a) => a.name === agentName);
 
@@ -428,7 +488,13 @@ async function runSingleAgent(
 		};
 	}
 
-	const policyModel = selectSubagentPolicyModel(agent, policyCandidates, policyMatrix, localRole);
+	const policyModel = selectSubagentPolicyModel(
+		agent,
+		policyCandidates,
+		policyMatrix,
+		localRole,
+		sessionUnavailableModels,
+	);
 	if (policyModel && "blockedReason" in policyModel) {
 		return {
 			agent: agentName,
@@ -436,13 +502,51 @@ async function runSingleAgent(
 			task,
 			exitCode: 1,
 			messages: [],
-			stderr: policyModel.blockedReason,
-			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+			stderr: failoverState
+				? `runtime failover stopped after ${failoverState.attemptedModels[0]}: ${policyModel.blockedReason}`
+				: policyModel.blockedReason,
+			usage: failoverState
+				? { ...failoverState.priorUsage }
+				: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
 			stopReason: "policy-blocked",
+			step,
+			...(failoverState
+				? {
+						pinNote: `runtime failover stopped after ${failoverState.attemptedModels[0]}: no eligible alternate model`,
+						failover: {
+							attemptedModels: failoverState.attemptedModels,
+							failedModel: failoverState.attemptedModels[0],
+							outcome: "no-alternate" as const,
+							...(snapshotIdentity ? { snapshotGeneration: snapshotIdentity.generation } : {}),
+							...(snapshotIdentity ? { snapshotHash: snapshotIdentity.hash } : {}),
+						},
+					}
+				: {}),
+		};
+	}
+	if (failoverState && !policyModel) {
+		return {
+			agent: agentName,
+			agentSource: agent.source,
+			task,
+			exitCode: 1,
+			messages: [],
+			stderr: `runtime failover stopped after ${failoverState.attemptedModels[0]}: no eligible alternate provider matrix model`,
+			usage: { ...failoverState.priorUsage },
+			stopReason: "policy-blocked",
+			pinNote: `runtime failover stopped after ${failoverState.attemptedModels[0]}: no eligible alternate model`,
+			failover: {
+				attemptedModels: failoverState.attemptedModels,
+				failedModel: failoverState.attemptedModels[0],
+				outcome: "no-alternate",
+				...(snapshotIdentity ? { snapshotGeneration: snapshotIdentity.generation } : {}),
+				...(snapshotIdentity ? { snapshotHash: snapshotIdentity.hash } : {}),
+			},
 			step,
 		};
 	}
-	const requestedModel = policyModel?.model ?? agent.model;
+	const policySelectedModel = policyModel?.model;
+	const requestedModel = policySelectedModel ?? agent.model;
 
 	// ADR-0094 backstop: the lever drops a LOCAL requested model (a wrapper
 	// `model: omlx/…` pin — the policy seam already respects the lever) before
@@ -522,6 +626,7 @@ async function runSingleAgent(
 		// --append-system-prompt.
 		args.push(buildInjectedTaskArg(task, expertiseInjection));
 		let wasAborted = false;
+		let sawToolExecution = false;
 
 		const exitCode = await new Promise<number>((resolve) => {
 			const invocation = getPiInvocation(args);
@@ -594,6 +699,7 @@ async function runSingleAgent(
 					event.type === "tool_execution_update" ||
 					event.type === "tool_execution_end"
 				) {
+					sawToolExecution = true;
 					emitUpdate();
 				}
 			};
@@ -633,6 +739,99 @@ async function runSingleAgent(
 
 		currentResult.exitCode = exitCode;
 		if (wasAborted) throw new Error("Subagent was aborted");
+
+		// LOCAL PATCH #17 (#868): one bounded runtime failover for an unpinned,
+		// policy-selected child that reports a structured provider-rate-limit
+		// error before any tool edge. Never replay after tools, for explicit pins,
+		// session-default children, stderr-only failures, or generic errors.
+		const policyRateLimited =
+			Boolean(policySelectedModel) &&
+			currentResult.stopReason === "error" &&
+			isProviderRateLimited(currentResult.errorMessage);
+		if (policyRateLimited && policySelectedModel) {
+			// A malformed registry key cannot be excluded deterministically; refuse
+			// retry rather than risk selecting and misreporting the same model.
+			if (!markSessionUnavailable(policySelectedModel)) return currentResult;
+			const attemptedModels = [...(failoverState?.attemptedModels ?? []), policySelectedModel];
+
+			if (failoverState) {
+				addUsage(currentResult.usage, failoverState.priorUsage);
+				currentResult.pinNote = [
+					currentResult.pinNote,
+					`runtime failover: ${failoverState.attemptedModels[0]} rate-limited before tools; fallback ${policySelectedModel} also failed`,
+				]
+					.filter((value): value is string => Boolean(value))
+					.join("; ");
+				currentResult.failover = {
+					attemptedModels,
+					failedModel: failoverState.attemptedModels[0],
+					fallbackModel: policySelectedModel,
+					outcome: "fallback-failed",
+					...(snapshotIdentity ? { snapshotGeneration: snapshotIdentity.generation } : {}),
+					...(snapshotIdentity ? { snapshotHash: snapshotIdentity.hash } : {}),
+				};
+				return currentResult;
+			}
+
+			if (sawToolExecution) {
+				currentResult.pinNote = [
+					currentResult.pinNote,
+					`runtime failover refused for ${policySelectedModel}: child emitted a tool event before the rate-limit error`,
+				]
+					.filter((value): value is string => Boolean(value))
+					.join("; ");
+				currentResult.failover = {
+					attemptedModels,
+					failedModel: policySelectedModel,
+					outcome: "not-retried-after-tool",
+					...(snapshotIdentity ? { snapshotGeneration: snapshotIdentity.generation } : {}),
+					...(snapshotIdentity ? { snapshotHash: snapshotIdentity.hash } : {}),
+				};
+				return currentResult;
+			}
+
+			return runSingleAgent(
+				defaultCwd,
+				agents,
+				availableModelIds,
+				copilotFallback,
+				servedOmlxIds,
+				policyCandidates,
+				policyMatrix,
+				localRole,
+				agentName,
+				task,
+				cwd,
+				step,
+				signal,
+				onUpdate,
+				makeDetails,
+				expertiseInjection,
+				snapshotIdentity,
+				{ attemptedModels, priorUsage: { ...currentResult.usage } },
+			);
+		}
+
+		if (failoverState && policySelectedModel) {
+			addUsage(currentResult.usage, failoverState.priorUsage);
+			const attemptedModels = [...failoverState.attemptedModels, policySelectedModel];
+			const outcome: RuntimeFailoverOutcome = isFailedResult(currentResult) ? "fallback-failed" : "succeeded";
+			currentResult.pinNote = [
+				currentResult.pinNote,
+				`runtime failover: ${failoverState.attemptedModels[0]} rate-limited before tools; retried once on ${policySelectedModel}${outcome === "succeeded" ? "" : " (failed)"}`,
+			]
+				.filter((value): value is string => Boolean(value))
+				.join("; ");
+			currentResult.failover = {
+				attemptedModels,
+				failedModel: failoverState.attemptedModels[0],
+				fallbackModel: policySelectedModel,
+				outcome,
+				...(snapshotIdentity ? { snapshotGeneration: snapshotIdentity.generation } : {}),
+				...(snapshotIdentity ? { snapshotHash: snapshotIdentity.hash } : {}),
+			};
+		}
+
 		// LOCAL PATCH #6 (pi_config #611): extract Form B EXPERTISE_CANDIDATES
 		// payloads from the child's final assistant output. Absent field when
 		// no blocks were emitted (the common case).
@@ -714,6 +913,7 @@ export default function (pi: ExtensionAPI) {
 	// Keep the canonical snapshot and all provider discovery caches fresh per
 	// session without relying on auto-router being installed.
 	pi.on("session_start", () => {
+		clearSessionUnavailable();
 		clearAvailabilitySnapshot();
 		clearCopilotCache();
 		clearAnthropicCache();
@@ -767,6 +967,9 @@ export default function (pi: ExtensionAPI) {
 				ctx as unknown as AvailabilitySnapshotContext,
 				signal ? { signal } : {},
 			).catch(() => null);
+			const snapshotIdentity = snapshot
+				? { generation: snapshot.generation, hash: snapshot.hash }
+				: undefined;
 			const effectiveAvailableIds = snapshot
 				? new Set(snapshot.candidates.map((candidate) => `${candidate.provider}/${candidate.id}`))
 				: null;
@@ -921,14 +1124,21 @@ export default function (pi: ExtensionAPI) {
 						chainUpdate,
 						makeDetails("chain"),
 						step.expertiseInjection,
+						snapshotIdentity,
 					);
 					results.push(result);
 
 					const isError = isFailedResult(result);
 					if (isError) {
 						const errorMsg = getResultOutput(result);
+						const failoverText = formatRuntimeFailover(result.failover);
 						return {
-							content: [{ type: "text", text: `Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}` }],
+							content: [
+								{
+									type: "text",
+									text: `${failoverText ? `[note] ${failoverText}\n\n` : ""}Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}`,
+								},
+							],
 							details: makeDetails("chain")(results),
 							isError: true,
 						};
@@ -1011,6 +1221,7 @@ export default function (pi: ExtensionAPI) {
 						},
 						makeDetails("parallel"),
 						t.expertiseInjection,
+						snapshotIdentity,
 					);
 					allResults[index] = result;
 					emitParallelUpdate();
@@ -1055,12 +1266,19 @@ export default function (pi: ExtensionAPI) {
 					onUpdate,
 					makeDetails("single"),
 					params.expertiseInjection,
+					snapshotIdentity,
 				);
 				const isError = isFailedResult(result);
 				if (isError) {
 					const errorMsg = getResultOutput(result);
+					const failoverText = formatRuntimeFailover(result.failover);
 					return {
-						content: [{ type: "text", text: `Agent ${result.stopReason || "failed"}: ${errorMsg}` }],
+						content: [
+							{
+								type: "text",
+								text: `${failoverText ? `[note] ${failoverText}\n\n` : ""}Agent ${result.stopReason || "failed"}: ${errorMsg}`,
+							},
+						],
 						details: makeDetails("single")([result]),
 						isError: true,
 					};
@@ -1169,6 +1387,8 @@ export default function (pi: ExtensionAPI) {
 					container.addChild(new Text(header, 0, 0));
 					if (isError && r.errorMessage)
 						container.addChild(new Text(theme.fg("error", `Error: ${r.errorMessage}`), 0, 0));
+					const failoverText = formatRuntimeFailover(r.failover);
+					if (failoverText) container.addChild(new Text(theme.fg("warning", failoverText), 0, 0));
 					container.addChild(new Spacer(1));
 					container.addChild(new Text(theme.fg("muted", "─── Task ───"), 0, 0));
 					container.addChild(new Text(theme.fg("dim", r.task), 0, 0));
@@ -1208,6 +1428,8 @@ export default function (pi: ExtensionAPI) {
 					text += `\n${renderDisplayItems(displayItems, COLLAPSED_ITEM_COUNT)}`;
 					if (displayItems.length > COLLAPSED_ITEM_COUNT) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
 				}
+				const failoverText = formatRuntimeFailover(r.failover);
+				if (failoverText) text += `\n${theme.fg("warning", failoverText)}`;
 				const usageStr = formatUsageStats(r.usage, r.model);
 				if (usageStr) text += `\n${theme.fg("dim", usageStr)}`;
 				return new Text(text, 0, 0);
@@ -1279,6 +1501,8 @@ export default function (pi: ExtensionAPI) {
 						),
 					);
 					container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", r.task), 0, 0));
+					const failoverText = formatRuntimeFailover(r.failover);
+					if (failoverText) container.addChild(new Text(theme.fg("warning", failoverText), 0, 0));
 
 					// Show tool calls
 					for (const item of displayItems) {
@@ -1309,6 +1533,8 @@ export default function (pi: ExtensionAPI) {
 				for (const r of results) {
 					const displayItems = getDisplayItems(r.messages);
 					text += `\n\n${theme.fg("muted", opts.rowPrefix(r))}${theme.fg("accent", formatAgentModelLabel(r))} ${opts.rowIcon(r)}`;
+					const failoverText = formatRuntimeFailover(r.failover);
+					if (failoverText) text += `\n${theme.fg("warning", failoverText)}`;
 					if (displayItems.length === 0) text += `\n${theme.fg("muted", opts.emptyText(r))}`;
 					else text += `\n${renderDisplayItems(displayItems, 5)}`;
 				}

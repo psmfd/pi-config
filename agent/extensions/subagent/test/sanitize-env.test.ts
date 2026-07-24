@@ -17,6 +17,7 @@ test("ALWAYS_DENY_EXACT includes expertise write and upstream bearer controls", 
   for (const key of [
     "PI_EXPERTISE_ALLOW_LOCALDEV_WRITE",
     "EXPERTISE_API_TOKEN",
+    "EXPERTISE_API_TOKEN_FILE",
     "EXPERTISE_API_SECRETS_FILE",
   ]) {
     assert.equal(__testing.ALWAYS_DENY_EXACT.has(key), true, `${key} missing`);
@@ -42,15 +43,17 @@ test("default mode: PI_EXPERTISE_ALLOW_LOCALDEV_WRITE is stripped even when set"
   assert.equal(out.PI_EXPERTISE_ALLOW_LOCALDEV_WRITE, undefined);
 });
 
-test("default mode: upstream bearer is stripped and secrets discovery is blocked", () => {
+test("default mode: upstream bearer sources are stripped and secrets discovery is blocked", () => {
   const out = buildSanitizedEnv({
     PATH: "/usr/bin",
     EXPERTISE_API_BASE_URL: "https://expertise.lan.example",
     EXPERTISE_API_TOKEN: "header.payload.signature",
+    EXPERTISE_API_TOKEN_FILE: "/run/secrets/expertise-oidc-token",
     EXPERTISE_API_SECRETS_FILE: "/home/tester/.config/expertise-api/secrets.env",
   });
   assert.equal(out.EXPERTISE_API_BASE_URL, "https://expertise.lan.example");
   assert.equal(out.EXPERTISE_API_TOKEN, undefined);
+  assert.equal(out.EXPERTISE_API_TOKEN_FILE, undefined);
   assert.equal(
     out.EXPERTISE_API_SECRETS_FILE,
     __testing.BLOCKED_EXPERTISE_SECRETS_FILE,
@@ -210,6 +213,7 @@ test("strict mode: ALWAYS_DENY beats every allowlist rule", () => {
       PATH: "/usr/bin",
       PI_EXPERTISE_ALLOW_LOCALDEV_WRITE: "1",
       EXPERTISE_API_TOKEN: "header.payload.signature",
+      EXPERTISE_API_TOKEN_FILE: "/run/secrets/expertise-oidc-token",
       EXPERTISE_API_SECRETS_FILE: "/tmp/secret.env",
     },
     {
@@ -217,6 +221,7 @@ test("strict mode: ALWAYS_DENY beats every allowlist rule", () => {
       extraAllow: [
         "PI_EXPERTISE_ALLOW_LOCALDEV_WRITE",
         "EXPERTISE_API_TOKEN",
+        "EXPERTISE_API_TOKEN_FILE",
         "EXPERTISE_API_SECRETS_FILE",
       ], // hostile caller
       extraAllowPrefixes: ["PI_", "EXPERTISE_"], // hostile caller
@@ -225,6 +230,7 @@ test("strict mode: ALWAYS_DENY beats every allowlist rule", () => {
   assert.equal(out.PATH, "/usr/bin");
   assert.equal(out.PI_EXPERTISE_ALLOW_LOCALDEV_WRITE, undefined);
   assert.equal(out.EXPERTISE_API_TOKEN, undefined);
+  assert.equal(out.EXPERTISE_API_TOKEN_FILE, undefined);
   assert.equal(
     out.EXPERTISE_API_SECRETS_FILE,
     __testing.BLOCKED_EXPERTISE_SECRETS_FILE,

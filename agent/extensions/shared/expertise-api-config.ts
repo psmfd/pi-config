@@ -7,21 +7,23 @@
  *
  *   1. legacy local development: `PI_EXPERTISE_*` from process env plus the
  *      extension-owned `.env.local`; API-key authenticated and loopback-only;
- *   2. upstream bearer contract: `EXPERTISE_API_BASE_URL` +
- *      `EXPERTISE_API_TOKEN` from process env plus the upstream fixed
- *      `~/.config/expertise-api/secrets.env` file (or the explicit
- *      `EXPERTISE_API_SECRETS_FILE` override). Remote origins require HTTPS.
+ *   2. upstream bearer contract: `EXPERTISE_API_BASE_URL` plus exactly one of
+ *      literal `EXPERTISE_API_TOKEN` or mounted `EXPERTISE_API_TOKEN_FILE`,
+ *      from process env plus the upstream fixed `~/.config/expertise-api/secrets.env`
+ *      file (or the explicit `EXPERTISE_API_SECRETS_FILE` override). Remote
+ *      origins require HTTPS.
  *
  * The upstream token is pre-provisioned by the operator (for the LAN static
- * OIDC profile, via agent-expertise-api's `scripts/mint_token.py`). This client
- * never mints, refreshes, or writes credentials. Endpoint/credential values
+ * OIDC profile, via agent-expertise-api's `scripts/mint_token.py`). A mounted
+ * token is re-read on each config build so external rotation is observed. This
+ * client never mints, refreshes, or writes credentials. Endpoint/credential values
  * are never read from project settings or discovered by walking repository
  * directories.
  */
 
-import { readFileSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readFileSync, readSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 export const DEFAULT_BASE_URL = "http://127.0.0.1:8080";
 export const DEFAULT_UPSTREAM_SECRETS_FILE = join(
@@ -36,7 +38,9 @@ export const ENV_API_KEY = "PI_EXPERTISE_API_KEY";
 export const ENV_ALLOW_WRITE = "PI_EXPERTISE_ALLOW_LOCALDEV_WRITE";
 export const ENV_UPSTREAM_BASE_URL = "EXPERTISE_API_BASE_URL";
 export const ENV_UPSTREAM_TOKEN = "EXPERTISE_API_TOKEN";
+export const ENV_UPSTREAM_TOKEN_FILE = "EXPERTISE_API_TOKEN_FILE";
 export const ENV_UPSTREAM_SECRETS_FILE = "EXPERTISE_API_SECRETS_FILE";
+export const MAX_UPSTREAM_TOKEN_FILE_BYTES = 64 * 1024;
 
 export type ExpertiseAuthMode = "local-api-key" | "upstream-bearer";
 
@@ -57,6 +61,25 @@ export type ConfigResult =
   | { ok: false; reason: string };
 
 type EnvMap = Record<string, string | undefined>;
+type TokenFileReader = (path: string) => string;
+
+/**
+ * Read one mounted bearer token without following shell syntax from an env
+ * file. Opening before fstat keeps the size/type check and read on one file
+ * descriptor even when a projected-secret symlink rotates concurrently.
+ */
+function readMountedToken(path: string): string {
+  const fd = openSync(path, "r");
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) throw new Error("not-regular");
+    const buffer = Buffer.alloc(MAX_UPSTREAM_TOKEN_FILE_BYTES + 1);
+    const bytesRead = readSync(fd, buffer, 0, buffer.length, 0);
+    return buffer.subarray(0, bytesRead).toString("utf8");
+  } finally {
+    closeSync(fd);
+  }
+}
 
 /** `process.env` value wins over `.env.local`, which wins over the fallback. */
 function resolve(
@@ -96,6 +119,7 @@ export function buildClientConfig(
   processEnv: EnvMap,
   legacyFileEnv: Record<string, string>,
   upstreamFileEnv: Record<string, string> = {},
+  tokenFileReader: TokenFileReader = readMountedToken,
 ): ConfigResult {
   const allowWrite =
     resolve(ENV_ALLOW_WRITE, processEnv, legacyFileEnv, "0") === "1";
@@ -111,16 +135,70 @@ export function buildClientConfig(
     upstreamFileEnv,
     "",
   );
-  const upstreamSelected = upstreamBaseUrl.length > 0 || upstreamToken.length > 0;
+  const upstreamTokenFile = resolve(
+    ENV_UPSTREAM_TOKEN_FILE,
+    processEnv,
+    upstreamFileEnv,
+    "",
+  );
+  const upstreamSelected =
+    upstreamBaseUrl.length > 0 ||
+    upstreamToken.length > 0 ||
+    upstreamTokenFile.length > 0;
 
   if (upstreamSelected) {
-    if (upstreamBaseUrl.length === 0 || upstreamToken.length === 0) {
+    if (upstreamToken.length > 0 && upstreamTokenFile.length > 0) {
       return {
         ok: false,
         reason:
-          `${ENV_UPSTREAM_BASE_URL} and ${ENV_UPSTREAM_TOKEN} must both be set ` +
-          `for the upstream bearer profile.`,
+          `${ENV_UPSTREAM_TOKEN} and ${ENV_UPSTREAM_TOKEN_FILE} are mutually exclusive; ` +
+          `configure exactly one upstream bearer source.`,
       };
+    }
+    if (
+      upstreamBaseUrl.length === 0 ||
+      (upstreamToken.length === 0 && upstreamTokenFile.length === 0)
+    ) {
+      return {
+        ok: false,
+        reason:
+          `${ENV_UPSTREAM_BASE_URL} and exactly one of ${ENV_UPSTREAM_TOKEN} or ` +
+          `${ENV_UPSTREAM_TOKEN_FILE} must be set for the upstream bearer profile.`,
+      };
+    }
+
+    let resolvedUpstreamToken = upstreamToken;
+    if (upstreamTokenFile.length > 0) {
+      if (!isAbsolute(upstreamTokenFile)) {
+        return {
+          ok: false,
+          reason: `${ENV_UPSTREAM_TOKEN_FILE} must be an absolute path.`,
+        };
+      }
+      let mountedToken: string;
+      try {
+        mountedToken = tokenFileReader(upstreamTokenFile);
+      } catch {
+        return {
+          ok: false,
+          reason: `${ENV_UPSTREAM_TOKEN_FILE} is unreadable or is not a regular file.`,
+        };
+      }
+      if (Buffer.byteLength(mountedToken, "utf8") > MAX_UPSTREAM_TOKEN_FILE_BYTES) {
+        return {
+          ok: false,
+          reason:
+            `${ENV_UPSTREAM_TOKEN_FILE} exceeds the ` +
+            `${MAX_UPSTREAM_TOKEN_FILE_BYTES}-byte limit.`,
+        };
+      }
+      resolvedUpstreamToken = mountedToken.trim();
+      if (resolvedUpstreamToken.length === 0) {
+        return {
+          ok: false,
+          reason: `${ENV_UPSTREAM_TOKEN_FILE} contains no bearer token.`,
+        };
+      }
     }
 
     let parsed: URL;
@@ -152,7 +230,7 @@ export function buildClientConfig(
       ok: true,
       config: {
         baseUrl: parsed.origin,
-        bearerToken: upstreamToken,
+        bearerToken: resolvedUpstreamToken,
         authMode: "upstream-bearer",
         allowWrite,
       },
@@ -230,9 +308,10 @@ export function loadUpstreamSecrets(processEnv: EnvMap): Record<string, string> 
 export function authFailureGuidance(config: ClientConfig): string {
   if (config.authMode !== "upstream-bearer") return "";
   return (
-    ` The configured ${ENV_UPSTREAM_TOKEN} may be expired or invalid; ` +
-    `mint a replacement with agent-expertise-api scripts/mint_token.py and ` +
-    `update the operator-owned secrets file.`
+    ` The configured ${ENV_UPSTREAM_TOKEN} or ${ENV_UPSTREAM_TOKEN_FILE} ` +
+    `credential may be expired or invalid; for LAN static OIDC, mint a ` +
+    `replacement with agent-expertise-api scripts/mint_token.py, then replace ` +
+    `the operator-provisioned token and verify its issuer, audience, and scopes.`
   );
 }
 

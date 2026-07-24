@@ -107,6 +107,49 @@ test.after(async () => {
 });
 
 // -----------------------------------------------------------------------------
+// Runtime provider failover telemetry (#868 / ADR-0122).
+// -----------------------------------------------------------------------------
+
+test("single rendering surfaces the failed and fallback model path", () => {
+	const result = makeResult({
+		model: "openai-codex/fallback",
+		failover: {
+			attemptedModels: ["github-copilot/quota-dead", "openai-codex/fallback"],
+			failedModel: "github-copilot/quota-dead",
+			fallbackModel: "openai-codex/fallback",
+			outcome: "succeeded",
+		},
+	});
+	for (const expanded of [false, true]) {
+		const out = renderText(
+			{ mode: "single", agentScope: "user", projectAgentsDir: null, results: [result] },
+			expanded,
+		);
+		assert.match(out, /runtime failover succeeded: github-copilot\/quota-dead → openai-codex\/fallback/);
+	}
+});
+
+test("parallel row rendering explains post-tool retry refusal", () => {
+	const result = makeResult({
+		exitCode: 1,
+		stopReason: "error",
+		errorMessage: "429 quota exceeded",
+		failover: {
+			attemptedModels: ["github-copilot/quota-dead"],
+			failedModel: "github-copilot/quota-dead",
+			outcome: "not-retried-after-tool",
+		},
+	});
+	for (const expanded of [false, true]) {
+		const out = renderText(
+			{ mode: "parallel", agentScope: "user", projectAgentsDir: null, results: [result] },
+			expanded,
+		);
+		assert.match(out, /runtime failover refused after tool execution: github-copilot\/quota-dead/);
+	}
+});
+
+// -----------------------------------------------------------------------------
 // Streaming (mid-run) states — previously untested (#794 item 2).
 // -----------------------------------------------------------------------------
 

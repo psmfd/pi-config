@@ -78,10 +78,10 @@ EXT_MIRRORS=(
   pi-token-meter@v0.2.3
   pi-gh-identity-guard@v0.1.2
   pi-compaction-optimizer@v0.3.1
-  pi-expertise-client@v0.5.0
+  pi-expertise-client@v0.6.0
   pi-indexing@v0.1.4
   pi-context-manager@v0.1.3
-  pi-auto-router@v0.10.0
+  pi-auto-router@v0.11.0
 )
 
 DIR="${HOME}/projects/pi-config"

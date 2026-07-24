@@ -21,7 +21,8 @@
 #   EXPERTISE_AUDIT_HEAD_SHA   head sha (default: git rev-parse HEAD)
 #   EXPERTISE_AUDIT_TELEMETRY_DIR  optional telemetry dir to consistency-check
 #   PI_EXPERTISE_API_BASE_URL / PI_EXPERTISE_API_KEY  legacy local profile
-#   EXPERTISE_API_BASE_URL / EXPERTISE_API_TOKEN      upstream bearer profile
+#   EXPERTISE_API_BASE_URL + exactly one of EXPERTISE_API_TOKEN or
+#     EXPERTISE_API_TOKEN_FILE                        upstream bearer profile
 #   EXPERTISE_API_SECRETS_FILE optional upstream secrets-file override
 
 set -uo pipefail
@@ -59,6 +60,7 @@ fi
 UPSTREAM_SECRETS_FILE="${EXPERTISE_API_SECRETS_FILE:-${HOME:-}/.config/expertise-api/secrets.env}"
 if [ -z "${PI_EXPERTISE_API_KEY:-}" ] && \
    [ -z "${EXPERTISE_API_TOKEN:-}" ] && \
+   [ -z "${EXPERTISE_API_TOKEN_FILE:-}" ] && \
    [ ! -f agent/extensions/expertise-client/.env.local ] && \
    { [ -z "$UPSTREAM_SECRETS_FILE" ] || [ ! -f "$UPSTREAM_SECRETS_FILE" ]; }; then
   skipline "no local API key or upstream bearer-token configuration"

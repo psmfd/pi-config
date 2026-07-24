@@ -94,6 +94,22 @@ gh release view "$NEW_TAG" --repo earendil-works/pi --json assets \
 
 Also consider whether `agent/extensions/subagent/` should re-pair to the new pi source snapshot. A runtime-pin bump does not automatically require a subagent-extension bump, but a widening version gap should be audited.
 
+#### Full pi-component bump checklist (ADR-0119)
+
+A pi version bump is **not** just what `bump-pi-runtime.sh` touches. The bump's scope is every surface below; a bump PR (or its tracking issue) accounts for each row — bumped here, tracked as a follow-up issue, or explicitly deferred with a reason. The 2026-07-20 brace-expansion advisory (GHSA-3jxr-9vmj-r5cp) is the motivating incident: the alert surface was the mirror packaging layer no tooling covered, and Dependabot cannot move it (nested exact pins under the pi packages only shift when the pi packages themselves bump).
+
+| # | Surface | Where | Moved by |
+|---|---|---|---|
+| 1 | psmfd/pi mirror source | `psmfd/pi` (sync from upstream) | Manual sync per [`psmfd-pi-mirror-sync.md`](psmfd-pi-mirror-sync.md), then release per [`psmfd-pi-release-runbook.md`](psmfd-pi-release-runbook.md); includes security-patch reconciliation (keep/retire/refresh, `.psmfd/patches/manifest.yml`) |
+| 2 | Vendored runtime binary | `agent/vendor/pi/{VERSION,CHECKSUMS,README.md}` | `bump-pi-runtime.sh` (attestation-first) |
+| 3 | npm quad pin — pi-coding-agent, pi-agent-core, pi-ai, pi-tui | `scripts/lib/extension-deps.sh` `EXTENSION_DEPS_PI_AGENT_VERSION` | `bump-pi-runtime.sh` (drift-fix target `extension-deps`) |
+| 4 | Settings example coupled pin | `agent/settings.example.json` | `bump-pi-runtime.sh` (drift-fix target `settings-example`) |
+| 5 | Subagent vendored snapshot pairing | `agent/extensions/subagent/` + `PATCH_MANIFEST.json` | `bump-pi-runtime.sh` emits the audit signal; re-pair itself is human-gated Procedure B (see § Subagent extension) |
+| 6 | Mirror packaging deps — each public extension mirror's committed `package.json`/lockfile (`@earendil-works/*` dev-deps; pi-auto-router also has a **runtime** `pi-ai` dep) | The 12 `psmfd/pi-*` mirror repos (preserved by overlay sync, NOT managed from pi_config) | Manual per-repo bump + lockfile regen (`npm install --package-lock-only --ignore-scripts`); automation decision tracked in #856 |
+| 7 | agent-expertise-api extension lockfile | `psmfd/agent-expertise-api` `.pi/extensions/expertise-api/package-lock.json` | Manual bump in that repo |
+
+Rows 2–5 are the automated pi_config-local rows; `pi-runtime-bump.yml` bot PRs cover them. Reviewing a bot bump PR means checking rows 1 and 6–7 have an owner (done, issue, or deferred-with-reason).
+
 The two **runtime-coupled surfaces** (`scripts/lib/extension-deps.sh` and `agent/settings.example.json`) will be picked up by `pin-drift-check.yml`'s next run — which fires on `sync-mirrors` completion (belt), or the Monday cron (suspenders), whichever comes first. The workflow opens a bump PR against `dev` that advances both pins to the new runtime pin (stripped to bare `X.Y.Z`). You can also fix locally in the same runtime-bump PR by running:
 
 ```sh

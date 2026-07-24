@@ -215,7 +215,9 @@ the next section.
 
 Same sources and profile selection as expertise-client, resolved through the
 shared parser. The upstream profile reads process env then
-`~/.config/expertise-api/secrets.env` (or `EXPERTISE_API_SECRETS_FILE`). The
+`~/.config/expertise-api/secrets.env` (or `EXPERTISE_API_SECRETS_FILE`) and
+accepts exactly one literal `EXPERTISE_API_TOKEN` or absolute
+`EXPERTISE_API_TOKEN_FILE`; mounted files are re-read for each search. The
 legacy profile reads process env then the client `.env.local`; the gate checks
 both the source-tree sibling and the git-package install locations, fixing the
 packaged layout where no sibling client directory exists. When both `.env.local`
@@ -229,8 +231,11 @@ Config comes only from `process.env` plus fixed operator-owned files (the
 legacy expertise-client `.env.local` and upstream
 `~/.config/expertise-api/secrets.env`); the shared parser keeps legacy API
 keys loopback-only and requires HTTPS for non-loopback bearer endpoints.
-Project or repository content can never steer the endpoint, and the extension
-imports no create-capable module — the only write path is the fail-closed
+Mounted-token paths must be absolute, bounded, and operator-configured; shell
+substitution in env files is never evaluated. The bearer value and its file
+pointer remain parent-owned and are stripped from spawned children. Project or
+repository content can never steer the endpoint, and the extension imports no
+create-capable module — the only write path is the fail-closed
 `expertise_create` gate.
 
 Every model-controlled free-text surface is scanned with the shared secret

@@ -111,8 +111,13 @@ A release found bad after publication:
 
 1. Update the consuming config (`pi_config` vendor pin or install channel) to
    the new tag where applicable.
-2. Note the release on the umbrella tracking issue (pi_config#355 while open).
-3. File follow-ups for any WARN-level oddities observed in the run logs.
+2. Walk the full pi-component bump checklist in
+   [`vendor-updates.md`](vendor-updates.md) § Pi runtime (ADR-0119) — the
+   consumer bump covers only the pi_config-local rows; the mirror packaging
+   deps and sibling-repo lockfiles need their own owner (done, issue, or
+   deferred-with-reason).
+3. Note the release on the umbrella tracking issue (pi_config#355 while open).
+4. File follow-ups for any WARN-level oddities observed in the run logs.
 
 ## Failure triage quick reference
 

@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.80.10",
+  "lastChangelogVersion": "0.81.1",
   "defaultProvider": "github-copilot",
   "defaultModel": "gpt-5.5",
   "defaultThinkingLevel": "medium",
@@ -18,6 +18,16 @@
     },
     "tokenMeter": {
       "enabled": false
+    },
+    "worktree": {
+      "enabled": true,
+      "reportOnly": false,
+      "baseRef": null,
+      "snapshotIntervalMs": 300000,
+      "writeExemptions": [
+        "NEXT_SESSION*.md",
+        ".review/**"
+      ]
     }
   },
   "enabledModels": [
