@@ -97,8 +97,8 @@
 //           "name": "coding-workhorse — GLM-4.7-Flash (local oMLX)",
 //           "reasoning": false,
 //           "input": ["text"],
-//           "contextWindow": 131072,
-//           "maxTokens": 16384,
+//           "contextWindow": 76800,
+//           "maxTokens": 8192,
 //           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
 //         }
 //       ]
@@ -106,9 +106,12 @@
 //   }
 //
 // `id` is the oMLX ALIAS (= mlx-community/GLM-4.7-Flash-6bit, the sole pinned
-// resident — local-llm ADR-010). contextWindow is deliberately held to 131072
-// inside the 202K native window: oMLX concurrency is prefill-activation-bound
-// and falls as context grows (ADR-009/010). Cost 0 ⇒ auto-router renders the
+// resident — local-llm ADR-010). contextWindow is deliberately held to 76800,
+// far inside the 202K native window: the oMLX prefill memory guard rejects
+// single prefills above ~84K tokens at its observed idle dynamic ceiling
+// (66 GB; KV+SDPA ~0.433 GB/1K tokens — local-llm ADR-011, #889 ladder
+// benchmark), so pi must compact before the guard 400s; concurrency is also
+// prefill-activation-bound (ADR-009/010). Cost 0 ⇒ auto-router renders the
 // hint "local/free"; the cost-0 routing policy is #363's scope.
 {
   "providers": {}

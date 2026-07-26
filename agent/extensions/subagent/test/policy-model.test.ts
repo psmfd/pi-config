@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import type { Candidate } from "../../shared/candidates.ts";
 import type { RoutingMatrix } from "../../shared/routing-matrix.ts";
+import { createSessionDeny } from "../../shared/session-unavailable.ts";
 import type { AgentConfig } from "../agents.ts";
 import { applyLocalRole } from "../model-pin.ts";
 import { isLocalForbiddenAgent, selectSubagentPolicyModel } from "../policy-model.ts";
@@ -327,4 +328,71 @@ test("combined local-llm + capability-tier: tier pick may select local ONLY with
   );
   assert.ok(localOnly && "model" in localOnly);
   assert.equal(localOnly.model, "omlx/coding-workhorse");
+});
+
+// --- ADR-0126 (#902): the provider breaker reaches unpinned child policy ----
+
+test("a broken provider is excluded from the unpinned child pool, siblings included", () => {
+  const deny = createSessionDeny();
+  deny.markProvider("github-copilot", { source: "operator", reason: "operator disable" });
+  const matrix: RoutingMatrix = {
+    v: 1,
+    lastReviewed: "2026-07-26",
+    models: {
+      "github-copilot/frontier": { capable: ["agentic-loop"] },
+      "github-copilot/cheap": { capable: ["agentic-loop"] },
+      "openai-codex/gpt": { capable: ["agentic-loop"] },
+    },
+  };
+  const pool = [
+    cand("github-copilot", "cheap", 0.5),
+    cand("github-copilot", "frontier", 3),
+    cand("openai-codex", "gpt", 2),
+  ];
+  const pick = selectSubagentPolicyModel(agentCfg(), pool, matrix, "full", deny);
+  assert.ok(pick && "model" in pick);
+  // `github-copilot/cheap` is the cheapest capable row and was never probed —
+  // the breaker still excludes it, which is the whole point of #902.
+  assert.equal(pick.model, "openai-codex/gpt");
+});
+
+test("a broken provider is excluded from a tiered child pick too", () => {
+  const deny = createSessionDeny();
+  deny.mark("github-copilot/frontier", { rateLimited: true });
+  deny.mark("github-copilot/other", { rateLimited: true });
+  const matrix: RoutingMatrix = {
+    v: 1,
+    lastReviewed: "2026-07-26",
+    models: {
+      "github-copilot/frontier": { capable: ["agentic-loop"], tier: "frontier" },
+      "openai-codex/gpt": { capable: ["agentic-loop"], tier: "frontier" },
+    },
+  };
+  const pick = selectSubagentPolicyModel(
+    agentCfg({ capabilityTier: "frontier" }),
+    [cand("github-copilot", "frontier", 3), cand("openai-codex", "gpt", 2)],
+    matrix,
+    "full",
+    deny,
+  );
+  assert.ok(pick && "model" in pick);
+  assert.equal(pick.model, "openai-codex/gpt");
+});
+
+test("a local-forbidden wrapper is blocked, not defaulted, when its only provider is broken", () => {
+  const deny = createSessionDeny();
+  deny.markProvider("github-copilot");
+  const matrix: RoutingMatrix = {
+    v: 1,
+    lastReviewed: "2026-07-26",
+    models: { "github-copilot/frontier": { capable: ["agentic-loop"] } },
+  };
+  const pick = selectSubagentPolicyModel(
+    agentCfg({ tools: ["read", "bash"] }),
+    [cand("github-copilot", "frontier", 3)],
+    matrix,
+    "full",
+    deny,
+  );
+  assert.ok(pick && "blockedReason" in pick);
 });

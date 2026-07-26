@@ -47,6 +47,14 @@ export interface CopilotFallback {
   readonly liveEnabledIds?: ReadonlySet<string> | null;
   /** Static registry presence before live filtering (ADR-0104 diagnostics). */
   readonly registryAvailable?: boolean;
+  /**
+   * ADR-0126 (#903): bounded reason the rung is out of service this session —
+   * set when the `github-copilot` provider breaker is tripped. When present,
+   * {@link resolveModelPin} skips the rung entirely and names this reason in
+   * its note, instead of substituting a model the breaker already excluded.
+   * Absent (the normal case) leaves the rung's behavior untouched.
+   */
+  readonly disabledReason?: string;
 }
 
 /** True when the pin is `provider/id`-qualified (a non-edge slash exists). */
@@ -167,6 +175,8 @@ function pinAbsenceReason(pin: string, servedOmlxIds?: ReadonlySet<string> | nul
  * - Qualified pin, registry unreadable (null) → passed through (fail open —
  *   the fallback rung is never consulted without registry data).
  * - Qualified pin present in the available set → passed through.
+ * - Qualified pin absent, Copilot rung disabled by the ADR-0126 breaker
+ *   (`fallback.disabledReason` set) → the session default, naming the breaker.
  * - Qualified pin absent → the Copilot rung (#536): substitute
  *   `fallback.modelId` when the dropped pin is not itself a github-copilot
  *   model (a dropped Copilot pin means the whole rung is dead or the id is
@@ -192,6 +202,22 @@ export function resolveModelPin(
   }
   const reason = pinAbsenceReason(pin, servedOmlxIds);
   const pinProvider = pin.slice(0, pin.indexOf("/"));
+  // ADR-0126 (#903): a tripped Copilot breaker takes the rung out of service.
+  // Substituting a github-copilot model the breaker already excluded would
+  // spend a child spawn on a provider known to be dead this session.
+  //
+  // Scoped to the case where the rung would actually have been consulted (the
+  // `pinProvider !== "github-copilot"` condition below): a DROPPED Copilot pin
+  // never reaches the rung, so reporting "the rung is disabled" for it would
+  // name the wrong cause. In practice a Copilot pin with the breaker tripped is
+  // refused upstream by the spawn-time gate and never arrives here at all.
+  if (fallback?.disabledReason && pinProvider !== "github-copilot") {
+    return {
+      modelArg: null,
+      note: `${reason}, and the Copilot fallback rung is disabled this session (${fallback.disabledReason}); the subagent ran on the session default model`,
+      kind: "default",
+    };
+  }
   const fb = fallback && isQualifiedPin(fallback.modelId) ? fallback : undefined;
   if (fb && pinProvider !== "github-copilot") {
     const bareId = fb.modelId.slice(fb.modelId.indexOf("/") + 1);

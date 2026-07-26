@@ -152,7 +152,13 @@ export function projectSearchResults(text: string): CanonicalResultEntry[] {
 		if (row === null || typeof row !== "object" || Array.isArray(row)) continue;
 		const r = row as Record<string, unknown>;
 		const id = str(r.id);
-		const domain = str(r.domain);
+		// domain/source/sourceVersion/tags became response-hygiene wrappers in
+		// agent-expertise-api v2.0 ({contentClass,value,...}), joining title/body.
+		// freeText() unwraps the wrapper AND falls through to str() for the old
+		// primitive shape, so this is version-agnostic (works pre- and post-v2.0).
+		// Using str() here would return null for domain — a required field — and
+		// silently drop EVERY result row under v2.0.
+		const domain = freeText(r.domain);
 		const title = freeText(r.title);
 		const body = freeText(r.body);
 		const entryType = str(r.entryType);
@@ -169,12 +175,12 @@ export function projectSearchResults(text: string): CanonicalResultEntry[] {
 			sourceVersion?: string;
 			tags?: string[];
 		} = { id, domain, title, body, entryType, severity };
-		const source = str(r.source);
+		const source = freeText(r.source);
 		if (source !== null) entry.source = source;
-		const sourceVersion = str(r.sourceVersion);
+		const sourceVersion = freeText(r.sourceVersion);
 		if (sourceVersion !== null) entry.sourceVersion = sourceVersion;
 		if (Array.isArray(r.tags)) {
-			const tags = r.tags.map(str).filter((t): t is string => t !== null);
+			const tags = r.tags.map(freeText).filter((t): t is string => t !== null);
 			if (tags.length > 0) entry.tags = tags;
 		}
 		out.push(entry);

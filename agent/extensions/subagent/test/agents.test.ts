@@ -58,6 +58,26 @@ test("wrong-typed guard-profile degrades to no profile, not a crash", () => {
 	});
 });
 
+test("context-files parses exact values only; typos land on the suppressed default", () => {
+	withTempHome((dir) => {
+		write(dir, "cf-absent.md", "name: cf-absent\ndescription: d");
+		write(dir, "cf-inherit.md", "name: cf-inherit\ndescription: d\ncontext-files: inherit");
+		write(dir, "cf-none.md", "name: cf-none\ndescription: d\ncontext-files: none");
+		write(dir, "cf-typo.md", "name: cf-typo\ndescription: d\ncontext-files: inherti");
+		write(dir, "cf-bool.md", "name: cf-bool\ndescription: d\ncontext-files: true");
+		const { agents } = discoverAgents(process.cwd(), "user");
+		const byName = new Map(agents.map((a) => [a.name, a]));
+		// LOCAL PATCH #18 (pi_config #889, ADR-0124): absent and unrecognized
+		// values are indistinguishable from `none` downstream — the spawn path
+		// treats anything but the literal "inherit" as suppress.
+		assert.equal(byName.get("cf-absent")?.contextFiles, undefined);
+		assert.equal(byName.get("cf-inherit")?.contextFiles, "inherit");
+		assert.equal(byName.get("cf-none")?.contextFiles, "none");
+		assert.equal(byName.get("cf-typo")?.contextFiles, undefined);
+		assert.equal(byName.get("cf-bool")?.contextFiles, undefined);
+	});
+});
+
 test("one malformed wrapper never aborts discovery for the rest of the catalog", () => {
 	withTempHome((dir) => {
 		// Unparseable YAML frontmatter.

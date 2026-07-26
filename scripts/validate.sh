@@ -190,6 +190,13 @@ for f in agent/agents/*.md; do
   elif [ "$mode" != "read-only" ] && [ "$mode" != "interactive" ]; then
     err "agents: $f frontmatter mode='$mode' is not one of: read-only, interactive"
   fi
+  # context-files (ADR-0124, #889): optional; the subagent extension treats any
+  # value other than the literal 'inherit' as the suppressed default, so an
+  # unrecognized value is a silent no-op — fail it here instead.
+  cfiles="$(fm_value "$fm" context-files)"
+  if fm_has_key "$fm" context-files && [ "$cfiles" != "none" ] && [ "$cfiles" != "inherit" ]; then
+    err "agents: $f frontmatter context-files='$cfiles' is not one of: none, inherit"
+  fi
   ok "agents: $agent_name"
 done
 
@@ -1204,6 +1211,27 @@ else
   err "web-fetch: scripts/test-web-fetch.sh missing or not executable; required check skipped"
 fi
 
+# --- 9a-quinquies-github-read. typed GitHub/Git read suites (#875, ADR-0123) ---
+info "Running github-read test suite"
+if [ -x scripts/test-github-read.sh ]; then
+  if ghr_output="$(scripts/test-github-read.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$ghr_output"
+    fi
+    ok "github-read: tests passed"
+  else
+    ghr_status=$?
+    printf '%s\n' "$ghr_output" >&2
+    if [ "$ghr_status" -eq 2 ]; then
+      err "github-read: test environment unavailable (node/npx); required check skipped"
+    else
+      err "github-read: test suite failed (exit $ghr_status)"
+    fi
+  fi
+else
+  err "github-read: scripts/test-github-read.sh missing or not executable; required check skipped"
+fi
+
 # --- 9b-cache-meter. cache-meter test suite (#338, ADR-0034) ---------------
 info "Running cache-meter test suite"
 if [ -x scripts/test-cache-meter.sh ]; then
@@ -1391,6 +1419,27 @@ if [ -x scripts/test-token-meter.sh ]; then
   fi
 else
   err "token-meter: scripts/test-token-meter.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-prefill-meter. prefill-meter test suite (#891, ADR-0125) -----------
+info "Running prefill-meter test suite"
+if [ -x scripts/test-prefill-meter.sh ]; then
+  if pfm_output="$(scripts/test-prefill-meter.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$pfm_output"
+    fi
+    ok "prefill-meter: tests passed"
+  else
+    pfm_status=$?
+    printf '%s\n' "$pfm_output" >&2
+    if [ "$pfm_status" -eq 2 ]; then
+      err "prefill-meter: test environment unavailable (node/npx); required check skipped"
+    else
+      err "prefill-meter: test suite failed (exit $pfm_status)"
+    fi
+  fi
+else
+  err "prefill-meter: scripts/test-prefill-meter.sh missing or not executable; required check skipped"
 fi
 
 # --- 9b-payload-tuner. payload-tuner test suite (#769, ADR-0106) -----------

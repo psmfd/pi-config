@@ -49,6 +49,16 @@ export interface AgentConfig {
 	 * first-party wrappers; the pin remains only as a documented escape hatch.
 	 */
 	capabilityTier?: "frontier" | "capable" | "fast";
+	/**
+	 * LOCAL PATCH #18 (pi_config #889, ADR-0124): child context-file policy.
+	 * `context-files: inherit` frontmatter lets the child load AGENTS.md /
+	 * CLAUDE.md context files as the orchestrator does. Absent or `none`
+	 * (or any unrecognized value) spawns the child with --no-context-files:
+	 * the global AGENTS.md orchestration playbook and project CLAUDE.md are
+	 * leaf-irrelevant dead weight (~9K tokens) in every cold prefill, and
+	 * default-suppress keeps new wrappers lean without per-file annotation.
+	 */
+	contextFiles?: "none" | "inherit";
 	systemPrompt: string;
 	source: "user" | "project";
 	filePath: string;
@@ -148,6 +158,17 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 				tierTrimmed === "frontier" || tierTrimmed === "capable" || tierTrimmed === "fast"
 					? tierTrimmed
 					: undefined;
+			// LOCAL PATCH #18 (pi_config #889, ADR-0124): exact-value-only, same
+			// posture as capability-tier — only a literal `inherit` opts a child
+			// back into context-file loading; typos land on the suppressed default
+			// rather than half-arming a bigger prefill.
+			const contextFilesRaw: unknown = frontmatter["context-files"];
+			const contextFilesTrimmed =
+				typeof contextFilesRaw === "string" ? contextFilesRaw.trim() : undefined;
+			const contextFiles =
+				contextFilesTrimmed === "inherit" || contextFilesTrimmed === "none"
+					? contextFilesTrimmed
+					: undefined;
 
 			agents.push({
 				name: frontmatter.name,
@@ -173,6 +194,8 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 				localLlm: localLlm || undefined,
 				// LOCAL PATCH #13 (pi_config #656): capability-tier quality floor.
 				capabilityTier,
+				// LOCAL PATCH #18 (pi_config #889, ADR-0124): context-file policy.
+				contextFiles,
 				systemPrompt: body,
 				source,
 				filePath,

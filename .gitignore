@@ -31,6 +31,9 @@ agent/extensions/cache-meter/turns.jsonl
 # never committed (#543).
 agent/extensions/auto-router/task-types.jsonl
 agent/extensions/*/sessions/
+# prefill-meter's spawn-segment ledger (ADR-0125) — fixed-basename runtime
+# telemetry like turns.jsonl above; written via the ~/.pi symlink.
+agent/extensions/prefill-meter/spawns.jsonl
 
 # gh-identity-guard local-only, per-developer config (ADR-0022/0027). Never
 # committed — these carry per-host GitHub identity choices, not shared content.

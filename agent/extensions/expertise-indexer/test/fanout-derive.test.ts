@@ -183,6 +183,36 @@ test("projects upstream response-hygiene free-text wrappers", () => {
 	assert.equal(rows[0].body, "wrapped body");
 });
 
+test("projects v2.0 hygiene wrappers on domain/source/sourceVersion/tags", () => {
+	// agent-expertise-api v2.0 wraps the sibling free-text fields too. domain is a
+	// required field: extracting it with the primitive-only helper would return null
+	// and silently drop every row. This asserts the whole row survives and every
+	// wrapped field is unwrapped to its inner value.
+	const wrap = (value: string) => ({ contentClass: "user-supplied-free-text", value });
+	const rows = projectSearchResults(
+		JSON.stringify({
+			results: [
+				{
+					id: "e-1",
+					domain: wrap("ansible"),
+					title: wrap("Handler semantics"),
+					body: wrap("Handlers fire once per play."),
+					entryType: "Caveat",
+					severity: "Warning",
+					source: wrap("pi-session"),
+					sourceVersion: wrap("2"),
+					tags: [wrap("handlers"), wrap("play")],
+				},
+			],
+		}),
+	);
+	assert.equal(rows.length, 1, "a v2.0 wrapped row must survive, not be dropped");
+	assert.equal(rows[0].domain, "ansible");
+	assert.equal(rows[0].source, "pi-session");
+	assert.equal(rows[0].sourceVersion, "2");
+	assert.deepEqual(rows[0].tags, ["handlers", "play"]);
+});
+
 test("drops rows missing required fields; coerces primitives", () => {
 	const rows = projectSearchResults(
 		JSON.stringify({

@@ -38,7 +38,8 @@ import {
 	clearSessionUnavailable,
 	isProviderRateLimited,
 	markSessionUnavailable,
-	sessionUnavailableModels,
+	providerOf,
+	sessionDeny,
 } from "../shared/session-unavailable.ts";
 import { type AgentConfig, type AgentScope, discoverAgents, evaluateShadowGate } from "./agents.ts";
 import { selectSubagentPolicyModel } from "./policy-model.ts";
@@ -83,6 +84,8 @@ function formatRuntimeFailover(details: RuntimeFailoverDetails | undefined): str
 			return `runtime failover failed: ${path}`;
 		case "no-alternate":
 			return `runtime failover unavailable: ${path} → no eligible alternate`;
+		case "provider-breaker":
+			return `runtime failover unavailable: ${path} → provider disabled for this session`;
 		case "not-retried-after-tool":
 			return `runtime failover refused after tool execution: ${path}`;
 	}
@@ -196,6 +199,10 @@ type RuntimeFailoverOutcome =
 	| "succeeded"
 	| "fallback-failed"
 	| "no-alternate"
+	// ADR-0126 (#903): reselection found no alternate specifically because the
+	// failed model's provider breaker tripped — distinct from a plain
+	// no-alternate (matrix coverage gap), and actionable via /auto providers.
+	| "provider-breaker"
 	| "not-retried-after-tool";
 
 interface RuntimeFailoverDetails {
@@ -205,6 +212,29 @@ interface RuntimeFailoverDetails {
 	outcome: RuntimeFailoverOutcome;
 	snapshotGeneration?: number;
 	snapshotHash?: string;
+}
+
+/** Provider id of the ADR-0080 Copilot fallback rung (#903). */
+const COPILOT_PROVIDER = "github-copilot";
+
+/**
+ * LOCAL PATCH #19 (pi_config #903, ADR-0126): classify why ADR-0122 reselection
+ * came back empty. "The matrix has no other capable row" and "the failed
+ * model's provider is disabled for this session" are the same terminal state
+ * but call for completely different operator action, so the telemetry names
+ * which one happened rather than reporting a bare no-alternate.
+ */
+function failoverExhausted(failedModel: string | undefined): {
+	outcome: "no-alternate" | "provider-breaker";
+	detail: string;
+} {
+	const provider = failedModel ? providerOf(failedModel) : "";
+	const record = provider ? sessionDeny.providerRecord(provider) : null;
+	if (!record) return { outcome: "no-alternate", detail: "no eligible alternate model" };
+	return {
+		outcome: "provider-breaker",
+		detail: `no eligible alternate model — provider "${provider}" is disabled for this session (${record.source}: ${record.reason}); re-enable it with \`/auto providers enable ${provider}\``,
+	};
 }
 
 interface RuntimeFailoverState {
@@ -441,6 +471,11 @@ async function readMaxDepthSetting(): Promise<number> {
  * Build the Copilot fallback rung from the same frozen availability generation
  * used for provider-matrix selection. A registry/snapshot failure (`null`)
  * keeps the historical fail-open pin behavior.
+ *
+ * Deliberately breaker-FREE: this runs once per tool call, before any child
+ * spawns, so a breaker state captured here would go stale the moment a child
+ * tripped one mid-fan-out. {@link liveCopilotRung} re-derives that at the point
+ * of use instead.
  */
 async function buildCopilotFallback(
 	availableModelIds: ReadonlySet<string> | null,
@@ -450,6 +485,28 @@ async function buildCopilotFallback(
 	if (availableModelIds === null || registryModelIds === null) return undefined;
 	const modelId = await readFallbackModelSetting();
 	return { modelId, liveEnabledIds, registryAvailable: registryModelIds.has(modelId) };
+}
+
+/**
+ * LOCAL PATCH #19 (pi_config #903, ADR-0126): stamp the rung with the CURRENT
+ * breaker state, read at spawn time rather than at fan-out setup.
+ *
+ * The staleness this closes is not hypothetical: `buildCopilotFallback` is
+ * called once per tool call (before the parallel wave starts), so a breaker
+ * that trips partway through a fan-out — say child 1 auto-escalating on its
+ * second rate-limited model — would leave children 2..N consulting a rung the
+ * breaker had already excluded, substituting a dead Copilot model and burning
+ * exactly the quota this arc exists to protect.
+ *
+ * Carried through as DISABLED rather than dropped: returning `undefined` would
+ * be indistinguishable from "no registry data" and would silently degrade a
+ * dropped pin to the session default with no explanation.
+ */
+function liveCopilotRung(fallback: CopilotFallback | undefined): CopilotFallback | undefined {
+	if (!fallback) return undefined;
+	const breaker = sessionDeny.providerRecord(COPILOT_PROVIDER);
+	if (!breaker) return fallback;
+	return { ...fallback, disabledReason: `provider breaker: ${breaker.source}, ${breaker.reason}` };
 }
 
 async function runSingleAgent(
@@ -493,9 +550,10 @@ async function runSingleAgent(
 		policyCandidates,
 		policyMatrix,
 		localRole,
-		sessionUnavailableModels,
+		sessionDeny,
 	);
 	if (policyModel && "blockedReason" in policyModel) {
+		const exhausted = failoverExhausted(failoverState?.attemptedModels[0]);
 		return {
 			agent: agentName,
 			agentSource: agent.source,
@@ -512,11 +570,11 @@ async function runSingleAgent(
 			step,
 			...(failoverState
 				? {
-						pinNote: `runtime failover stopped after ${failoverState.attemptedModels[0]}: no eligible alternate model`,
+						pinNote: `runtime failover stopped after ${failoverState.attemptedModels[0]}: ${exhausted.detail}`,
 						failover: {
 							attemptedModels: failoverState.attemptedModels,
 							failedModel: failoverState.attemptedModels[0],
-							outcome: "no-alternate" as const,
+							outcome: exhausted.outcome,
 							...(snapshotIdentity ? { snapshotGeneration: snapshotIdentity.generation } : {}),
 							...(snapshotIdentity ? { snapshotHash: snapshotIdentity.hash } : {}),
 						},
@@ -525,20 +583,21 @@ async function runSingleAgent(
 		};
 	}
 	if (failoverState && !policyModel) {
+		const exhausted = failoverExhausted(failoverState.attemptedModels[0]);
 		return {
 			agent: agentName,
 			agentSource: agent.source,
 			task,
 			exitCode: 1,
 			messages: [],
-			stderr: `runtime failover stopped after ${failoverState.attemptedModels[0]}: no eligible alternate provider matrix model`,
+			stderr: `runtime failover stopped after ${failoverState.attemptedModels[0]}: ${exhausted.detail}`,
 			usage: { ...failoverState.priorUsage },
 			stopReason: "policy-blocked",
-			pinNote: `runtime failover stopped after ${failoverState.attemptedModels[0]}: no eligible alternate model`,
+			pinNote: `runtime failover stopped after ${failoverState.attemptedModels[0]}: ${exhausted.detail}`,
 			failover: {
 				attemptedModels: failoverState.attemptedModels,
 				failedModel: failoverState.attemptedModels[0],
-				outcome: "no-alternate",
+				outcome: exhausted.outcome,
 				...(snapshotIdentity ? { snapshotGeneration: snapshotIdentity.generation } : {}),
 				...(snapshotIdentity ? { snapshotHash: snapshotIdentity.hash } : {}),
 			},
@@ -553,6 +612,41 @@ async function runSingleAgent(
 	// the pin gate, regardless of registry/liveness state. Visible via a note.
 	const roleGate = applyLocalRole(requestedModel, availableModelIds, localRole);
 
+	// LOCAL PATCH #19 (pi_config #903, ADR-0126): an explicit wrapper `model:`
+	// pin naming a provider whose session breaker is tripped fails CLOSED —
+	// spawning it would burn a child on a provider the operator (or accumulated
+	// quota evidence) already took out of service, and silently substituting a
+	// different model would violate the pin.
+	//
+	// Deliberately PROVIDER scope only. ADR-0122 decided explicit pins remain
+	// authoritative and return their own failure; that stands for model-scope
+	// denies. A provider breaker is a different claim — "nothing from here works
+	// this session" — and is operator-reversible via /auto providers enable.
+	//
+	// Evaluated AFTER applyLocalRole so a pin the lever already neutralized is
+	// not reported as breaker-refused; and only for `agent.model`, since a
+	// policy-selected model can never come from a denied provider (the policy
+	// seam filters on the same state). The two are mutually exclusive:
+	// selectSubagentPolicyModel returns null whenever `agent.model` is set.
+	const explicitPin = agent.model !== undefined ? roleGate.requestedModel : undefined;
+	const pinnedProvider = explicitPin ? providerOf(explicitPin) : "";
+	const pinBreaker = pinnedProvider ? sessionDeny.providerRecord(pinnedProvider) : null;
+	if (explicitPin && pinBreaker) {
+		const detail = `model pin "${explicitPin}" refused: provider "${pinnedProvider}" is disabled for this session (${pinBreaker.source}: ${pinBreaker.reason}, ${pinBreaker.at})`;
+		return {
+			agent: agentName,
+			agentSource: agent.source,
+			task,
+			exitCode: 1,
+			messages: [],
+			stderr: `${detail}. Re-enable it with \`/auto providers enable ${pinnedProvider}\`, or change the wrapper pin.`,
+			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+			stopReason: "policy-blocked",
+			pinNote: detail,
+			step,
+		};
+	}
+
 	// Spawn-time pin gate (#519): a slash-qualified pin only reaches argv when
 	// its exact provider/id is credentialed here — pi hard-exits a child whose
 	// --model names an unregistered provider (e.g. omlx on a host without the
@@ -561,11 +655,27 @@ async function runSingleAgent(
 	// absent here and takes the drop path. A dropped non-Copilot pin tries the
 	// Copilot fallback rung (#536, ADR-0080) before the session default;
 	// `servedOmlxIds` only shapes the note wording (server-down vs not-installed).
-	const pin = resolveModelPin(roleGate.requestedModel, roleGate.availableIds, copilotFallback, servedOmlxIds);
+	// LOCAL PATCH #19: `liveCopilotRung` re-reads the breaker HERE, per spawn —
+	// see its doc comment for the mid-fan-out staleness that closes.
+	const pin = resolveModelPin(
+		roleGate.requestedModel,
+		roleGate.availableIds,
+		liveCopilotRung(copilotFallback),
+		servedOmlxIds,
+	);
 
 	const args: string[] = ["--mode", "json", "-p", "--no-session"];
 	if (pin.modelArg) args.push("--model", pin.modelArg);
 	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
+	// LOCAL PATCH #18 (pi_config #889, ADR-0124): default-suppress context-file
+	// injection in children. Without this flag every spawn cold-prefills the
+	// global AGENTS.md orchestration playbook + project CLAUDE.md (~9K tokens)
+	// that leaf subagents are forbidden to act on anyway — the dominant driver
+	// of the oMLX Memory Guard fan-out collapse (local-llm ADR-010). Only an
+	// explicit `context-files: inherit` wrapper opts back in. Deliberately NOT
+	// conditioned on the resolved model: per-wrapper-static argv keeps a
+	// wrapper's prefill byte-identical across routing/failover outcomes.
+	if (agent.contextFiles !== "inherit") args.push("--no-context-files");
 
 	let tmpPromptDir: string | null = null;
 	let tmpPromptPath: string | null = null;

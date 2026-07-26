@@ -106,7 +106,11 @@ test("lazy trigger: first primary write creates + locks the worktree, then denie
   const wt = join(s.repo, ".worktrees", "sid-e2e");
   // git reports realpath'd toplevels, so mutation targets are canonical paths.
   const wtReal = join(await fs.realpath(s.repo), ".worktrees", "sid-e2e");
-  assert.match(result.reason, new RegExp("Re-issue this write against: .*sid-e2e/src/app\\.ts".replace(/\//g, "\\/")));
+  // No `/`-escaping pass: `/` is not a metacharacter to the RegExp
+  // CONSTRUCTOR (only to regex literals), so escaping it was a no-op that also
+  // left the real metacharacters untouched — which is what CodeQL's
+  // js/incomplete-sanitization flagged. The pattern below is byte-equivalent.
+  assert.match(result.reason, new RegExp("Re-issue this write against: .*sid-e2e/src/app\\.ts"));
   assert.equal(existsSync(wt), true);
 
   const listed = await git(s.repo, "worktree", "list", "--porcelain");

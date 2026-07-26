@@ -53,7 +53,7 @@ Read-only specialists exposed via the `subagent` tool. The catalog below is **ge
 | `docs-expert` | read-only | Documentation review and authoring guidance — best practices, content style, curation, Mermaid diagrams (general and Azure DevOps flavors). Research-heavy advisor. Spawns isolated subprocess. |
 | `dotnet-expert` | read-only | .NET specialist — .NET 10 LTS SDK, cross-platform development (macOS, Linux, Windows, containers), ASP.NET Core minimal APIs, worker services, dependency injection, EF Core, testing, publishing, and security best practices. Read-only advisor. Spawns isolated subprocess. |
 | `gh-cli-expert` | interactive | GitHub CLI (`gh`) specialist — issues, PRs, releases, runs, repos, projects, api. Translates intent into correct `gh` invocations. Spawns isolated subprocess. |
-| `gitflow-expert` | interactive | Git workflow specialist — branching strategies, PR workflows, release processes, commit conventions, git CLI for read-only inspection. Spawns isolated subprocess. |
+| `gitflow-expert` | read-only | Git workflow specialist — branching strategies, PR workflows, releases, commit conventions, typed local Git and GitHub read-only inspection. Spawns isolated subprocess. |
 | `helm-expert` | read-only | Helm specialist — Helm 3 chart authoring, values merge semantics, values layering, hooks, template debugging, chart structure, dependency management, release management, and helm diff validation. Read-only advisor with constrained bash for read-only helm operations. Spawns isolated subprocess. |
 | `hyperv-expert` | read-only | Hyper-V specialist — root partition / VMBus architecture, nested virtualization (`Set-VMProcessor -ExposeVirtualizationExtensions`), WSL2 utility-VM plumbing, Windows Hypervisor Platform (WHPX), Hyper-V PowerShell module, VBS / HVCI / Credential Guard suppression of L2 hypervisors, and CI runner virtualization capabilities. Read-only advisor. Spawns isolated subprocess. |
 | `linter` | read-only | Multi-tool lint runner with auto-fix awareness — shellcheck, markdownlint, yamllint, eslint, ruff, dotnet format. Reports issues; does not modify files. Spawns isolated subprocess. |
@@ -136,6 +136,8 @@ agent/
     ├── gh-identity-guard/        # Blocks mutating gh/git push tool calls on gh-CLI identity drift (ADR-0022/0027)
     ├── artifact-handoff/         # Registers `artifact_review` tool for Tier 3 (.review/) payloads
     ├── web-fetch/                # Registers `web_fetch` tool against first-party-docs allowlist (ADR-0015)
+    ├── github-read/              # Dynamic typed read-only GitHub domain tools (ADR-0123)
+    ├── git-read/                 # Fixed-operation credential-free local Git inspection (ADR-0123)
     ├── compaction-optimizer/     # Compaction how + when: archive + pruning + deterministic/hybrid modes w/ shrink ladder, prefix-cache-aware when-policy (ADR-0019/0107/0108/0109)
     ├── expertise-client/         # Dual-profile agent-expertise-api client: local API key or upstream bearer/static OIDC; search + guarded create (ADR-0103)
     └── …                         # Representative subset — see agent/extensions/README.md for the full catalog (context-manager, auto-router, token-meter, cache-meter, indexing, payload-tuner, expertise-fanout-gate, …)

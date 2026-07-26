@@ -158,7 +158,6 @@ test("integration pin: every first-party wrapper declares env-strict: true", () 
 test("integration pin: credential-bearing wrappers carry their justified env-allow entries", () => {
   const expectations: Record<string, RegExp> = {
     "gh-cli-expert.md": /^env-allow: GH_TOKEN, GITHUB_TOKEN$/m,
-    "gitflow-expert.md": /^env-allow: GH_TOKEN, GITHUB_TOKEN, SSH_AUTH_SOCK$/m,
     "work-item-management-expert.md": /^env-allow: GH_TOKEN, GITHUB_TOKEN, AZURE_DEVOPS_EXT_PAT$/m,
     "checkmarx-expert.md": /^env-allow: CX_APIKEY, CX_CLIENT_SECRET$/m,
     "helm-expert.md": /^env-allow: KUBECONFIG$/m,
@@ -167,4 +166,11 @@ test("integration pin: credential-bearing wrappers carry their justified env-all
     const content = readFileSync(join(REPO_AGENTS_DIR, file), "utf-8");
     assert.match(content, pattern, `${file} env-allow drifted from the justified set`);
   }
+});
+
+test("integration pin: gitflow uses typed read tools without credential env allowances", () => {
+  const content = readFileSync(join(REPO_AGENTS_DIR, "gitflow-expert.md"), "utf-8");
+  assert.match(content, /^tools: read, grep, find, ls, git_read, github_read, web_fetch$/m);
+  assert.doesNotMatch(content, /^env-allow:/m);
+  assert.doesNotMatch(content, /^tools:.*\bbash\b/m);
 });

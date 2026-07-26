@@ -97,7 +97,7 @@ Subscribe via `pi.on(eventName, async (event, ctx) => { ... })`. Most events are
 
 | Event | Fires when | Interceptable |
 |---|---|---|
-| `before_agent_start` | Just before each agent run begins | **Can inject message, modify system prompt** |
+| `before_agent_start` | Just before each agent run begins. Payload carries `prompt`, the composed `systemPrompt`, and the structured `systemPromptOptions` (`appendSystemPrompt`, `contextFiles`, `skills`). Two first-party consumers: `auto-router` (routing, ADR-0031) and `prefill-meter` (inert segment measurement, ADR-0125) — a new consumer must document coexistence with both | **Can inject message, modify system prompt** |
 | `agent_start` / `agent_end` | Run starts / ends | No |
 | `turn_start` / `turn_end` | Each LLM turn within a run | No |
 | `message_start` / `message_update` / `message_end` | Message lifecycle | No |

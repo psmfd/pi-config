@@ -43,6 +43,20 @@ writeFileSync(
 		"",
 	].join("\n"),
 );
+// LOCAL PATCH #18 (pi_config #889, ADR-0124): opt-in wrapper for the
+// context-file inheritance path.
+writeFileSync(
+	join(agentDir, "agents", "itest-inherit.md"),
+	[
+		"---",
+		"name: itest-inherit",
+		"description: spawn-integration inherit-context test agent",
+		"tools: read, grep",
+		"context-files: inherit",
+		"---",
+		"",
+	].join("\n"),
+);
 
 const capturePath = join(baseDir, "captured-argv.jsonl");
 const fakePiPath = join(baseDir, "fake-pi.mjs");
@@ -204,6 +218,36 @@ test("depth guard: a garbage inherited depth reads as 0 and does not block", asy
 	}
 });
 
+// LOCAL PATCH #18 (pi_config #889, ADR-0124): context-files: inherit is the
+// only value that omits --no-context-files from the child argv. Runs before
+// the injection test, which owns the baseDir teardown.
+test("context-files: inherit opts the child back into context-file loading", async () => {
+	const result = await tool!.execute(
+		"tc-context-inherit",
+		{ agent: "itest-inherit", task: "inherit task" },
+		undefined,
+		() => {
+			/* streaming updates not asserted */
+		},
+		ctx,
+	);
+	assert.notEqual((result as { isError?: boolean }).isError, true);
+	const argvLines = readFileSync(capturePath, "utf8")
+		.split("\n")
+		.filter((l) => l.trim().length > 0)
+		.map((l) => JSON.parse(l) as string[]);
+	assert.equal(argvLines.length, 1);
+	assert.equal(
+		argvLines[0].includes("--no-context-files"),
+		false,
+		"inherit wrapper spawns without --no-context-files",
+	);
+	// Reset the capture files so the injection test below still sees exactly
+	// its own two children.
+	writeFileSync(capturePath, "");
+	writeFileSync(depthCapturePath, "");
+});
+
 test("expertiseInjection reaches each child's argv through the real dispatch", async (tc) => {
 	tc.after(async () => {
 		process.argv[1] = realArgv1;
@@ -242,6 +286,12 @@ test("expertiseInjection reaches each child's argv through the real dispatch", a
 	for (const argv of argvLines) {
 		const idx = argv.indexOf("--append-system-prompt");
 		assert.equal(idx, -1, "blank-system-prompt wrapper spawns without --append-system-prompt");
+		// LOCAL PATCH #18 (pi_config #889, ADR-0124): default-suppress — a
+		// wrapper without context-files frontmatter spawns with the flag.
+		assert.ok(
+			argv.includes("--no-context-files"),
+			"default wrapper spawns with --no-context-files",
+		);
 	}
 
 	// #841 (ADR-0118): both children were stamped depth 1 (orchestrator is 0).

@@ -266,6 +266,17 @@ test("strict mode: CACHE_METER_CONFIG survives (cache-ratio subagent coverage, A
   assert.equal(out.CACHE_METER_CONFIG, "phase3-run");
 });
 
+test("strict mode: PREFILL_METER_CONFIG survives (spawn-time segment measurement, ADR-0125)", () => {
+  // #891: prefill-meter measures the CHILD's composed prompt, so the config
+  // var that arms the recorder must reach env-strict children — exact-key
+  // carve-out, same category as CACHE_METER_CONFIG above.
+  const out = buildSanitizedEnv(
+    { PATH: "/usr/bin", PREFILL_METER_CONFIG: "probe-3-after" },
+    { strict: true },
+  );
+  assert.equal(out.PREFILL_METER_CONFIG, "probe-3-after");
+});
+
 test("strict mode: secret-suffixed TOKEN_METER_ names are still stripped", () => {
   // The prefix allow must not become a secret smuggling channel:
   // STRICT_DENY_PATTERNS runs before the allowlist check.

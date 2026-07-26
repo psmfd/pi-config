@@ -29,7 +29,7 @@ In `-p` mode pi also reads piped stdin and merges it into the initial prompt. Ou
 | `--no-extensions` | (none) | No | Children currently inherit all extensions. |
 | `--no-skills` | (none) | No | Children inherit skills. Explicit `--skill <path>` still loads even with `--no-skills`. |
 | `--no-prompt-templates` | (none) | No | |
-| `--no-context-files`, `-nc` | (none) | No | Disables `AGENTS.md` and `CLAUDE.md` discovery. |
+| `--no-context-files`, `-nc` | (none) | Yes — default on every child spawn unless the wrapper declares `context-files: inherit` (LOCAL PATCH #18, ADR-0124, #889) | Disables `AGENTS.md` and `CLAUDE.md` discovery. |
 | `--system-prompt <text>` | string | No | Replaces the default prompt. |
 | `--append-system-prompt <path>` | prompt-file path | **Yes** | The wrapper body is written to a mode-0600 temporary file; only its path enters argv. Context files and skills still append normally. |
 | `-e`, `--extension <source>` | path / npm / git ref | No | Repeatable. |

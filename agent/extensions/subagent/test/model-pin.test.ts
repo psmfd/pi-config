@@ -229,3 +229,69 @@ test("servedOmlxIds never shapes a non-omlx pin's note (provider guard)", () => 
   assert.match(r.note ?? "", /not available on this host/);
   assert.doesNotMatch(r.note ?? "", /oMLX server/);
 });
+
+// --- ADR-0126 (#903): the breaker takes the Copilot rung out of service -----
+
+const DISABLED_FB: CopilotFallback = {
+  ...FB,
+  liveEnabledIds: new Set(["gpt-5-mini"]),
+  registryAvailable: true,
+  disabledReason: "provider breaker: operator, operator disable",
+};
+
+test("a disabled rung is skipped even when the fallback is registry-present and live", () => {
+  const r = resolveModelPin("omlx/coding-workhorse", REG_WITH_FB, DISABLED_FB);
+  assert.equal(r.modelArg, null, "must not spawn onto a breaker-excluded provider");
+  assert.equal(r.kind, "default");
+  // The note explains WHY the rung was skipped, not just that it was.
+  assert.match(r.note ?? "", /omlx\/coding-workhorse/, "still names the dropped pin");
+  assert.match(r.note ?? "", /Copilot fallback rung is disabled this session/);
+  assert.match(r.note ?? "", /provider breaker: operator, operator disable/);
+  assert.match(r.note ?? "", /ran on the session default/);
+  // It must not read as a tier-gating or availability problem — those are
+  // different diagnoses with different fixes.
+  assert.doesNotMatch(r.note ?? "", /tier-gated/);
+  assert.doesNotMatch(r.note ?? "", /is not available either/);
+});
+
+test("the disabled rung outranks the auto-escalated wording path too", () => {
+  const r = resolveModelPin("omlx/coding-workhorse", REG_WITH_FB, {
+    ...DISABLED_FB,
+    disabledReason: "provider breaker: auto-escalation, 2 distinct models rate-limited this session",
+  });
+  assert.equal(r.kind, "default");
+  assert.match(r.note ?? "", /auto-escalation, 2 distinct models rate-limited/);
+});
+
+test("a disabled rung never overrides a resolvable pin", () => {
+  const r = resolveModelPin("omlx/coding-workhorse", AVAILABLE, DISABLED_FB);
+  assert.equal(r.modelArg, "omlx/coding-workhorse");
+  assert.equal(r.kind, "pinned");
+  assert.equal(r.note, null);
+});
+
+test("a disabled rung leaves the registry-unreadable fail-open path intact", () => {
+  const r = resolveModelPin("omlx/coding-workhorse", null, DISABLED_FB);
+  assert.equal(r.modelArg, "omlx/coding-workhorse");
+  assert.equal(r.kind, "pinned");
+});
+
+test("a dropped COPILOT pin is unaffected: the rung was never its ladder", () => {
+  // The rung only ever substitutes for a NON-copilot pin, so "the rung is
+  // disabled" would name the wrong cause here. (Upstream, the spawn-time gate
+  // refuses this combination before resolveModelPin sees it.)
+  const r = resolveModelPin("github-copilot/retired-id", REG_WITH_FB, DISABLED_FB);
+  assert.equal(r.modelArg, null);
+  assert.equal(r.kind, "default");
+  assert.doesNotMatch(r.note ?? "", /rung is disabled/);
+  assert.match(r.note ?? "", /ran on the session default/);
+});
+
+test("an absent disabledReason preserves the rung verbatim", () => {
+  const r = resolveModelPin("omlx/coding-workhorse", REG_WITH_FB, {
+    ...DISABLED_FB,
+    disabledReason: undefined,
+  });
+  assert.equal(r.modelArg, "github-copilot/gpt-5-mini");
+  assert.equal(r.kind, "fallback");
+});

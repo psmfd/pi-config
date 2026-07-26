@@ -88,6 +88,7 @@ When `scope: "both"`, project entries override global entries with the same `nam
 | `env-allow-prefix` | No | comma-separated string | Prefix additions under strict mode |
 | `local-llm` | No | boolean | Local eligibility tag; cannot override bash/unrestricted floor |
 | `capability-tier` | No | enum | `frontier`, `capable`, or `fast` matrix quality request |
+| `context-files` | No | enum | `none` (default when absent) or `inherit`; anything but the literal `inherit` spawns the child with `--no-context-files`, suppressing the ~9K-token `AGENTS.md`/`CLAUDE.md` cold-prefill block (ADR-0124, #889) |
 
 **Body** of the `.md` file becomes the child's appended system prompt. Other
 frontmatter is ignored by the extension. `mode:` is consumed by catalog

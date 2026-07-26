@@ -158,6 +158,14 @@ const BASE_ALLOWLIST: ReadonlySet<string> = new Set([
 	// category as the token-meter vars — unconditional cross-cutting infra, not
 	// a per-wrapper credential. Exact key (cache-meter reads only this one).
 	"CACHE_METER_CONFIG",
+	// Spawn-time prefill measurement (ADR-0125, #891): prefill-meter's
+	// per-segment prompt sizing only covers subagent children if they inherit
+	// the config var that arms the recorder — the whole point is measuring the
+	// CHILD's composed prompt (the #889/ADR-0124 delta). Non-secret operator-set
+	// run label (inert when unset), same observational category and same
+	// exact-key style as CACHE_METER_CONFIG above (prefill-meter reads only
+	// this one). Unconditional cross-cutting infra, not a per-wrapper credential.
+	"PREFILL_METER_CONFIG",
 ]);
 
 /** Prefixes always allowed under strict mode (in addition to `BASE_ALLOWLIST`). */

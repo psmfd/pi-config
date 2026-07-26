@@ -25,6 +25,7 @@ import type { Candidate } from "../shared/candidates.ts";
 import { isLocalProvider, type LocalRole } from "../shared/local-role.ts";
 import { resolveCapabilityPick, resolveTierPick } from "../shared/model-ranking.ts";
 import type { RoutingMatrix } from "../shared/routing-matrix.ts";
+import type { ModelDenyView } from "../shared/session-unavailable.ts";
 import type { AgentConfig } from "./agents.ts";
 
 /** Matrix task-type label subagent child processes are ranked under. */
@@ -53,7 +54,7 @@ export function selectSubagentPolicyModel(
 	candidates: readonly Candidate[],
 	matrix: RoutingMatrix | null,
 	localRole: LocalRole,
-	unavailable: ReadonlySet<string> = new Set<string>(),
+	unavailable: ModelDenyView = new Set<string>(),
 ): SubagentPolicySelection | null {
 	// Explicit wrapper pins remain authoritative; this seam covers unpinned
 	// wrappers and project-local agents so the parent chooses a concrete child
