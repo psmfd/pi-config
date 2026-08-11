@@ -37,6 +37,17 @@ if [ ! -x "$ESLINT" ]; then
 	exit 2
 fi
 
+# ESLint's type-aware rules build one TypeScript program spanning all extensions.
+# The pi 0.84.1 + TypeBox 1.3.7 type graph pushes peak heap past Node's ~2 GB
+# default, which OOMs on CI runners ("Ineffective mark-compacts near heap limit",
+# pi_config #953) while passing on higher-RAM dev machines. Raise the ceiling
+# unless the caller already pinned one.
+case "${NODE_OPTIONS:-}" in
+	*--max-old-space-size=*) : ;;
+	*) NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=6144" ;;
+esac
+export NODE_OPTIONS
+
 args=("agent/extensions/**/*.ts")
 if [ "$FIX" = "1" ]; then
 	args+=("--fix")

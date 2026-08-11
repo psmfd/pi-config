@@ -7,8 +7,11 @@ summarizes stable seams without pinning brittle line numbers.
 ## Provenance and patch inventory
 
 The extension is paired to upstream pi's 0.80.2 subagent example and was audited
-against the installed v0.80.6-psmfd.1 runtime. Upstream's example remained
-byte-identical across that interval. The README patch table is the canonical
+against the installed v0.84.1-psmfd.1 runtime. Upstream's example remains
+byte-identical across that whole interval — every tracked file (`README.md`,
+`agents.ts`, `index.ts`, `agents/`, `prompts/`) carries the same blob SHA at
+v0.80.2 and v0.84.1, so the 0.80.2 pairing is still current and no re-pair has
+been required through four runtime bumps. The README patch table is the canonical
 inventory for local patches #3–#14; `PATCH_MANIFEST.json` plus
 `scripts/validate-subagent-drift.sh` fail closed on unrecorded vendored drift.
 

@@ -14,7 +14,7 @@ The guard scans every staged file (via `git diff --cached --name-only --diff-fil
 - **PEM private-key headers** — `-----BEGIN (RSA |EC |OPENSSH |DSA |PGP |ENCRYPTED |)PRIVATE KEY` (the `ENCRYPTED` alternative covers PKCS#8, RFC 5958)
 - **AWS access key IDs** — `AKIA|ASIA|ABIA|ACCA` followed by 16 uppercase alphanumerics
 - **GitHub tokens** — `gh[oprsu]_[A-Za-z0-9]{36,}` (all five documented prefixes, open-ended body) and `github_pat_[A-Za-z0-9_]{82,}` (fine-grained PAT)
-- **Signed JWTs** — three dot-separated base64url segments, header and payload both starting `eyJ` (ADR-095/#64; unsigned/alg:none deliberately out of scope)
+- **Signed JWTs** — three dot-separated base64url segments, header and payload both starting `eyJ`, with each suffix/signature bounded to 10–4000 characters (ADR-095/#64; unsigned/alg:none deliberately out of scope)
 - **`Authorization: Bearer` literals** — 20+ contiguous token characters after the scheme (format placeholders like `%s`/`$VAR` never reach the bound)
 - **Sensitive file basenames** — `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519`, the FIDO2 hardware-backed `id_ecdsa_sk`/`id_ed25519_sk` (OpenSSH 8.2+; ADR-0111), plus `.pem` variants; also any `*.pem` or `*.key` file outside skip patterns
 
@@ -44,7 +44,7 @@ The allowlist file accepts one path glob per line. Lines starting with `#` and b
 1. **Git pre-commit hook** — a `hooks/secrets-guard.sh` (delivered by Phase C) that `setup.sh` symlinks into `.git/hooks/pre-commit` for opt-in repos. Runs on every `git commit` regardless of pi.
 2. **Pi extension `tool_call` handler** — one handler branching on `toolName` (`write`/`edit`/`artifact_review` content scans; `bash` command scans), plus a `session_start` handler that announces the `SKIP_SECRETS_GUARD=1` bypass. Same patterns applied to model-driven writes and bash invocations, blocking before the write reaches disk. Scoped at the session level.
 
-Both layers must agree on patterns, overrides, and skip rules. The pattern copies are deliberate lockstep duplicates (ADR-0071/0088 — the extension must stay import-free for standalone mirroring); `validate.sh` gates parity of the six content patterns across all three copies (§6b-bis) and of the vault-naming/sensitive-basename set across the two enforcement layers (§6b-ter, ADR-0111).
+Both layers must agree on detector semantics, overrides, and skip rules. The pattern copies are deliberate lockstep duplicates (ADR-0071/0088 — the extension must stay import-free for standalone mirroring). The TypeScript layers use V8's bounded JWT regex; the Bash hook uses explicit bounded length checks because BSD grep rejects interval maxima above 255. `validate.sh` gates the common fragments, engine-specific JWT invariants, and behavioral boundary tests (§6b-bis), plus vault-naming/sensitive-basename parity across the two enforcement layers (§6b-ter, ADR-0111). Missing scanner commands, input failures, invalid scanner expressions, and other scanner statuses above `1` are environment failures: the hook emits an actionable diagnostic and exits `2` rather than treating the file as clean.
 
 ## When this rule applies
 

@@ -83,3 +83,8 @@ expertise-audit-*.json
 # (ADR-0120). The extension also writes <common-dir>/info/exclude for repos
 # that don't commit this entry; pi_config commits it for visibility.
 /.worktrees/
+
+# compaction-optimizer runtime telemetry ledger (#894). Written per session by
+# the extension when armed; it is operator-local measurement data, not source.
+# It was committed by accident in #925 and untracked here.
+agent/extensions/compaction-optimizer/events.jsonl

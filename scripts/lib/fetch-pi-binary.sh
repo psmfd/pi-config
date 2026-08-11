@@ -297,6 +297,40 @@ fetch_pi_binary() {
     return 1
   fi
 
+  # Debugging-entitlement assertion (#930, ADR-0129/ADR-0131 Decision 10).
+  # ADR-0129's in-memory-authority argument assumes the vendored binary
+  # carries no com.apple.security.get-task-allow entitlement — a debug-
+  # entitled build would let a same-user task_for_pid reach broker memory.
+  # Fail CLOSED: on darwin a missing codesign, a failing invocation, or a
+  # matching entitlement all refuse the fetch.
+  case "$triple" in
+    darwin-*)
+      if ! command -v codesign >/dev/null 2>&1; then
+        _fpb_error "codesign is required on darwin to assert the pi binary carries no debugging entitlement"
+        return 2
+      fi
+      local entitlements
+      if ! entitlements="$(codesign -d --entitlements - "$binary_path" 2>&1)"; then
+        # An unsigned binary yields "code object is not signed at all" and a
+        # nonzero exit: no signature means no entitlements, which satisfies
+        # the assertion (the concern is a debug-ENTITLED build, not an
+        # unsigned one — signing identity is a separate, disclosed matter).
+        case "$entitlements" in
+          *"not signed"*) : ;;
+          *)
+            _fpb_error "codesign entitlement probe failed for $binary_path"
+            return 1
+            ;;
+        esac
+      fi
+      if printf '%s' "$entitlements" | grep -q "com.apple.security.get-task-allow"; then
+        _fpb_error "vendored pi binary carries the get-task-allow debugging entitlement — refusing (ADR-0129)"
+        return 1
+      fi
+      _fpb_ok "entitlement assertion passed (no get-task-allow)"
+      ;;
+  esac
+
   _fpb_ok "extracted to $extract_dir"
   printf '%s\n' "$binary_path"
   return 0

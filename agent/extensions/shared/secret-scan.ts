@@ -43,7 +43,7 @@ export const SECRET_PATTERNS: Array<{ name: string; re: RegExp }> = [
     // Segments upper-bounded ({10,4000}) so the chained `{n,}\.` shape cannot
     // drive O(n²) backtracking on adversarial ~512KB non-dot input in the V8
     // engine; a real JWT segment is far under 4000 chars (ADR-0071).
-    re: /eyJ[A-Za-z0-9_-]{10,4000}\.eyJ[A-Za-z0-9_-]{10,4000}\.[A-Za-z0-9_-]{10,4000}/,
+    re: /eyJ[A-Za-z0-9_-]{10,4000}\.eyJ[A-Za-z0-9_-]{10,4000}\.[A-Za-z0-9_-]{10,4000}(?![A-Za-z0-9_-])/,
   },
   // Authorization: Bearer <20+ token chars>. Case-insensitive on both words; the
   // length bound keeps placeholders (`Bearer %s`, `Bearer <key>`, `Bearer $VAR`)

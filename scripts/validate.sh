@@ -486,29 +486,36 @@ else
   fi
 fi
 
-# --- 6b-bis. Secret-pattern lockstep gate (#499, ADR-0071, ADR-0088) -------
-# The secret-detection pattern set is duplicated in lockstep across three files
-# (ADR-0071: the bash hook installs standalone; secrets-guard/index.ts is its own
-# module; the shared TS pattern set was moved to agent/extensions/shared/secret-scan.ts
-# per ADR-0088/#635 so it is single-sourced for both expertise-client and
-# expertise-indexer — the move kept the lockstep-site count at three). The copies
-# drifted once unnoticed (#499). This gate asserts every canonical pattern
-# fragment is present, verbatim, in the ACTIVE (non-comment) lines of all three
-# files — comment lines are stripped first so a stale-comment fragment cannot
-# mask a regressed live pattern. The fragments are complete enough to encode each
-# detector's invariant (the JWT fragment carries all three segments + the two
-# literal dots; the bearer fragment carries the `Authorization:` prefix), so
-# narrowing a live pattern fails the gate. Matched as fixed strings (grep -F) so
-# regex metacharacters are literal; none matches its own detection regex.
-info "Secret-pattern lockstep gate (#499)"
+# --- 6b-bis. Secret-pattern lockstep gate (#499, #922, ADR-0071/0088) ------
+# The secret detector set remains semantically aligned across three files. The
+# two TypeScript copies use the same V8 regex, while the standalone shell hook
+# uses bounded awk length checks for JWTs because BSD grep rejects interval
+# maxima above 255. Common grep-safe fragments stay verbatim across all three;
+# JWT parity is checked as an exact regex in TS and as explicit bounds plus the
+# three-segment candidate shape in shell. Behavioral boundary tests run in the
+# secrets-guard hook suite below.
+info "Secret-pattern lockstep gate (#499, #922)"
 sp_files="agent/extensions/secrets-guard/index.ts agent/extensions/shared/secret-scan.ts hooks/secrets-guard.sh"
-sp_fragments=(
+sp_ts_files="agent/extensions/secrets-guard/index.ts agent/extensions/shared/secret-scan.ts"
+sp_common_fragments=(
   'ENCRYPTED '
   '(AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}'
   'gh[oprsu]_[A-Za-z0-9]{36,}'
   'github_pat_[A-Za-z0-9_]{82,}'
-  'eyJ[A-Za-z0-9_-]{10,4000}\.eyJ[A-Za-z0-9_-]{10,4000}\.[A-Za-z0-9_-]{10,4000}'
   '[Aa]uthorization: [Bb]earer [A-Za-z0-9._~+/=-]{20,}'
+)
+sp_jwt_ts='eyJ[A-Za-z0-9_-]{10,4000}\.eyJ[A-Za-z0-9_-]{10,4000}\.[A-Za-z0-9_-]{10,4000}(?![A-Za-z0-9_-])'
+# shellcheck disable=SC2016  # fixed-string checks intentionally keep $variables literal
+sp_jwt_hook_fragments=(
+  'JWT_SEGMENT_MIN=10'
+  'JWT_SEGMENT_MAX=4000'
+  'awk -v min="$JWT_SEGMENT_MIN" -v max="$JWT_SEGMENT_MAX"'
+  'split($0, chunks, /[^A-Za-z0-9_.-]+/)'
+  'valid_header_suffix(segments[segment_index])'
+  'valid_prefixed(segments[segment_index + 1])'
+  'valid_signature(segments[segment_index + 2])'
+  'scan_signed_jwt "$file"'
+  'scan_content "$full_path"'
 )
 sp_bad=0
 for sp_file in $sp_files; do
@@ -517,17 +524,30 @@ for sp_file in $sp_files; do
     sp_bad=1
     continue
   fi
-  # Strip whole-line comments (bash #, TS // and *) so only live code counts.
   sp_active="$(grep -vE '^[[:space:]]*(#|//|\*|/\*)' "$sp_file")"
-  for sp_frag in "${sp_fragments[@]}"; do
+  for sp_frag in "${sp_common_fragments[@]}"; do
     if ! printf '%s\n' "$sp_active" | grep -qF -- "$sp_frag"; then
       err "secret-lockstep: $sp_file active lines are missing canonical pattern fragment: $sp_frag"
       sp_bad=1
     fi
   done
 done
+for sp_file in $sp_ts_files; do
+  sp_active="$(grep -vE '^[[:space:]]*(#|//|\*|/\*)' "$sp_file")"
+  if ! printf '%s\n' "$sp_active" | grep -qF -- "$sp_jwt_ts"; then
+    err "secret-lockstep: $sp_file active lines are missing canonical bounded JWT regex"
+    sp_bad=1
+  fi
+done
+sp_active="$(grep -vE '^[[:space:]]*#' hooks/secrets-guard.sh)"
+for sp_frag in "${sp_jwt_hook_fragments[@]}"; do
+  if ! printf '%s\n' "$sp_active" | grep -qF -- "$sp_frag"; then
+    err "secret-lockstep: hooks/secrets-guard.sh active lines are missing bounded JWT scanner fragment: $sp_frag"
+    sp_bad=1
+  fi
+done
 if [ "$sp_bad" -eq 0 ]; then
-  ok "secret-lockstep: all 3 copies carry the canonical pattern set"
+  ok "secret-lockstep: all 3 copies carry the canonical detector semantics"
 fi
 
 # --- 6b-ter. Vault-naming + sensitive-basename lockstep gate (#796, ADR-0111)
@@ -1627,7 +1647,28 @@ else
   err "secrets-guard: scripts/test-secrets-guard.sh missing or not executable; required check skipped"
 fi
 
-# --- 9b-quinquies. bash-destructive-guard test suite (#258) ----------------
+# --- 9b-quinquies. secrets-guard pre-commit hook tests (#922) --------------
+info "Running secrets-guard pre-commit hook tests"
+if [ -x scripts/test-secrets-guard-hook.sh ]; then
+  if sgh_output="$(scripts/test-secrets-guard-hook.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$sgh_output"
+    fi
+    ok "secrets-guard hook: tests passed"
+  else
+    sgh_status=$?
+    printf '%s\n' "$sgh_output" >&2
+    if [ "$sgh_status" -eq 2 ]; then
+      err "secrets-guard hook: test environment unavailable; required check skipped"
+    else
+      err "secrets-guard hook: test suite failed (exit $sgh_status)"
+    fi
+  fi
+else
+  err "secrets-guard hook: scripts/test-secrets-guard-hook.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-sexies. bash-destructive-guard test suite (#258) -------------------
 info "Running bash-destructive-guard test suite"
 if [ -x scripts/test-bash-destructive-guard.sh ]; then
   if bdg_output="$(scripts/test-bash-destructive-guard.sh 2>&1)"; then
@@ -1646,6 +1687,27 @@ if [ -x scripts/test-bash-destructive-guard.sh ]; then
   fi
 else
   err "bash-destructive-guard: scripts/test-bash-destructive-guard.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-septies. package-agent-broker test suite (#916, ADR-0128) ----------
+info "Running package-agent-broker test suite"
+if [ -x scripts/test-package-agent-broker.sh ]; then
+  if pab_output="$(scripts/test-package-agent-broker.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$pab_output"
+    fi
+    ok "package-agent-broker: tests passed"
+  else
+    pab_status=$?
+    printf '%s\n' "$pab_output" >&2
+    if [ "$pab_status" -eq 2 ]; then
+      err "package-agent-broker: test environment unavailable (node/npx); required check skipped"
+    else
+      err "package-agent-broker: test suite failed (exit $pab_status)"
+    fi
+  fi
+else
+  err "package-agent-broker: scripts/test-package-agent-broker.sh missing or not executable; required check skipped"
 fi
 
 # --- 9c. extension type-check (ADR-0021) -----------------------------------

@@ -42,10 +42,12 @@ if [ "${SKIP_SECRETS_GUARD:-}" = "1" ]; then
   exit 0
 fi
 
-if ! command -v git >/dev/null 2>&1; then
-  err "env" "git is required but not on PATH"
-  exit 2
-fi
+for required_command in git grep awk head mktemp; do
+  if ! command -v "$required_command" >/dev/null 2>&1; then
+    err "env" "$required_command is required but not on PATH"
+    exit 2
+  fi
+done
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "$REPO_ROOT" ]; then
@@ -118,26 +120,126 @@ is_binary() {
 # shellcheck disable=SC2016
 VAULT_HEADER_RE='^\$ANSIBLE_VAULT;[0-9]+\.[0-9]+;[A-Z0-9]+'
 
-# Combined secret-content patterns (single grep -E). Keep in lockstep with
+# Secret-content patterns supported directly by both GNU and BSD grep -E.
+# Keep their detector semantics in lockstep with
 # agent/extensions/secrets-guard/index.ts and
-# agent/extensions/expertise-client/lib/secret-scan.ts (ADR-0071; framework
-# ADR-095 for the JWT/Bearer detectors). validate.sh check_secret_pattern_lockstep
-# enforces parity. The PEM alternation uses the (...)? optional-group form, NOT
-# the empty-alternation (...|) — BSD grep rejects the latter. The grep -qE --
-# call below passes `--`, so a leading `-----` is safe regardless of alternative
-# order; keeping the PEM alternative first is a defensive convention, not a hard
-# requirement.
-SECRET_PATTERNS='-----BEGIN (RSA |EC |OPENSSH |DSA |PGP |ENCRYPTED )?PRIVATE KEY|(^|[^A-Z0-9])(AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}([^A-Z0-9]|$)|gh[oprsu]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{82,}|eyJ[A-Za-z0-9_-]{10,4000}\.eyJ[A-Za-z0-9_-]{10,4000}\.[A-Za-z0-9_-]{10,4000}|[Aa]uthorization: [Bb]earer [A-Za-z0-9._~+/=-]{20,}'
+# agent/extensions/shared/secret-scan.ts (ADR-0071/0088). Signed JWTs use the
+# bounded awk scanner below because BSD grep rejects interval maxima above 255.
+GREP_SECRET_PATTERNS='-----BEGIN (RSA |EC |OPENSSH |DSA |PGP |ENCRYPTED )?PRIVATE KEY|(^|[^A-Z0-9])(AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}([^A-Z0-9]|$)|gh[oprsu]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{82,}|[Aa]uthorization: [Bb]earer [A-Za-z0-9._~+/=-]{20,}'
+
+# These bounds are semantically identical to each TS copy's V8
+# `{10,4000}` intervals. They remain separate constants so validate.sh and the
+# hook regression suite can enforce the cross-engine contract honestly.
+JWT_SEGMENT_MIN=10
+JWT_SEGMENT_MAX=4000
+
+# scan_grep_patterns <file>
+# scan_signed_jwt <file>
+# scan_content <file>
+# Return 0 for a match, 1 for no match, and 2 for an input/scanner failure.
+# grep deliberately runs without -q so it consumes the capped input; otherwise
+# an early match can SIGPIPE head under pipefail and disguise a real finding.
+scan_grep_patterns() {
+  local file="$1" statuses grep_status
+  head -c 524288 "$file" 2>/dev/null \
+    | grep -E -- "$GREP_SECRET_PATTERNS" >/dev/null
+  statuses=("${PIPESTATUS[@]}")
+  [ "${statuses[0]}" -eq 0 ] || return 2
+  grep_status="${statuses[1]}"
+  case "$grep_status" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) return 2 ;;
+  esac
+}
+
+scan_signed_jwt() {
+  local file="$1" statuses awk_status
+  head -c 524288 "$file" 2>/dev/null \
+    | awk -v min="$JWT_SEGMENT_MIN" -v max="$JWT_SEGMENT_MAX" '
+      function valid_prefixed(segment, body_length) {
+        body_length = length(segment) - 3
+        return substr(segment, 1, 3) == "eyJ" \
+          && body_length >= min && body_length <= max
+      }
+      function valid_header_suffix(segment, segment_length, window_start, window, offset, body_length) {
+        segment_length = length(segment)
+        window_start = segment_length - max - 2
+        if (window_start < 1) window_start = 1
+        window = substr(segment, window_start)
+        while ((offset = index(window, "eyJ")) > 0) {
+          body_length = segment_length - (window_start + offset - 1) - 2
+          if (body_length >= min && body_length <= max) return 1
+          window_start += offset
+          window = substr(segment, window_start)
+        }
+        return 0
+      }
+      function valid_signature(segment) {
+        return length(segment) >= min && length(segment) <= max
+      }
+      {
+        if (found) next
+        chunk_count = split($0, chunks, /[^A-Za-z0-9_.-]+/)
+        for (chunk_index = 1; chunk_index <= chunk_count && !found; chunk_index++) {
+          segment_count = split(chunks[chunk_index], segments, /[.]/)
+          for (segment_index = 1; segment_index + 2 <= segment_count; segment_index++) {
+            if (valid_header_suffix(segments[segment_index]) \
+                && valid_prefixed(segments[segment_index + 1]) \
+                && valid_signature(segments[segment_index + 2])) {
+              found = 1
+              break
+            }
+          }
+        }
+      }
+      END { exit found ? 0 : 1 }
+    ' >/dev/null
+  statuses=("${PIPESTATUS[@]}")
+  [ "${statuses[0]}" -eq 0 ] || return 2
+  awk_status="${statuses[1]}"
+  case "$awk_status" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) return 2 ;;
+  esac
+}
+
+scan_content() {
+  local file="$1" scan_status
+  scan_grep_patterns "$file"
+  scan_status=$?
+  case "$scan_status" in
+    0) return 0 ;;
+    2) return 2 ;;
+  esac
+
+  scan_signed_jwt "$file"
+}
 
 errors=0
 warnings=0
 scanned=0
 skipped_count=0
 
+staged_file_list="$(mktemp -t secrets-guard.XXXXXX)" || {
+  err "env" "cannot create staged-file list — commit blocked"
+  exit 2
+}
+# shellcheck disable=SC2329  # invoked indirectly by the traps below
+cleanup_staged_file_list() { rm -f "$staged_file_list"; }
+trap cleanup_staged_file_list EXIT
+trap 'cleanup_staged_file_list; exit 2' HUP INT TERM
+
+if ! git diff --cached --name-only --diff-filter=ACM -z >"$staged_file_list" 2>/dev/null; then
+  err "git" "staged-file enumeration failed — commit blocked"
+  exit 2
+fi
+
 files=()
 while IFS= read -r -d '' f; do
   files+=("$f")
-done < <(git diff --cached --name-only --diff-filter=ACM -z 2>/dev/null)
+done <"$staged_file_list"
 
 if [ ${#files[@]} -eq 0 ]; then
   ok "scan" "no staged files to check"
@@ -195,13 +297,21 @@ for staged_path in "${files[@]}"; do
     continue
   fi
 
-  # Content scan, capped at 512 KB. The leading `--` is required because the
-  # combined regex starts with `-----BEGIN ... PRIVATE KEY` — without it grep
-  # interprets the pattern as an option flag.
-  if head -c 524288 "$full_path" 2>/dev/null | grep -qE -- "$SECRET_PATTERNS"; then
-    err "secret" "$staged_path contains a secret pattern"
-    errors=$((errors + 1))
-  fi
+  # Content scan, capped at 512 KB by each engine. Scanner failures are
+  # environment failures, never equivalent to a clean file (#922).
+  scan_content "$full_path"
+  scan_status=$?
+  case "$scan_status" in
+    0)
+      err "secret" "$staged_path contains a secret pattern"
+      errors=$((errors + 1))
+      ;;
+    1) ;;
+    *)
+      err "scan" "content scanner failed for $staged_path — commit blocked"
+      exit 2
+      ;;
+  esac
 done
 
 echo "=================================="

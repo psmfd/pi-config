@@ -2,8 +2,11 @@
 
 A small internal **library** consumed by the Pi Extension Suite extensions
 (auto-router, compaction-optimizer, context-manager, indexing, subagent), the
-bash-guard family (bash-destructive-guard, via `shell-lex.ts`), and the
-expertise stack (expertise-client, expertise-fanout-gate, expertise-indexer).
+bash-guard family (bash-destructive-guard, via `shell-lex.ts`), the
+expertise stack (expertise-client, expertise-fanout-gate, expertise-indexer),
+and the package-agent broker (package-agent-broker, via
+`package-agent-review-contract.ts` + `package-agent-grant-contract.ts` +
+`package-agent-canonical.ts`).
 It is **not a loadable pi extension**: it has no `index.ts`, so pi's
 auto-discovery (`~/.pi/agent/extensions/*/index.ts`) skips it. Consumers import
 its modules by relative path, e.g.
@@ -93,10 +96,14 @@ sequenceDiagram
 | `copilot-discovery.ts` | `resolveCopilotFilter`, `getEnabledCopilotModels`, `clearCopilotCache`, … | Live GitHub Copilot `/models` tier discovery (ADR-0035; moved here from auto-router in #536). Fail-open, host-pinned, five-second bounded, 20-min cache of model-id strings only — never the JWT. Cache epochs reject stale in-flight writes after clear. Consumed through the canonical snapshot. |
 | `anthropic-discovery.ts` | `resolveAnthropicFilter`, `getServedAnthropicModels`, `clearAnthropicCache`, … | Live Anthropic `/v1/models` discovery (#538; moved to shared by ADR-0104): filters retired ids, host-pinned, five-second bounded and fail-open, with a 20-min model-id-only cache. Cache epochs reject stale in-flight writes after clear. Consumed through the canonical snapshot. |
 | `omlx-discovery.ts` | `resolveOmlxFilter`, `getServedOmlxModels`, `clearOmlxCache`, … | Live oMLX `/v1/models` probe (#364, ADR-0081). Loopback-only, key never cached, 60s model-id cache; **authoritative even when empty** (confirmed-down drops all omlx), null when inconclusive/not applicable. Cache epochs reject stale in-flight writes after clear. Consumed through the canonical snapshot. |
+| `provider-headers.ts` | `mergeProviderHeaders`, `ProviderHeaders`, `ProviderAuthLike` | Collapses pi's `ProviderHeaders` deletion markers (#953). pi v0.84.0 widened `getApiKeyAndHeaders()` to `Record<string, string \| null>`, where `null` means *do not send this header*. Modules that forward the map to a pi-ai stream pass it through unchanged; the discovery modules here rebuild their own `fetch` init, so a raw spread would serialize the marker as a literal `null` header value. One merge helper keeps the three call sites from drifting, and is a no-op on the pre-0.84.0 shape. |
 | `secret-scan.ts` | `SECRET_PATTERNS`, `scanRawString` | Canonical TS secret-detection pattern set + a raw-string scanner returning category names only (never the matched text). One of the three ADR-0071 lockstep copies (with `secrets-guard/index.ts` + `hooks/secrets-guard.sh`), verified by `validate.sh` §6b-bis. Moved here from `expertise-client` (ADR-0088, #635) so both `expertise-client` (`scanForSecrets`) and the config-mirror-shipped `expertise-indexer` consume it without a cross-mirror import. |
 | `expertise-api-config.ts` | `buildClientConfig`, `loadUpstreamSecrets`, `resolveUpstreamSecretsPath`, `isLoopbackHost`, env parsers, `ClientConfig`, `ConfigResult`, `ENV_*` | Dual-profile agent-expertise-api configuration (ADR-0103/0121): retained loopback/API-key `PI_EXPERTISE_*` plus upstream pre-provisioned bearer/static-OIDC `EXPERTISE_API_*`, supplied as one literal token or bounded absolute mounted-token file. Mounted credentials are re-read per call; shell syntax is never evaluated. Remote bearer origins require HTTPS; fixed operator files only, no repo discovery. Shared by the tool, fanout gate, and audit runner. |
 | `expertise-api-http.ts` | `apiGet`, `apiPost`, `errorDetail`, `ApiResponse`, `MAX_BODY_BYTES`, agent header constants | Bounded HTTP: protected calls carry bearer + `X-Actor-Class: agent`; all carry stable pi `User-Agent`; anonymous readiness omits auth. Redirects refused, 256 KB cap, injectable `fetchImpl`. |
 | `expertise-api-health.ts` | `checkReady` | `/health/ready` preflight against the configured local or upstream API origin. |
+| `package-agent-review-contract.ts` | `REVIEW_DRAFT_KIND`, `REVIEW_DRAFT_SCHEMA_VERSION`, `REVIEW_DRAFT_DIGEST_DOMAIN`, `BOUNDS`, identity regexes, `UNRESOLVED_PROVENANCE_FIELDS`, `ReviewSnapshot`, `ReviewDraft`, `AuditEvent`, `BrokerState`, `initialBrokerState` | The #916/ADR-0128 review-draft contract: record shapes, explicit bounds, strict ASCII identity shapes, and the closed audit schema for the permanently non-authorizing `package-agent-review-draft` records. Shared so #917 can *reject* drafts against the canonical shape without importing broker internals; #917's active grants use a distinct schema and digest domain. Pure data + bounds, no IO. |
+| `package-agent-grant-contract.ts` | `ACTIVE_GRANT_KIND`, `GRANT_SCHEMA_VERSION`, `GRANT_POLICY_VERSION`, `GRANT_DIGEST_DOMAIN`, `GRANT_LIFETIME_MS`, `GRANT_BOUNDS`, `GRANT_DIGEST_FIELDS`, `EffectiveDefinition`, `ActiveGrant`, `ApprovalBinding`, `GrantReceipt` | The #928/ADR-0129 active-grant contract: the completely reconstructed effective definition (every ADR-0127 §5 field, no unresolved escape hatch), the runtime-scoped approval identifier that replaces §5's durable grant revision, the operator-set 4-hour lifetime and 32-grant cap, and the non-authorizing approval receipt. `GRANT_DIGEST_FIELDS` is the machine-checkable form of "the digest covers every §5 field" — the broker's test suite holds one mutator per entry. Pure data + bounds, no IO. |
+| `package-agent-canonical.ts` | `canonicalEncode`, `canonicalDigest`, `CanonicalValue`, `CanonicalError`, depth/size bounds | Deterministic, injective, domain-separated canonical encoding (length-delimited tags, byte-sorted map keys, duplicate-key refusal, safe-integers-only, unpaired-surrogate refusal) used for the #916 proposal digest. The digest domain is length-delimited into the encoding, so records from different domains can never collide — #917 reuses the primitive under its own domain (ADR-0128). |
 | `expertise-api-search.ts` | `searchExpertise`, `SEARCH_PATH`, `SearchParams`, `SearchResult`, `LIMIT_MIN`/`MAX` | Read-only semantic search (`GET /expertise/search/semantic`, `q` + clamped `limit`). 429s return a refusal with `rateLimited: true` + parsed `retryAfterSeconds` so programmatic callers (the fanout gate's session backoff) need not sniff prose. Moved from `expertise-client/lib/search.ts` (ADR-0095). |
 
 ## Dependency graph
@@ -114,9 +121,10 @@ flowchart LR
         UpstreamSecrets["operator-fixed upstream secrets + mounted token (ADR-0103/0121)"]
     end
 
-    subgraph PiApi["Pinned pi API surface (agent/vendor/pi v0.80.10-psmfd.1)"]
+    subgraph PiApi["Pinned pi API surface (agent/vendor/pi v0.84.1-psmfd.1)"]
         CtxUsage["ctx.getContextUsage()"]
         CtxModelReg["ctx.modelRegistry.getAvailable()"]
+        CtxApiKey["ctx.modelRegistry.getApiKeyAndHeaders()"]
         CtxUi["ctx.ui.notify / ctx.hasUI"]
     end
 
@@ -135,6 +143,7 @@ flowchart LR
         copilotdisc["copilot-discovery.ts"]
         anthropicdisc["anthropic-discovery.ts"]
         omlxdisc["omlx-discovery.ts"]
+        providerheaders["provider-headers.ts"]
         localrole["local-role.ts"]
         secretscan["secret-scan.ts"]
         apiconfig["expertise-api-config.ts"]
@@ -144,6 +153,9 @@ flowchart LR
     end
 
     candidates --> cost
+    anthropicdisc --> providerheaders
+    copilotdisc --> providerheaders
+    availsnap --> providerheaders
     routingmatrix --> tasktypes
     modelranking --> localrole
     apihealth --> apihttp
@@ -178,6 +190,7 @@ flowchart LR
     signals --> CtxUsage
     candidates --> CtxModelReg
     availsnap --> CtxModelReg
+    providerheaders --> CtxApiKey
     notify --> CtxUi
     localrole --> UserSettings
     state --> StateFiles
@@ -258,12 +271,23 @@ The compaction when-policy that consumes `phase-state.ts` signals is documented
 Original Phase 0 verification (issue #328) covered `ctx.getContextUsage()`,
 `ctx.model.contextWindow`, `ctx.modelRegistry.getAvailable()`, and the model
 `cost` fields against pi v0.79.0. The pin has since advanced — the current
-reference is **`agent/vendor/pi/VERSION` (v0.80.10-psmfd.1)** — and
+reference is **`agent/vendor/pi/VERSION` (v0.84.1-psmfd.1)** — and
 later-added modules were verified against their contemporary pins in their own
 ADRs: the subagent/turn lifecycle events and `session_before_compact.reason`
 consumed via `phase-state.ts` wiring (ADR-0109, v0.80.10), and the discovery
 endpoints behind `availability-snapshot.ts` (ADR-0104). Verify new API claims
 against the vendored types for the pinned version, not a `node_modules` copy.
+
+`ctx.modelRegistry.getApiKeyAndHeaders()` is the one surface here already
+written against a **future** pin. pi v0.84.0 widens its return to
+`ProviderHeaders` (`Record<string, string | null>`), where a `null` value is a
+header-deletion marker rather than a value. `provider-headers.ts` collapses the
+marker for the three modules that rebuild their own `fetch` init from the map.
+This landed ahead of the runtime bump (#953) deliberately: the discovery
+modules declare their own structural `AuthLike` interfaces instead of importing
+pi's type, so the narrower pre-0.84.0 annotation kept typechecking cleanly while
+the runtime shape would have widened underneath it — `tsc` could not have caught
+the regression at bump time. The helper is a no-op on the current pin.
 
 ## Tests
 
