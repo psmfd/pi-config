@@ -1,0 +1,170 @@
+{
+  "manifestVersion": 1,
+  "upstream": {
+    "repo": "RimuruW/pi-hashline-edit",
+    "tag": "v0.8.3",
+    "commit": "ba7db9943d0f58499b24c1f6bd64722580f772a5",
+    "tarballSha256": "b7ab3c79ad6142abca005d1faf936b64b277b54d498aef7f4de0e52fcd153643"
+  },
+  "trackedFiles": {
+    "index.ts": {
+      "upstreamSha256": "94185fc00dd733c36c3d14b73b665957e9743db9f8dbe70502fa5be1b28e24db",
+      "localSha256": "e17b4f42ea1f218af774d6eb150e1177e905b8a386d1f1411cb9d2d4f65b635a",
+      "state": "present"
+    },
+    "prompts/edit-guidelines.md": {
+      "upstreamSha256": "2d59df059a174fee02eb644e7660d7d9506f61dcf87a148ea86ce3943498145d",
+      "localSha256": "2d59df059a174fee02eb644e7660d7d9506f61dcf87a148ea86ce3943498145d",
+      "state": "present"
+    },
+    "prompts/edit-snippet.md": {
+      "upstreamSha256": "5f302c00a092ad91aa97634b307d30113c102a29c48b059eed3c1a759743058d",
+      "localSha256": "5f302c00a092ad91aa97634b307d30113c102a29c48b059eed3c1a759743058d",
+      "state": "present"
+    },
+    "prompts/edit.md": {
+      "upstreamSha256": "c750c8ed12049d06f9678636abbb8c8f228f43541b3403b093c39881606d68fe",
+      "localSha256": "c750c8ed12049d06f9678636abbb8c8f228f43541b3403b093c39881606d68fe",
+      "state": "present"
+    },
+    "prompts/grep-snippet.md": {
+      "upstreamSha256": "748c4f2271dacd65fb840b8391df6000ae88157db37a86d7ae2bad094d60551e",
+      "localSha256": "748c4f2271dacd65fb840b8391df6000ae88157db37a86d7ae2bad094d60551e",
+      "state": "present"
+    },
+    "prompts/grep.md": {
+      "upstreamSha256": "3360a479f777eaad273523ff1ce5da1c447e337e64db13d4863b57394fe9eb4d",
+      "localSha256": "3360a479f777eaad273523ff1ce5da1c447e337e64db13d4863b57394fe9eb4d",
+      "state": "present"
+    },
+    "prompts/read-guidelines.md": {
+      "upstreamSha256": "baf6270dce4d7e2e6e1ee04f7b454137dec5b2518bec84e7abd6a19c51f0d71a",
+      "localSha256": "baf6270dce4d7e2e6e1ee04f7b454137dec5b2518bec84e7abd6a19c51f0d71a",
+      "state": "present"
+    },
+    "prompts/read-snippet.md": {
+      "upstreamSha256": "897e1602d7403b78f673f0de1e8b503f7af38b508649bb1f67ee21d7d606c064",
+      "localSha256": "897e1602d7403b78f673f0de1e8b503f7af38b508649bb1f67ee21d7d606c064",
+      "state": "present"
+    },
+    "prompts/read.md": {
+      "upstreamSha256": "811ab4064317e67d25c5be83d173a97bd897679887e0c77385862dda983bb1cc",
+      "localSha256": "811ab4064317e67d25c5be83d173a97bd897679887e0c77385862dda983bb1cc",
+      "state": "present"
+    },
+    "src/config.ts": {
+      "upstreamSha256": "63b854aef3735bfbd52765fb8195b1f6107277335954fa8bdaa95df29daf6268",
+      "localSha256": "63b854aef3735bfbd52765fb8195b1f6107277335954fa8bdaa95df29daf6268",
+      "state": "present"
+    },
+    "src/edit-diff.ts": {
+      "upstreamSha256": "d0270f7a3c749e98813a458b85bc4880f2c2c4bbc24925cdb96f370a08718243",
+      "localSha256": "45d528f4c76c7c9f7f6b2beff94c05d04317ddddf1b01901ca07f97266a2acd8",
+      "state": "present"
+    },
+    "src/edit-normalize.ts": {
+      "upstreamSha256": "ac45280a533c1b53ef3a603850e2323dc668097c8656ba2a99bed79335f17b2f",
+      "localSha256": "ac45280a533c1b53ef3a603850e2323dc668097c8656ba2a99bed79335f17b2f",
+      "state": "present"
+    },
+    "src/edit-render.ts": {
+      "upstreamSha256": "d08f4a70fbe24045be2e7c6dc66e337301abc09608056a41f6d6c21c151f882a",
+      "localSha256": "d08f4a70fbe24045be2e7c6dc66e337301abc09608056a41f6d6c21c151f882a",
+      "state": "present"
+    },
+    "src/edit-response.ts": {
+      "upstreamSha256": "52d1fc0e457230e8551a9464a9cf888140b060e31373d42b400b8130b17efa1a",
+      "localSha256": "52d1fc0e457230e8551a9464a9cf888140b060e31373d42b400b8130b17efa1a",
+      "state": "present"
+    },
+    "src/edit.ts": {
+      "upstreamSha256": "1c6ac0e078763cb9b31ce8d0c9c6741c22a029e95f2360e8f38c671b41e189b8",
+      "localSha256": "31c70ab7c559d7ac4d8578449e1329a0091a86ee65f18bc1aec37a02ec350eb7",
+      "state": "present"
+    },
+    "src/file-kind.ts": {
+      "upstreamSha256": "5cd615ab44158cec6f84f5e45c11324793a0043945905121c8cae759836cabcf",
+      "localSha256": "8f45f40e6311872ebd95a465ae9be9dbaa06a8318df6297faa27bc8bc01f61a7",
+      "state": "present"
+    },
+    "src/fs-write.ts": {
+      "upstreamSha256": "f6d87042818a56ce13f99694c431f8d83ffc61482569e9e409fe9bfbbc64a55b",
+      "localSha256": "381d4973fa9f0716adca83c0af15f1b28c305be5a35b35b77d1036a827adb72d",
+      "state": "present"
+    },
+    "src/grep.ts": {
+      "upstreamSha256": "9d02a3460f5c24456d39063ceed299f5d166bbdda7f390f8610271f5bb610ee8",
+      "localSha256": "f1d89edb1590ded1f7c8c5214df8ba88924ac03c8eaa4b2523d2c8cc76031bf3",
+      "state": "present"
+    },
+    "src/hashline.ts": {
+      "upstreamSha256": "315e6612457d000ea32123971637ef939d9a364d8dec2e95872244f8419710f6",
+      "localSha256": "315e6612457d000ea32123971637ef939d9a364d8dec2e95872244f8419710f6",
+      "state": "present"
+    },
+    "src/hashline/apply.ts": {
+      "upstreamSha256": "c20d0fb1853776abc6e3bb73264515f51037f3294ae0a6099e7867f0fbdfea30",
+      "localSha256": "c20d0fb1853776abc6e3bb73264515f51037f3294ae0a6099e7867f0fbdfea30",
+      "state": "present"
+    },
+    "src/hashline/format.ts": {
+      "upstreamSha256": "b951aa20c8cf1de4440cc57e139351369218ab7294d11b1db067ee13874ff678",
+      "localSha256": "b951aa20c8cf1de4440cc57e139351369218ab7294d11b1db067ee13874ff678",
+      "state": "present"
+    },
+    "src/hashline/hash.ts": {
+      "upstreamSha256": "f96dddce106c8f512e3cec0ba7827f4685e6ff4112cbd4668fc6de57d4778812",
+      "localSha256": "c84d49743aff073c19ffc25775a954bc26be05af6e0692475386352c1df211d3",
+      "state": "present"
+    },
+    "src/hashline/parse.ts": {
+      "upstreamSha256": "4335e4c51c0b8a64258bd1ed29b1ba5801a280bfabf3c1f99a4eed2a99f7c179",
+      "localSha256": "4335e4c51c0b8a64258bd1ed29b1ba5801a280bfabf3c1f99a4eed2a99f7c179",
+      "state": "present"
+    },
+    "src/merge.ts": {
+      "upstreamSha256": "b917284d0d53f6fc767bb953d2085f4283744f6a1c7991c428d96362385c09b7",
+      "localSha256": "510d6db5b6b7a11812da42420a5a66c454ed543bac62df480b33fa37e577af1a",
+      "state": "present"
+    },
+    "src/noop-loop-guard.ts": {
+      "upstreamSha256": "280ed857081ac6e686e5e91bc1797467ca54acfa1bf47469cf11362e3e7de08c",
+      "localSha256": "280ed857081ac6e686e5e91bc1797467ca54acfa1bf47469cf11362e3e7de08c",
+      "state": "present"
+    },
+    "src/path-utils.ts": {
+      "upstreamSha256": "03d431c6b486ccfe10289e03466172bcc6cf703fcd60e809ac65079c25119428",
+      "localSha256": "03d431c6b486ccfe10289e03466172bcc6cf703fcd60e809ac65079c25119428",
+      "state": "present"
+    },
+    "src/prompt-loader.ts": {
+      "upstreamSha256": "73c4dfd8b414f14ea953cb29ca171f1a38f064a4da9e2aa314d290933aa869d5",
+      "localSha256": "73c4dfd8b414f14ea953cb29ca171f1a38f064a4da9e2aa314d290933aa869d5",
+      "state": "present"
+    },
+    "src/read-snapshot.ts": {
+      "upstreamSha256": "8a71b559c83a5f174f64041aaee4a5bfcdd32adb84cfae500501848bed648053",
+      "localSha256": "8a71b559c83a5f174f64041aaee4a5bfcdd32adb84cfae500501848bed648053",
+      "state": "present"
+    },
+    "src/read.ts": {
+      "upstreamSha256": "70d41fa5ddee9dc03a92ef71069974466497f5f71c8c912ccc0331fde5a8e48c",
+      "localSha256": "6202978b565580d0305dfbfdfed51d4a750b1eb50d8c04245f484c3155bbe264",
+      "state": "present"
+    },
+    "src/runtime.ts": {
+      "upstreamSha256": "52e2f04736bb63bf9ce88a3144f9e472f17f2b99ab5d2246cfe673df54d6c6c2",
+      "localSha256": "52e2f04736bb63bf9ce88a3144f9e472f17f2b99ab5d2246cfe673df54d6c6c2",
+      "state": "present"
+    },
+    "src/snapshot.ts": {
+      "upstreamSha256": "134c01556618e3e01b4449ac6924dae01e6560d06378037b55007048c34682bb",
+      "localSha256": "134c01556618e3e01b4449ac6924dae01e6560d06378037b55007048c34682bb",
+      "state": "present"
+    }
+  },
+  "localAdditions": [
+    "src/containment.ts"
+  ],
+  "note": "See agent/extensions/hashline-edit/README.md for the patch table. Regenerate with: scripts/validate-hashline-drift.sh --regenerate"
+}

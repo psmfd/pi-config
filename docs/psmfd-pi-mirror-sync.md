@@ -199,20 +199,67 @@ ADR-0038; the build boundary limits its blast radius and does not remove it.
   overlay edits, no guard changes, no new runnable workflows may ride a sync
   branch — those are overlay PRs.
 
-## Sync PR vs overlay PR
+## Sync PR vs overlay PR vs patch PR
 
 Mutually exclusive by construction:
 
-| | Sync PR | Overlay PR |
-|---|---|---|
-| Branch | `sync/upstream-*` | anything else |
-| May touch | upstream-owned paths (+ mechanical overlay conflict resolutions, + workflow quarantine moves) | overlay-allowlist paths only |
-| Guard | path check bypassed (trusted actor) | path check enforced |
-| Merge method | merge commit | repo default |
-| Evidence | full block above | changed-path list; allowlist+guard updated together if the allowlist grows |
+| | Sync PR | Overlay PR | Patch PR |
+|---|---|---|---|
+| Branch | `sync/upstream-*` | anything else | anything else |
+| May touch | upstream-owned paths (+ mechanical overlay conflict resolutions, + workflow quarantine moves) | overlay-allowlist paths only | the upstream-owned paths a prior overlay PR added to the allowlist, and only those |
+| Guard | path check bypassed (trusted actor) | path check enforced | path check enforced (passes because the paths are now allowlisted) |
+| Merge method | merge commit | repo default | repo default |
+| Evidence | full block above | changed-path list; allowlist+guard updated together if the allowlist grows | manifest entry + `PSMFD-Patch: <id>` trailer + class-appropriate evidence (below) |
 
-Need both in one cycle → two PRs: sync first, overlay branched from post-sync
-`main`.
+Need both a sync and an overlay in one cycle → two PRs: sync first, overlay
+branched from post-sync `main`. A patch PR is always preceded by the overlay PR
+that registers its manifest entry and allowlist paths (ADR-0041's two-step flow,
+retained by ADR-0138).
+
+### Patch classes on the train
+
+[ADR-0138](../adrs/0138-patch-train-and-fork-policy-corrected.md) (superseding
+[ADR-0136](../adrs/0136-patch-train-and-fork-policy.md), which superseded
+[ADR-0041](../adrs/0041-conditional-security-patch-divergence.md)) defines two
+divergence classes. Both use the bookkeeping above; they differ in what admits
+them and what retires them:
+
+| | S-class (security) | C-class (capability) |
+|---|---|---|
+| Admits | A CodeQL alert or CVE/advisory with no upstream fix existing or in flight | A runtime *mechanism* (seam, primitive, enforcement point) that has passed the soak bar, where the extension form was tried and is insufficient |
+| Evidence | Failing-then-passing regression test, or resolved version + advisory ID | Tests that fail without and pass with the patch, plus a named pi_config consumer the patch unblocks or simplifies |
+| Retires on | `upstream_fixed_in` — upstream ships its own fix | Upstream **adoption** of the capability, or a drop decision. There is no upstream fix to wait for, so `upstream_fixed_in` does not apply |
+| Retired **how** | **Merge-time allowlist drop** — between `merge` and `resolve`, drop the path from this allowlist and from `SECURITY_PATCH_PATHS`, flipping its resolution to `--theirs`. The `PSMFD-Patch` commit is never rewritten or dropped: "never rebase" is unconditional (ADR-0138 § 1) | identical mechanism |
+| Lifetime | Short — dissolves back to zero divergence at the next sync carrying the upstream fix | Long — persists across many syncs |
+| Caps | **Exempt** from the caps, but **scope-bound**: an S-class patch carries only what the cited finding requires plus its regression test, justified per-path in the manifest `evidence` field (ADR-0138 § 3) | ≤ 6 active, ≤ 2000 net lines (insertions **plus** deletions, recomputed each sync), ≤ 25 touched upstream files, evaluated at every sync |
+
+**Cap evaluation belongs in the sync evidence block.** Because C-class patches
+retire on adoption rather than on an upstream fix, a sync is the only recurring
+moment at which their accumulated cost is actually paid — so it is where the
+caps are checked. A sync that would leave the train over any cap does not
+proceed until a patch is dropped or upstreamed; two consecutive over-cap syncs
+is one of the three hard-fork triggers — it counts **pre-mitigation** breaches
+(the stop-and-mitigate procedure invoked at two consecutive syncs), not a
+persisting over-cap state (ADR-0138 § 5). Until the `psmfd-patch-integrity`
+check exists, this is a manual step.
+
+**Two further things the sync evidence block records** (ADR-0138 §§ 4-5).
+Whenever a conflict on a C-class path resolves `--ours`, record the path and the
+discarded upstream diff (`git diff <ours> <theirs> -- <path>`): whole-file
+`--ours` silently drops *all* of upstream's other changes to that file, and
+across a long-lived patch that debt is otherwise invisible. And for every
+extension under soak, record one line stating whether it required functional
+rework this sync — soak evidence must be contemporaneous, so an extension with
+no such record has not soaked however long it has existed.
+
+> **Not yet implemented on the mirror.** The `class:` field, the generalized
+> allowlist comment headers, and the `SECURITY_PATCH_PATHS` rename are tracked
+> in #982, with the public
+> counterpart filed as [psmfd/pi#53](https://github.com/psmfd/pi/issues/53).
+> Until they land, every manifest entry is S-class by construction. Implement
+> them against **ADR-0138**, not ADR-0136 — the retirement semantics differ, and
+> ADR-0136's "rebase-drop" wording would produce tooling that rebases PSMFD
+> history.
 
 ## Never-cross list
 
@@ -243,6 +290,11 @@ the gate must not be widened casually.
   record for this policy
 - [ADR-0038](../adrs/0038-psmfd-pi-build-and-attest-trust-boundary.md) —
   build-and-attest trust boundary this policy feeds
+- [ADR-0138](../adrs/0138-patch-train-and-fork-policy-corrected.md) — **current**
+  patch-train and fork policy: the two divergence classes, soak criteria, caps,
+  fork triggers, and the merge-time-allowlist-drop retirement mechanism
+  (supersedes [ADR-0136](../adrs/0136-patch-train-and-fork-policy.md), which
+  superseded [ADR-0041](../adrs/0041-conditional-security-patch-divergence.md))
 - `psmfd/pi` `PROVENANCE.md`, `.psmfd/security-baseline.md`,
   `.psmfd/overlay-allowlist.txt` — the mirror-side contracts
 - pi_config#360 — tracking

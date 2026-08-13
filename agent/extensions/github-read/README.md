@@ -2,6 +2,14 @@
 
 First-party pi extension implementing ADR-0123 and epic #875. It registers a small loader, `github_read`, plus dynamically activated domain tools for repository, issue, pull-request, Actions, Projects v2, security-alert, and notification inspection.
 
+## Where the code lives
+
+This extension is deliberately thin: it contains `index.ts` (tool registration, domain activation, result framing) and `settings.ts` (the user-layer opt-in gate for the `security` and `notifications` domains) — the parts specific to being a **model-facing tool surface**.
+
+The read machinery — operation-plan builders, the read-only argv assertion, the `gh` runner, and the field-projection formatter — lives in `../shared/github-read-*.ts` and is shared with `repo-dash`, which drives the same typed readers from interactive TUI panels. Both consumers therefore sit on **one** `assertReadOnlyPlan`, rather than a second implementation that could drift. See [ADR-0137](../../../adrs/0137-github-read-core-shared-extraction.md); the sharing goes through `shared/` rather than a direct import because ADR-0088 gates cross-extension imports.
+
+The opt-in gate stays here, not in `shared/`, because it governs what the **model** may reach — tool-surface policy, not read machinery.
+
 ## Assurance boundary
 
 Every operation executed **through this extension** is mechanically read-only:

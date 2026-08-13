@@ -418,6 +418,21 @@ else
   err "subagent drift: scripts/validate-subagent-drift.sh is missing or not executable"
 fi
 
+# Hashline-edit vendored-source drift (#976, ADR-0134). Hermetic sibling of
+# the subagent check above: the pristine upstream snapshot is a committed,
+# sha256-pinned tarball, so no cache population is required.
+info "Validating agent/extensions/hashline-edit/ vendored-source drift (#976)"
+if [ -x scripts/validate-hashline-drift.sh ]; then
+  if scripts/validate-hashline-drift.sh >/dev/null; then
+    ok "hashline drift: manifest matches vendored source"
+  else
+    scripts/validate-hashline-drift.sh || true
+    err "hashline drift: manifest mismatch (see ERROR lines above)"
+  fi
+else
+  err "hashline drift: scripts/validate-hashline-drift.sh is missing or not executable"
+fi
+
 # --- 6a-bis. Expertise audit (#601, ADR-0095) -------------------------------
 # Runs AFTER the drift check (6a) so a manifest mismatch fails fast before
 # any network-touching work. Unlike every sibling stage, an absent loopback
@@ -584,6 +599,49 @@ if [ "$vp_bad" -eq 0 ]; then
   ok "vault-lockstep: both layers carry the vault-naming + sensitive-basename set"
 fi
 
+# --- 6b-quater-pre. token-meter UNTAGGED lockstep gate (#521, #966) ---------
+# The `untagged` sentinel is a TWO-file lockstep: record.ts owns it, and the
+# jq program in scripts/token-meter.sh must default a missing `.policy` to the
+# same literal. Drift silently splits pre-#521 and untagged records into two
+# CLI buckets.
+#
+# This lived as a unit test inside the token-meter suite until #966. That suite
+# SHIPS to psmfd/pi-token-meter, where the CLI script does not exist (targets.yml
+# ships only agent/extensions/token-meter), so the assertion could never resolve
+# its path there and failed the mirror's CI unconditionally from 2026-07-24. The
+# invariant is monorepo-scoped, so it belongs in the monorepo's gate — see the
+# self-containment gate below for the structural rule that keeps it there.
+#
+# Stronger than the test it replaces: the sentinel is EXTRACTED from record.ts
+# rather than assumed, so a rename on either side fails, and a record.ts that
+# stops declaring it in the expected shape is an error rather than a vacuously
+# passing grep.
+info "token-meter UNTAGGED lockstep gate (#521)"
+tm_record="agent/extensions/token-meter/record.ts"
+tm_cli="scripts/token-meter.sh"
+tm_bad=0
+tm_sentinel=""
+if [ ! -f "$tm_record" ]; then
+  err "token-meter-lockstep: $tm_record missing (cannot extract the sentinel)"
+  tm_bad=1
+elif [ ! -f "$tm_cli" ]; then
+  err "token-meter-lockstep: $tm_cli missing (cannot verify the jq default)"
+  tm_bad=1
+else
+  tm_sentinel="$(sed -nE 's/^export const UNTAGGED = "([^"]*)".*$/\1/p' "$tm_record")"
+  tm_count="$(printf '%s' "$tm_sentinel" | grep -c . || true)"
+  if [ "$tm_count" -ne 1 ]; then
+    err "token-meter-lockstep: expected exactly one 'export const UNTAGGED = \"...\";' in $tm_record, found $tm_count — the gate cannot extract the sentinel"
+    tm_bad=1
+  elif ! grep -vE '^[[:space:]]*#' "$tm_cli" | grep -qF "\"$tm_sentinel\""; then
+    err "token-meter-lockstep: $tm_cli active lines do not carry record.ts's sentinel literal \"$tm_sentinel\" — the jq \`policyof\` default and UNTAGGED have drifted (#521)"
+    tm_bad=1
+  fi
+fi
+if [ "$tm_bad" -eq 0 ]; then
+  ok "token-meter-lockstep: record.ts UNTAGGED and the CLI jq default agree (\"$tm_sentinel\")"
+fi
+
 # --- 6b-quater. Cross-extension shipped-import gate (#635, ADR-0088) --------
 # Generalizes ADR-0065's ../shared/ resolution check into a systemic dev-time
 # gate: an extension must never hard-import a relative path into a DIFFERENT
@@ -598,7 +656,7 @@ fi
 # sync-mirror.sh staged-tree backstop (verify_no_orphan_cross_imports).
 info "Cross-extension shipped-import gate (#635)"
 # Extract the pi-config target's exclude: list, extension basenames only
-# (block-scalar parse style of the 6b-ter gate; no yq).
+# (block-scalar parse style of the 6b-sexies gate; no yq).
 xi_excluded="$(awk '
   /^  - name: pi-config$/ {intgt=1; next}
   intgt && /^  - name: / {exit}
@@ -643,7 +701,122 @@ if [ "$xi_bad" -eq 0 ]; then
   ok "cross-ext-import: no unresolvable cross-extension imports in shipped extensions"
 fi
 
-# --- 6b-ter. Mirror-target onboarding lockstep gate (#512, ADR-0074) -------
+# --- 6b-quinquies. Tool-free extension self-declaration gate (#990, ADR-0139)
+# ADR-0137 states that repo-dash "registers no tools" and calls that the
+# load-bearing constraint: the model's GitHub reach stays github-read's typed,
+# domain-gated surface, and repo-dash widens what the OPERATOR sees without
+# widening what the MODEL can request. That claim was enforced by prose alone —
+# a doc comment and a README section — while the ADR it cites as precedent
+# (ADR-0088) protects its own boundary with a real gate. One future commit
+# adding a pi.registerTool call would have shipped with no signal at all.
+#
+# The check is bidirectional and derived entirely from source, so there is no
+# ledger to drift — the ADR-0074 failure shape (a hand-kept list that silently
+# disagrees with reality) has no place to occur here:
+#   Set A = extensions whose OWN index.ts carries the marker line
+#           `// PI-EXTENSION-CAPABILITY: no-registerTool`
+#   Set B = extensions with ZERO real pi.registerTool( call sites anywhere in
+#           their own tracked non-test .ts files
+#   A \ B -> declared tool-free but registers one: the ADR-0137 regression.
+#   B \ A -> tool-free but undeclared: without this direction, deleting the
+#            marker would silently disable the gate for that extension.
+#
+# Scope is deliberately narrow and that is worth stating plainly: this proves
+# only that no new model-callable TOOL SCHEMA is registered. It is necessary but
+# not sufficient for "does not widen model reach" — hooks (pi.on) and
+# ctx.ui.setEditorText are separate vectors, addressed by separate controls
+# (repo-dash's sanitizeTitle and its tests) rather than by this gate. Aliasing,
+# destructuring, line-wrapped member access, and registration indirected through
+# a shared helper are accepted, documented gaps: none occurs anywhere in the
+# corpus, and a gate nobody can reason about is worse than a simple one whose
+# limits are written down. See ADR-0139.
+#
+# Discovery is anchored to ^agent/extensions/<name>/index.ts$ rather than a bare
+# /index.ts$: hashline-edit vendors a third-party vendor/jsdiff/index.ts, which
+# an unanchored pattern counts as a 23rd "extension".
+info "Tool-free extension self-declaration gate (#990)"
+tf_marker='// PI-EXTENSION-CAPABILITY: no-registerTool'
+tf_bad=0
+
+tf_all="$(git ls-files -- agent/extensions \
+  | grep -E '^agent/extensions/[^/]+/index\.ts$' \
+  | sed -E 's#^agent/extensions/([^/]+)/index\.ts$#\1#' | sort -u)"
+if [ -z "$tf_all" ]; then
+  err "tool-free-gate: found no agent/extensions/*/index.ts at the expected depth — extension discovery is broken; refusing to pass vacuously"
+  tf_bad=1
+fi
+
+# Set A — read from each extension's OWN index.ts, exact whole-line match.
+tf_declared=""
+while IFS= read -r tf_e; do
+  [ -n "$tf_e" ] || continue
+  if grep -qxF "$tf_marker" "agent/extensions/$tf_e/index.ts" 2>/dev/null; then
+    tf_declared="$tf_declared
+$tf_e"
+  fi
+done < <(printf '%s\n' "$tf_all")
+
+# Complement of Set B — extensions with a real call site. Comment lines are
+# stripped because prose genuinely collides: web-fetch/index.ts carries
+# "pi.registerTool (#826)" in a docblock, which matches the call pattern. Test
+# files are excluded because expertise-client/test/coexist.test.ts holds
+# pi.registerTool(...) inside string literals by design.
+tf_files="$(git ls-files -- agent/extensions | grep -E '\.ts$' | grep -v '/test/')"
+tf_registering=""
+if [ -z "$tf_files" ]; then
+  err "tool-free-gate: no non-test .ts files found under agent/extensions — cannot determine which extensions register tools"
+  tf_bad=1
+else
+  tf_registering="$(printf '%s\n' "$tf_files" \
+    | xargs grep -lE '(^|[^A-Za-z0-9_.])pi\.registerTool[[:space:]]*\(' 2>/dev/null \
+    | while IFS= read -r tf_f; do
+        [ -n "$tf_f" ] || continue
+        # Re-test the file with comment lines removed, so a docblock mention
+        # alone never counts as a registration.
+        #
+        # Counted, NOT `grep -q`. `-q` exits on the first match, which SIGPIPEs
+        # the upstream `grep -v`; under `set -o pipefail` that 141 becomes the
+        # pipeline's status and the file scores as "no match". It only bites
+        # when the match is early enough in a long file that the producer has
+        # not finished — package-agent-broker (match at line 313) silently
+        # dropped out of this set while shorter files passed. That is fail-OPEN
+        # for the declared-but-registers direction, so the early exit must stay
+        # gone.
+        tf_hits="$(grep -vE '^[[:space:]]*(//|\*|/\*)' "$tf_f" \
+                     | grep -cE '(^|[^A-Za-z0-9_.])pi\.registerTool[[:space:]]*\(' || true)"
+        if [ "${tf_hits:-0}" -gt 0 ]; then
+          printf '%s\n' "$tf_f"
+        fi
+      done \
+    | sed -nE 's#^agent/extensions/([^/]+)/.*#\1#p' | sort -u)"
+fi
+
+tf_has() {   # $1 = needle, $2 = newline-delimited haystack
+  case "
+$2
+" in *"
+$1
+"*) return 0 ;; *) return 1 ;; esac
+}
+
+while IFS= read -r tf_e; do
+  [ -n "$tf_e" ] || continue
+  if tf_has "$tf_e" "$tf_declared"; then
+    if tf_has "$tf_e" "$tf_registering"; then
+      err "tool-free-gate: agent/extensions/$tf_e/index.ts declares '$tf_marker' but the extension has a real pi.registerTool(...) call site — the declaration is false (ADR-0137/ADR-0139)"
+      tf_bad=1
+    fi
+  elif ! tf_has "$tf_e" "$tf_registering"; then
+    err "tool-free-gate: agent/extensions/$tf_e registers no tools but does not declare '$tf_marker' on its own line in index.ts (ADR-0139)"
+    tf_bad=1
+  fi
+done < <(printf '%s\n' "$tf_all")
+
+if [ "$tf_bad" -eq 0 ]; then
+  ok "tool-free-gate: every extension's no-registerTool declaration matches its real call sites"
+fi
+
+# --- 6b-sexies. Mirror-target onboarding lockstep gate (#512, ADR-0074) ----
 # A mirror EXTENSION target must be declared in lockstep across three files:
 #   mirror/targets.yml               — the outbound sync manifest
 #   .github/workflows/sync-mirrors.yml — the mirror-sync App-token repositories: scope
@@ -716,6 +889,61 @@ if [ "$mt_bad" -ne 0 ]; then
   err "mirror-lockstep: onboard the missing target(s) per docs/outbound-mirror-sync.md § Adding a new mirror target — create the repo, run scripts/add-mirror-to-installation.sh, and add it to all three files in lockstep"
 else
   ok "mirror-lockstep: extension targets consistent across targets.yml, sync-mirrors.yml, install.sh"
+fi
+
+# --- 6b-septies. Mirrored-extension test self-containment gate (#966) ------
+# A mirrored extension's test suite ships with it. In the mirror the extension
+# sits at the REPO ROOT, so test/ is one level down and anything the tests reach
+# for two-or-more levels up is outside what the mirror contains — the read
+# resolves above the repository and throws. That is #966: token-meter's suite
+# read ../../../../scripts/token-meter.sh (valid here, nonexistent there) and
+# failed psmfd/pi-token-meter's CI unconditionally for 18 days.
+#
+# Third sibling of the self-containment family: ADR-0065 gates `../shared/`
+# import RESOLUTION, ADR-0088 §6b-quater gates cross-extension IMPORTS, and this
+# gates filesystem READS in shipped tests. Same invariant, three mechanisms.
+#
+# Scope is deliberately the MIRRORED extensions only, read from targets.yml
+# (never a second hardcoded list — ADR-0074's lesson). subagent and
+# package-agent-broker legitimately reach the repo root for agent wrappers and
+# fixtures; they are monorepo-only and never ship, so the escape is harmless
+# there and a blanket rule would be wrong.
+#
+# Detection is the path-SEGMENT form (`join(x, "..", "..", …)`) rather than any
+# occurrence of "../../": an embedded literal is either an import specifier
+# (governed by ADR-0065 inlining, which rewrites it at stage time) or test DATA
+# such as safeSessionKey("../../etc/passwd"). Matching those would make the gate
+# noisy enough to be disabled, which is worse than not having it.
+info "Mirrored-extension test self-containment gate (#966)"
+me_bad=0
+me_dirs="$(grep -E '^[[:space:]]+strip_prefix:[[:space:]]*agent/extensions/' mirror/targets.yml \
+  | sed -E 's/^[[:space:]]+strip_prefix:[[:space:]]*//' | sed -E 's/[[:space:]]+$//' | sort -u)"
+if [ -z "$me_dirs" ]; then
+  err "mirror-test-escape: no 'strip_prefix: agent/extensions/...' entries in mirror/targets.yml — cannot determine which extensions ship, refusing to pass vacuously"
+  me_bad=1
+fi
+while IFS= read -r me_dir; do
+  [ -n "$me_dir" ] || continue
+  if [ ! -d "$me_dir" ]; then
+    err "mirror-test-escape: mirror/targets.yml strip_prefix names a missing directory: $me_dir"
+    me_bad=1
+    continue
+  fi
+  [ -d "$me_dir/test" ] || continue
+  me_hits="$(grep -nE '"\.\."[[:space:]]*,[[:space:]]*"\.\."' "$me_dir"/test/*.ts 2>/dev/null || true)"
+  if [ -n "$me_hits" ]; then
+    while IFS= read -r me_ln; do
+      [ -n "$me_ln" ] && err "mirror-test-escape: shipped test reads above the extension root (breaks in the mirror, where the extension IS the repo root): $me_ln"
+    done <<ME_HITS
+$me_hits
+ME_HITS
+    me_bad=1
+  fi
+done <<ME_DIRS
+$me_dirs
+ME_DIRS
+if [ "$me_bad" -eq 0 ]; then
+  ok "mirror-test-escape: no mirrored extension's tests read above the extension root"
 fi
 
 # --- 6c. Pi vendor (agent/vendor/pi/) --------------------------------------
@@ -878,7 +1106,7 @@ else
   fi
 fi
 
-# --- 6f. sync-mirror version-bump self-test (ADR-0058) ---------------------
+# --- 6f-quater. sync-mirror version-bump self-test (ADR-0058) --------------
 # Network-free check of the Conventional-Commits bump helpers that compute an
 # extension mirror's next version (#415). Catches a regression in the
 # classify/bump/compare logic without touching any mirror.
@@ -968,7 +1196,9 @@ while IFS= read -r mdfile; do
     }
   ' "$mdfile")
 done < <(find . -name '*.md' \
-            -not -path './node_modules/*' \
+            -not -path '*/node_modules/*' \
+            -not -path './.worktrees/*' \
+            -not -path './.wt_tmp/*' \
             -not -path './.git/*' \
             -not -path './agent/sessions/*' \
             -not -path './agent/skills/*/references/*' \
@@ -978,7 +1208,12 @@ done < <(find . -name '*.md' \
             -not -path './mirror/readme/*' \
             -not -path './agent/extensions/compaction-optimizer/archive/*')
 # Excluded paths:
-#  - node_modules, .git:           dependency / VCS internals
+#  - */node_modules, .git:         dependency / VCS internals. The node_modules prune is
+#                                 depth-agnostic: a root-only './node_modules/*' misses the
+#                                 nested installs under session worktrees (#958).
+#  - .worktrees, .wt_tmp:          ADR-0120 per-session worktrees and manual scratch
+#                                 worktrees — full repo copies whose markdown is not this
+#                                 checkout's authored content; gitignored, never merged
 #  - agent/sessions:               runtime session artifacts (not authored content)
 #  - agent/skills/*/references:    cross-skill paths resolved at runtime, not authored intra-repo links
 #  - docs/archive:                 frozen reference for rescinded substrates (ADR-0020); the relative
@@ -1252,6 +1487,27 @@ else
   err "github-read: scripts/test-github-read.sh missing or not executable; required check skipped"
 fi
 
+# --- 9a-sexies-repo-dash. repo-dash test suite (#981, ADR-0137) ------------
+info "Running repo-dash test suite"
+if [ -x scripts/test-repo-dash.sh ]; then
+  if rd_output="$(scripts/test-repo-dash.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$rd_output"
+    fi
+    ok "repo-dash: tests passed"
+  else
+    rd_status=$?
+    printf '%s\n' "$rd_output" >&2
+    if [ "$rd_status" -eq 2 ]; then
+      err "repo-dash: test environment unavailable (node/npx); required check skipped"
+    else
+      err "repo-dash: test suite failed (exit $rd_status)"
+    fi
+  fi
+else
+  err "repo-dash: scripts/test-repo-dash.sh missing or not executable; required check skipped"
+fi
+
 # --- 9b-cache-meter. cache-meter test suite (#338, ADR-0034) ---------------
 info "Running cache-meter test suite"
 if [ -x scripts/test-cache-meter.sh ]; then
@@ -1504,6 +1760,27 @@ else
   err "worktree: scripts/test-worktree.sh missing or not executable; required check skipped"
 fi
 
+# --- 9b-hashline. hashline-edit test suite (#976, ADR-0134/0135) -----------
+info "Running hashline-edit test suite"
+if [ -x scripts/test-hashline-edit.sh ]; then
+  if hlt_output="$(scripts/test-hashline-edit.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$hlt_output"
+    fi
+    ok "hashline-edit: tests passed"
+  else
+    hlt_status=$?
+    printf '%s\n' "$hlt_output" >&2
+    if [ "$hlt_status" -eq 2 ]; then
+      err "hashline-edit: test environment unavailable (node/npx); required check skipped"
+    else
+      err "hashline-edit: test suite failed (exit $hlt_status)"
+    fi
+  fi
+else
+  err "hashline-edit: scripts/test-hashline-edit.sh missing or not executable; required check skipped"
+fi
+
 # --- 9b-token-cli. token-meter CLI self-test (ADR-0073) --------------------
 info "Running token-meter CLI self-test"
 if [ -x scripts/token-meter.sh ]; then
@@ -1710,6 +1987,52 @@ else
   err "package-agent-broker: scripts/test-package-agent-broker.sh missing or not executable; required check skipped"
 fi
 
+# --- 9b-octies. guard-mutation verification (#931, ADR-0132) ---------------
+# Proves the security-guard regression tests actually fail when their guard is
+# removed. A guard that still passes on buggy code certifies the gap (#916), so
+# a green suite is evidence only once it has been seen to go red. The harness
+# mutates tracked source in place and restores it, and refuses outright if the
+# target already carries uncommitted work.
+info "Running guard-mutation harness self-tests"
+if [ -x tests/guard-mutations/run-tests.sh ]; then
+  if gmh_output="$(tests/guard-mutations/run-tests.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$gmh_output"
+    fi
+    ok "guard-mutations: harness fail-closed self-tests passed"
+  else
+    gmh_status=$?
+    printf '%s\n' "$gmh_output" >&2
+    if [ "$gmh_status" -eq 2 ]; then
+      err "guard-mutations: self-test environment unavailable; required check skipped"
+    else
+      err "guard-mutations: harness self-tests failed (exit $gmh_status)"
+    fi
+  fi
+else
+  err "guard-mutations: tests/guard-mutations/run-tests.sh missing or not executable; required check skipped"
+fi
+
+info "Running guard-mutation verification"
+if [ -x scripts/verify-guard-mutations.sh ]; then
+  if gm_output="$(scripts/verify-guard-mutations.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$gm_output"
+    fi
+    ok "guard-mutations: every registered guard is covered by a failing test"
+  else
+    gm_status=$?
+    printf '%s\n' "$gm_output" >&2
+    if [ "$gm_status" -eq 2 ]; then
+      err "guard-mutations: verification environment unavailable; required check skipped"
+    else
+      err "guard-mutations: a registered guard went undetected (exit $gm_status)"
+    fi
+  fi
+else
+  err "guard-mutations: scripts/verify-guard-mutations.sh missing or not executable; required check skipped"
+fi
+
 # --- 9c. extension type-check (ADR-0021) -----------------------------------
 info "Running typecheck-extensions"
 if [ -x scripts/typecheck-extensions.sh ]; then
@@ -1774,6 +2097,51 @@ else
     printf '%s\n' "$sc_output" >&2
     err "shellcheck: findings at/above warning severity (see output above)"
   fi
+fi
+
+# --- 9f. Section-label uniqueness in this script (#996) --------------------
+# This script's own `# --- <label>.` section labels are the citation handle for
+# its gates: ADR-0088, ADR-0137, and ADR-0139 all reference them by ordinal
+# ("validate.sh §6b-quater", "§6b-quinquies"). A label used twice makes every
+# such citation ambiguous, and the collision produces no signal at all — the
+# script runs identically, so it is found only by a reader who follows a
+# reference and lands on the wrong gate. That is exactly what #993 was: the
+# cross-extension gate cited "the 6b-ter gate" for a block-scalar parse style
+# belonging to the mirror-target gate, while a search for that label reached the
+# vault gate first.
+#
+# Hand-fixing the instance does not fix the class. Choosing an ordinal means
+# eyeballing 60+ headers, and #993's implementation turned up a SECOND,
+# long-unnoticed duplicate (`6f`, used by both the install-helpers and
+# sync-mirror sections). Two independent collisions in one file is why this is a
+# gate and not a code-review habit — the ADR-0139 argument that a rule failing
+# silently is a rule that eventually gets broken.
+#
+# Uniqueness only, deliberately NOT positional ordering: `6b-quater-pre`
+# precedes `6b-quater` and the `9a-*` suites interleave among the `9b-*` ones,
+# both harmless and not worth churning.
+info "Section-label uniqueness in validate.sh (#996)"
+sl_bad=0
+# Absolute, not ${BASH_SOURCE[0]}: the script cds to REPO_DIR at startup, so a
+# relative invocation from another cwd would leave that path dangling here.
+sl_self="$REPO_DIR/scripts/validate.sh"
+# Labels only — the un-numbered prose dividers ("Output helpers", "Summary")
+# carry no period and are skipped by the pattern rather than by a name list.
+sl_labels="$(sed -nE 's/^# --- ([^.]+)\..*/\1/p' "$sl_self")"
+sl_count="$(printf '%s\n' "$sl_labels" | grep -c . || true)"
+if [ "${sl_count:-0}" -eq 0 ]; then
+  err "section-labels: extracted no '# --- <label>.' headers from $sl_self — the header convention changed and this gate is blind; fix the pattern rather than deleting the check"
+  sl_bad=1
+else
+  while IFS= read -r sl_dupe; do
+    [ -n "$sl_dupe" ] || continue
+    sl_lines="$(grep -nE "^# --- ${sl_dupe}\." "$sl_self" | cut -d: -f1 | tr '\n' ' ')"
+    err "section-labels: '$sl_dupe' is used by more than one section (lines: ${sl_lines% }) — ordinal citations to it are ambiguous (#996)"
+    sl_bad=1
+  done < <(printf '%s\n' "$sl_labels" | sort | uniq -d)
+fi
+if [ "$sl_bad" -eq 0 ]; then
+  ok "section-labels: all $sl_count section ordinals in validate.sh are unique"
 fi
 
 # --- 10. markdownlint -------------------------------------------------------

@@ -105,7 +105,7 @@ A pi version bump is **not** just what `bump-pi-runtime.sh` touches. The bump's 
 | 3 | npm quad pin — pi-coding-agent, pi-agent-core, pi-ai, pi-tui | `scripts/lib/extension-deps.sh` `EXTENSION_DEPS_PI_AGENT_VERSION` | `bump-pi-runtime.sh` (drift-fix target `extension-deps`) |
 | 4 | Settings example coupled pin | `agent/settings.example.json` | `bump-pi-runtime.sh` (drift-fix target `settings-example`) |
 | 5 | Subagent vendored snapshot pairing | `agent/extensions/subagent/` + `PATCH_MANIFEST.json` | `bump-pi-runtime.sh` emits the audit signal; re-pair itself is human-gated Procedure B (see § Subagent extension) |
-| 6 | Mirror packaging deps — each public extension mirror's committed `package.json`/lockfile (`@earendil-works/*` dev-deps; pi-auto-router also has a **runtime** `pi-ai` dep) | The 12 `psmfd/pi-*` mirror repos (preserved by overlay sync, NOT managed from pi_config) | Manual per-repo bump + lockfile regen (`npm install --package-lock-only --ignore-scripts`); automation decision tracked in #856 |
+| 6 | Mirror packaging deps — each public extension mirror's committed `package.json`/lockfile (`@earendil-works/*` dev-deps; pi-auto-router also has a **runtime** `pi-ai` dep) | The 12 `psmfd/pi-*` mirror repos (preserved by overlay sync, NOT managed from pi_config) | Manual per-repo bump + lockfile regen (`npm install --package-lock-only --ignore-scripts`), then close the superseded Dependabot PRs; run the bump against a **pristine clone first and record the result**, so a failure that predates the bump is not misread as caused by it (see § Mirror packaging sweep). Automation decision tracked in #968 |
 | 7 | agent-expertise-api extension lockfile | `psmfd/agent-expertise-api` `.pi/extensions/expertise-api/package-lock.json` | Manual bump in that repo |
 
 Rows 2–5 are the automated pi_config-local rows; `pi-runtime-bump.yml` bot PRs cover them. Reviewing a bot bump PR means checking rows 1 and 6–7 have an owner (done, issue, or deferred-with-reason).
@@ -118,6 +118,26 @@ scripts/check-ext-ref-drift.sh --fix --target settings-example
 ```
 
 Both `--fix` operations are surgical (single-line rewrite each, anchored on the specific `${VAR:-...}` / JSON-key shape).
+
+#### Mirror packaging sweep (checklist row 6)
+
+The 12 `psmfd/pi-*` extension mirrors each commit their own `package.json` and `package-lock.json`. Overlay sync **preserves** them (`OVERLAY_PROTECTED_TOPLEVEL`), so they are mirror-owned and must be bumped in the mirror — a fix pushed to pi_config never reaches them. Dependabot cannot do it either: the vulnerable transitives are nested exact pins under the `@earendil-works/*` packages and only move when those packages move, so Dependabot's own PRs propose intermediate versions and get superseded.
+
+Run it as **one sweep across all 12**, not per-repo as convenient (ADR-0119 row 6). Per mirror:
+
+1. Set every exact `@earendil-works/*` pin in `package.json` to the new version. Leave `peerDependencies` alone — `">=0.75"` is a compatibility floor, not a pin, and narrowing it breaks consumers on older pi.
+2. `npm install --package-lock-only --ignore-scripts`
+3. Run the mirror's **own** `ci.yml` steps (`npm ci`, `npm run typecheck`, and `npm test` where a `test` script exists — two mirrors ship none).
+4. Commit `chore(deps): bump @earendil-works packaging deps to <version>`; the mirror's `version` field is untouched, since `ext_advance_version` derives releases from pi_config commit history, not mirror commits.
+
+Then close the superseded Dependabot PRs (leave unrelated tsx/typescript/`@types/node`/actions PRs open) and confirm each mirror's `ci.yml` run on `main`.
+
+Two things this procedure exists to prevent:
+
+- **Run the same commands on a pristine clone first and keep the output.** Without that control, a pre-existing failure reads as a regression caused by the bump. In the 0.84.x sweep two mirrors were red at the new pin and *both* were red at the old one too — one a genuine pre-existing bug (#966), the other an artifact of the verification harness (see below).
+- **Do not clone the mirrors under `/tmp` to verify.** `pi-bash-destructive-guard`'s tests build their "outside the safe list" fixture relative to `cwd`; when `cwd` is itself under `/tmp` the fixture lands *on* the guard's built-in safe list and three deny-assertions invert. Clone somewhere else and they pass 254/254.
+
+Check mirror CI with `gh run list --repo psmfd/<mirror> --workflow ci.yml --branch main`. **Omitting `--workflow` reports a false green** — Dependabot updater runs also land on `main`, are almost always green, and dominate the default listing. That masking is how a red mirror went unnoticed for 18 days (#967).
 
 ### nvm: `agent/vendor/nvm/`
 

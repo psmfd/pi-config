@@ -2,11 +2,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
-import { assertReadOnlyPlan, buildOperationPlan, DOMAIN_OPERATIONS, DOMAIN_TOOL_NAMES } from "./catalog.ts";
-import { parseAndProjectJson, renderBoundedResult, renderBoundedText } from "./formatting.ts";
-import { probeGithubIdentity, runGh, sanitizeDiagnostic } from "./runner.ts";
+import { assertReadOnlyPlan, buildOperationPlan, DOMAIN_OPERATIONS, DOMAIN_TOOL_NAMES } from "../shared/github-read-catalog.ts";
+import { parseAndProjectJson, renderBoundedResult, renderBoundedText } from "../shared/github-read-formatting.ts";
+import { probeGithubIdentity, runGh, sanitizeDiagnostic } from "../shared/github-read-runner.ts";
 import { loadGithubReadSettings } from "./settings.ts";
-import type { GithubDomain, GithubReadParams, GithubResultMetadata } from "./types.ts";
+import type { GithubDomain, GithubReadParams, GithubResultMetadata } from "../shared/github-read-types.ts";
 
 const DOMAINS = ["repository", "issues", "pull_requests", "actions", "projects", "security", "notifications"] as const;
 const DOMAIN_TOOL_SET = new Set(Object.values(DOMAIN_TOOL_NAMES));

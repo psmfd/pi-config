@@ -336,6 +336,40 @@ receipt — guarded by runtime-instance id **and** approval sequence, so
 evidence from one approval can never mislabel a later one. Receipts remain
 non-authorizing throughout; the dispatch path reads no file.
 
+### TOCTOU and the verify-then-exec window (#931)
+
+Three windows are guarded, in the file that can express each:
+
+| Window | Where | Guard |
+| --- | --- | --- |
+| display → commit (approval) | `approve-flow.test.ts` | the definition is reconstructed under the authority lock and its digest compared to the displayed one — `index.ts`'s documented property 2 |
+| pre-lock → in-lock (dispatch) | `dispatch.test.ts` | the in-lock revalidation; distinct from the "changed after approval" case, which lands before dispatch starts where the pre-lock peek catches it |
+| the residual itself | `toctou.test.ts` | ADR-0131 Decision 9's *bound* |
+
+`toctou.test.ts` reads source rather than driving behaviour, deliberately.
+ADR-0131 Decision 9 does not claim the verify-then-exec window is closed — it
+claims it is bounded to one synchronous span with no intervening `await`.
+Inserting an `await` there widens the window to an arbitrary scheduler gap
+**while changing no output**, so no behavioural assertion can see it. Measured:
+making the lock callback `async` with an `await` in the span leaves all twenty
+suites green and fails only the structural assertions.
+
+Hostile-character fixtures live in `test/fixtures/hostile-content.ts` (`-maxdepth 1`
+test discovery leaves the directory alone) so guards written in different suites
+are written against the same characters.
+
+### Guard-mutation verification (ADR-0132)
+
+Every guard above is registered in `scripts/guard-mutations.json` with the edit
+that disables it and the test that must then fail. `scripts/verify-guard-mutations.sh`
+applies each, runs this suite, asserts the **named** tests failed, and restores
+the file — so a guard test that stops exercising its guard fails CI instead of
+passing quietly. Registration is a review-time obligation: adding a guard here
+without a manifest entry is not mechanically detected.
+
+The motivating measurement: with the display-to-commit digest compare disabled,
+the 657-line `approve-flow.test.ts` passed. The gap was real, not redundant.
+
 ## Refusal policy (per-rule)
 
 | Rule | Classification | Rationale |
@@ -390,11 +424,11 @@ need overriding. (Removing a draft is itself a command: `revoke-draft`.)
 
 ## Tests
 
-`scripts/test-package-agent-broker.sh` runs nineteen suites (input-router,
+`scripts/test-package-agent-broker.sh` runs twenty suites (input-router,
 descriptor, canonical, discovery, review-snapshot, viewer, collisions,
 state-store, index-flow, grant-digest, reconstruct, grant-registry,
 approve-flow, suspend-inclusive-clock, dispatch-admission,
-lifecycle-evidence, child-sandbox, dispatch, dispatch-runner) covering: RPC/extension/steer/follow-up refusal;
+lifecycle-evidence, child-sandbox, dispatch, dispatch-runner, toctou) covering: RPC/extension/steer/follow-up refusal;
 confusable, whitespace, ANSI/bidi/control, and oversized input; zero
 import/spawn/network/registration (static source assertion); duplicate keys
 and malformed schemas; every canonical field mutation changing the digest;

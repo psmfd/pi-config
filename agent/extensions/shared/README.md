@@ -4,9 +4,10 @@ A small internal **library** consumed by the Pi Extension Suite extensions
 (auto-router, compaction-optimizer, context-manager, indexing, subagent), the
 bash-guard family (bash-destructive-guard, via `shell-lex.ts`), the
 expertise stack (expertise-client, expertise-fanout-gate, expertise-indexer),
-and the package-agent broker (package-agent-broker, via
+the package-agent broker (package-agent-broker, via
 `package-agent-review-contract.ts` + `package-agent-grant-contract.ts` +
-`package-agent-canonical.ts`).
+`package-agent-canonical.ts`), and the GitHub read stack (github-read and
+repo-dash, via the `github-read-*.ts` family).
 It is **not a loadable pi extension**: it has no `index.ts`, so pi's
 auto-discovery (`~/.pi/agent/extensions/*/index.ts`) skips it. Consumers import
 its modules by relative path, e.g.
@@ -14,9 +15,24 @@ its modules by relative path, e.g.
 
 It is the single source of truth for context-usage signals, the credentialed
 candidate-model menu, per-model cost normalization, notification formatting,
-the per-extension state convention, cross-extension phase signals, and the
-expertise-API client stack — so no extension re-derives these or hardcodes
-thresholds.
+the per-extension state convention, cross-extension phase signals, the
+expertise-API client stack, and the typed read-only GitHub read layer — so no
+extension re-derives these or hardcodes thresholds.
+
+## Layout constraint: this directory is flat
+
+`shared/` holds **flat modules only** — never a subdirectory (`test/` aside).
+This is enforced by tooling that fails *silently*, so it is easy to violate by
+accident: `sync-mirror.sh`'s ADR-0065 closure resolver probes seeds by basename
+(`$dir/<name>.ts`) and discovers dependencies with a pattern that admits no `/`,
+and `verify_inline_imports` matches `shared/[A-Za-z0-9_-]+\.ts` — a nested
+specifier does not match, so it is skipped rather than flagged. A nested module
+would ship unverified and break the first time an excluded extension needed it
+inlined.
+
+Related modules are therefore grouped by **filename prefix**, not by directory.
+Three families exist: `expertise-api-*`, `package-agent-*`, and
+`github-read-*`. See [ADR-0137](../../../adrs/0137-github-read-core-shared-extraction.md).
 
 ## Lifecycle & communication
 

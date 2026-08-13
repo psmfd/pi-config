@@ -21,9 +21,16 @@ globs:
   - "**/*.md"
 
 ignores:
-  - "node_modules/**"
-  - "agent/npm/node_modules/**"
+  # Depth-agnostic: a root-only "node_modules/**" misses nested installs. Since
+  # ADR-0120 every pi session worktree-isolates into <repo>/.worktrees/<sid>/,
+  # and extension-deps.sh hydrates a node_modules there, so any operator with a
+  # live session accumulated vendor markdown the linter then scanned — failing
+  # the local gate with errors in no authored file (#958).
+  - "**/node_modules/**"
+  - ".worktrees/**"     # ADR-0120 per-session worktrees; gitignored, never merged
+  - ".wt_tmp/**"        # Manual scratch worktrees; untracked, never merged
   - ".git/**"
   - ".review/**"        # Tier 3 working-artifact area (ADR-0006/0007); gitignored, never merged
   - "docs/archive/**"   # Frozen reference for rescinded substrates (ADR-0020); preserved verbatim
   - "agent/extensions/compaction-optimizer/archive/**"   # Runtime session archives (ADR-0019); gitignored, never merged
+  - "agent/extensions/hashline-edit/prompts/**"   # Vendored model-facing prompt text (ADR-0134); drift-tracked, preserved verbatim

@@ -320,6 +320,33 @@ test("package bytes changed after approval refuse at the digest match", async ()
   assert.equal(rig.admission.activeCount, 0);
 });
 
+test("package bytes mutated INSIDE the dispatch window refuse at the in-lock match", async () => {
+  const rig = await makeRig();
+  // Distinct from "package bytes changed after approval": that edit lands
+  // before dispatch begins, so the pre-lock peek can catch it. This one lands
+  // AFTER pre-lock discovery and the canary have already read the package, in
+  // the window the in-lock revalidation exists to close (ADR-0131 Decision 9).
+  //
+  // If the transaction ever trusted its pre-lock read, this is the case that
+  // would spawn over bytes no one approved — and it would still look green in
+  // every other test in this file.
+  let planted = false;
+  rig.controls.beforeCanaryResolves = async () => {
+    planted = true;
+    fs.writeFileSync(path.join(rig.packageRoot, "planted-mid-flight.md"), "bytes swapped in-window");
+  };
+
+  const result = await dispatchPackageAgent({ qualifiedId: QID, task: "x" }, rig.deps);
+
+  assert.ok(planted, "the mutation must land inside the dispatch window");
+  assert.equal(result.outcome.dispatched, false);
+  if (result.outcome.dispatched) return;
+  assert.equal(result.outcome.reason, "digest-mismatch");
+  assert.equal(rig.log.spawns.length, 0, "nothing may be spawned");
+  assert.deepEqual(reasons(result.audits), ["dispatch-refused:digest-mismatch"]);
+  assert.equal(rig.admission.activeCount, 0, "the ticket must still be released");
+});
+
 test("an expired grant refuses at dispatch and is retired", async () => {
   const rig = await makeRig();
   rig.clock.advance(5 * 60 * 60 * 1000); // beyond the 4h lifetime

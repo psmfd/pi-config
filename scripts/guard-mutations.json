@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "_comment": [
+    "Registry for scripts/verify-guard-mutations.sh (#931).",
+    "",
+    "Each entry names a security guard, a surgical edit that DISABLES it, and the",
+    "test(s) that must fail once it is disabled. The harness applies the edit, runs",
+    "the suite, asserts those named tests failed, and restores the file.",
+    "",
+    "The point is the #916 lesson: a regression guard that still passes on buggy",
+    "code is worse than no guard, because it certifies the gap. A test only earns",
+    "its green when it has been seen to go red for the right reason.",
+    "",
+    "Repo-level by design so any boundary can register here later (the guard trio,",
+    "secrets-guard). Registered today only for the #931 active-grant boundary \u2014 the",
+    "shape is general, the coverage is deliberately not.",
+    "",
+    "Adding an entry: each edit's `find` must occur EXACTLY ONCE in `file`. Prefer disabling a",
+    "condition (`if (false && ...)`) over deleting a block, so the mutation stays",
+    "syntactically valid \u2014 a mutation that fails to COMPILE proves nothing, since",
+    "the suite would fail for the wrong reason. The harness checks the named tests",
+    "specifically for exactly that reason."
+  ],
+  "mutations": [
+    {
+      "id": "approval-display-to-commit",
+      "guard": "index.ts property 2 \u2014 the definition is reconstructed under the authority lock and its digest compared to the displayed one",
+      "reference": "index.ts runApprovalFlow docblock; ADR-0129",
+      "file": "agent/extensions/package-agent-broker/index.ts",
+      "suite": "scripts/test-package-agent-broker.sh",
+      "expectFailing": [
+        "package bytes mutated between display and commit create no grant"
+      ],
+      "edits": [
+        {
+          "find": "    if (computeGrantDigest(freshDefinition) !== digest) {",
+          "replace": "    if (false && computeGrantDigest(freshDefinition) !== digest) {"
+        }
+      ]
+    },
+    {
+      "id": "dispatch-in-lock-revalidation",
+      "guard": "the in-lock digest revalidation \u2014 pre-lock reads are never trusted for the spawn decision",
+      "reference": "ADR-0131 Decision 9",
+      "file": "agent/extensions/package-agent-broker/lib/dispatch.ts",
+      "suite": "scripts/test-package-agent-broker.sh",
+      "expectFailing": [
+        "package bytes mutated INSIDE the dispatch window refuse at the in-lock match",
+        "package bytes changed after approval refuse at the digest match"
+      ],
+      "edits": [
+        {
+          "find": "      if (computeGrantDigest(freshDefinition) !== grant.digest) {",
+          "replace": "      if (false && computeGrantDigest(freshDefinition) !== grant.digest) {"
+        }
+      ]
+    },
+    {
+      "id": "verify-then-exec-window-widened",
+      "guard": "the verify-then-exec window is bounded to one synchronous span \u2014 no await between the in-lock digest match and process creation",
+      "reference": "ADR-0131 Decision 9",
+      "file": "agent/extensions/package-agent-broker/lib/dispatch.ts",
+      "suite": "scripts/test-package-agent-broker.sh",
+      "expectFailing": [
+        "the authority-lock callback is synchronous (an async callback would widen the window)",
+        "no await sits between the in-lock digest match and process creation"
+      ],
+      "_note": "Two edits because an await inside a non-async arrow is a COMPILE error, and a mutation that fails to compile proves nothing \u2014 the suite would fail for the wrong reason. Made valid, this mutation changes no output: every behavioural test in the broker suite stays green and only the structural assertions in toctou.test.ts catch it. That is the case for asserting the window structurally.",
+      "edits": [
+        {
+          "find": "await deps.registry.withAuthorityLock(qualifiedId, () => {",
+          "replace": "await deps.registry.withAuthorityLock(qualifiedId, async () => {"
+        },
+        {
+          "find": "      const attestation = attestArgv(freshDefinition, argv);",
+          "replace": "      await Promise.resolve();\n      const attestation = attestArgv(freshDefinition, argv);"
+        }
+      ]
+    }
+  ]
+}

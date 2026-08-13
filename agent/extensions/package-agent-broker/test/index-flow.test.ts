@@ -18,6 +18,7 @@ import * as path from "node:path";
 import { afterEach, test } from "node:test";
 
 import brokerFactory from "../index.ts";
+import { ESC, RLO } from "./fixtures/hostile-content.ts";
 
 const HOST = "github.com";
 const REPO = "psmfd/pi-work-item-client";
@@ -32,8 +33,6 @@ afterEach(() => {
   while (restoreEnvHooks.length > 0) (restoreEnvHooks.pop() as () => void)();
 });
 
-const ESC = "\u001b";
-const RLO = "\u202e";
 
 type InputHandler = (
   event: { type: "input"; text: string; source: string; streamingBehavior?: string },

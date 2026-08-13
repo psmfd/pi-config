@@ -62,6 +62,12 @@ interface Harness {
   stateRoot: string;
   confirmQueue: boolean[];
   inputQueue: (string | undefined)[];
+  /**
+   * Fired on every `ui.input()` call — i.e. AFTER the snapshot pages have been
+   * displayed and BEFORE the in-lock re-reconstruction commits. The only seam
+   * that lands inside index.ts's display-to-commit window (#931).
+   */
+  beforeInput: (() => void) | null;
   send: (text: string, over?: { source?: string; streamingBehavior?: string; mode?: string }) => Promise<string>;
   /** Returns the handler's best-effort shutdown-audit promise (#929). */
   shutdown: () => void | Promise<void>;
@@ -115,6 +121,12 @@ function makeHarness(): Harness {
   const confirmed: string[] = [];
   const confirmQueue: boolean[] = [];
   const inputQueue: (string | undefined)[] = [];
+  // Declared before `ctx` so the ui.input closure can read `beforeInput`;
+  // `send`/`shutdown` are filled in below once the handler is captured.
+  const harness = {
+    notices, confirmed, agentDir, stateRoot, confirmQueue, inputQueue,
+    beforeInput: null,
+  } as Harness;
 
   const ctx: FakeCtx = {
     mode: "tui",
@@ -126,6 +138,7 @@ function makeHarness(): Harness {
         return Promise.resolve(confirmQueue.length > 0 ? (confirmQueue.shift() as boolean) : true);
       },
       input: () => {
+        if (harness.beforeInput !== null) harness.beforeInput();
         const answer = inputQueue.length > 0 ? inputQueue.shift() : undefined;
         // A grant digest binds a per-attempt nonce, so it cannot be learned in
         // a probe pass and replayed in a second one — the operator retypes the
@@ -177,10 +190,9 @@ function makeHarness(): Harness {
     return (result as { action: string } | undefined)?.action ?? "undefined";
   };
 
-  return {
-    notices, confirmed, agentDir, stateRoot, confirmQueue, inputQueue, send,
-    shutdown: shutdownHandler as () => void | Promise<void>,
-  };
+  harness.send = send;
+  harness.shutdown = shutdownHandler as () => void | Promise<void>;
+  return harness;
 }
 
 function stateImage(stateRoot: string): Record<string, unknown> | null {
@@ -257,6 +269,57 @@ test("non-interactive provenance cannot create a grant", async () => {
     await h.send("/package-agent grants");
     assert.ok(h.notices.some((n) => n.includes("no active grants")), `${c.label} must not create a grant`);
   }
+});
+
+// --- TOCTOU: display-to-commit (#931) ---------------------------------------
+
+test("package bytes mutated between display and commit create no grant", async () => {
+  const h = makeHarness();
+  installPackage(h.agentDir);
+
+  // index.ts documents three properties that "must survive any edit to this
+  // function". Properties 1 (no draft is evidence) and 3 (approval does not
+  // dispatch) are asserted elsewhere in this file. This is property 2:
+  //
+  //   DISPLAY-TO-COMMIT. The definition is reconstructed a second time under
+  //   the authority lock and its digest compared to the displayed one. The
+  //   operator approves the digest that becomes authoritative, or nothing is
+  //   installed.
+  //
+  // The window is real: the operator reads pages, then types two answers. A
+  // same-UID actor editing the package in that gap would otherwise install a
+  // grant over bytes no human ever saw. `beforeInput` is the only seam that
+  // lands inside it — it fires after the pages are rendered and before the
+  // in-lock re-reconstruction.
+  let planted = false;
+  h.beforeInput = () => {
+    if (planted) return; // once: the second prompt must not re-plant
+    planted = true;
+    fs.writeFileSync(
+      path.join(h.agentDir, "git", HOST, ...REPO.split("/"), "agents", `${AGENT}.json`),
+      JSON.stringify({
+        schemaVersion: 1,
+        name: AGENT,
+        description: "Plans work items.",
+        prompt: "SWAPPED AFTER DISPLAY",
+        tools: ["read"],
+      }),
+    );
+  };
+
+  await approve(h);
+
+  assert.ok(planted, "the mutation must land inside the display-to-commit window");
+  assert.ok(
+    !h.notices.some((n) => n.includes("ACTIVE GRANT created")),
+    `no grant may be created, saw: ${JSON.stringify(h.notices)}`,
+  );
+  h.notices.length = 0;
+  await h.send("/package-agent grants");
+  assert.ok(
+    h.notices.some((n) => n.includes("no active grants")),
+    "the registry must hold nothing",
+  );
 });
 
 // --- happy path -------------------------------------------------------------

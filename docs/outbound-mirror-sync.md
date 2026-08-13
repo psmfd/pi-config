@@ -517,6 +517,62 @@ locally before the PR is opened (it cannot run in CI — the workflow tokens lac
 PR is deferred to #473; until then,
 **always open the promotion PR via `release.sh`** so the gate is not skipped.
 
+## Mirror CI health watch ([ADR-0133](../adrs/0133-mirror-ci-health-watch.md))
+
+Every extension mirror runs its own `ci.yml` (`npm ci && npm run typecheck &&
+npm test`) on each push to `main`. That run is the last gate between a bad sync
+and a broken published artifact, and until #967
+nothing in this repo watched it: `sync-mirror.sh --push` pushes and returns,
+never waiting on or reporting the run it triggered. `psmfd/pi-token-meter` was
+consequently red on `main` for **18 days** before the #856 packaging sweep
+happened to run its CI commands by hand.
+
+```sh
+scripts/check-mirror-ci.sh              # 0 = all green, 1 = findings, 2 = precondition
+scripts/check-mirror-ci.sh --verbose    # run URL + head commit for green mirrors too
+```
+
+Scope is derived from `mirror/targets.yml`, so a newly onboarded mirror is
+watched with no further edit — this adds **no fourth site** to the
+[ADR-0074](../adrs/0074-mirror-target-onboarding-lockstep-gate.md) triple. Per
+target, keyed on `mode`:
+
+| Mode | Expectation | Reported as a finding when |
+|---|---|---|
+| `overlay` (the 12 extension mirrors) | `ci.yml` exists, is `active`, and its latest completed `main` run concluded `success` | any of those is false, **or** the query fails, **or** there is no completed run |
+| `replace` (the config mirror) | no `ci.yml` at all — it ships no source CI by design ([ADR-0054](../adrs/0054-no-source-ci-on-distribution-mirror.md)) | a workflow appears there; the exemption is asserted, not skipped |
+
+### The false-green traps it exists to avoid
+
+- **Never check by branch alone.** `gh run list --repo psmfd/pi-<x> --branch main`
+  surfaces Dependabot updater runs, which are frequent and almost always green,
+  and they dominate the listing. Always pass `--workflow ci.yml`. Omitting it
+  reports a false green — that masking *is* #967.
+- **A disabled workflow leaves its last green run standing forever**, so the gate
+  checks `state == active` separately from the conclusion.
+- **"Cannot tell" is a finding, never a pass** — an unreachable repo, a failed
+  query, and a workflow with no run on `main` are all errors.
+
+### Automation
+
+`.github/workflows/mirror-ci-watch.yml` runs the gate daily at 15:00 UTC (and on
+`workflow_dispatch`, which takes a `dry_run` input that reports without touching
+the issue). It is **notify-only**, in the shape of `pin-drift-check.yml`: one
+rolling issue on a fixed title plus the `mirror-ci` label, refreshed on each red
+run and auto-closed when every mirror goes green. The job itself fails only on a
+precondition error.
+
+It runs on the default `GITHUB_TOKEN` — the mirrors are public, so their Actions
+API needs no cross-repo grant, and the mirror-sync App
+([ADR-0061](../adrs/0061-mirror-sync-github-app-auth.md)) is deliberately not
+widened to `Actions: read`.
+
+**This is not a release gate.** Unlike `check-mirror-alerts.sh`
+([ADR-0057](../adrs/0057-enforce-mirror-alerts-gate-in-release.md)), it is not
+wired into `release.sh` Phase 0: a mirror is frequently red *pending* the fix the
+next promotion carries, so blocking the promotion would deadlock the case the
+watch exists to surface.
+
 ## Limitations
 
 - A target's mirror repo must already exist — a missing mirror fails its clone
