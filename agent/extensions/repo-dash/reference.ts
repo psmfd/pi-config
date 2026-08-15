@@ -156,6 +156,29 @@ export function formatReference(number: number, title: string): string {
 }
 
 /**
+ * Build the reference text for a workflow run (#987).
+ *
+ * Keyed on the run **id**, never `run_number`, for two independent reasons:
+ *
+ * 1. `run_number` is scoped per workflow, not per repository — each workflow
+ *    keeps its own counter, so two runs of different workflows collide on the
+ *    same number as a matter of course. `#N` would be ambiguous even before
+ *    considering that it also collides with the issue/PR numbering space.
+ * 2. It is the wrong key downstream. `github-read`'s Actions `run` operation
+ *    builds `actions/runs/{id}`, so a reference carrying `run_number` would
+ *    send a follow-up lookup to a different run or a 404 — a silent
+ *    correctness bug rather than a cosmetic one.
+ *
+ * The `run <id>` handle deliberately mirrors the shape of `#<number>` rather
+ * than emitting a URL: it stays short, it reads as a handle, and the title
+ * rides along for context exactly as it does for issues and pull requests.
+ */
+export function formatRunReference(id: number, displayTitle: string): string {
+  const clean = sanitizeTitle(displayTitle);
+  return clean.length > 0 ? `run ${id} "${clean}"` : `run ${id}`;
+}
+
+/**
  * Append a reference to the editor's current contents.
  *
  * `ctx.ui.setEditorText` replaces the whole buffer, so callers must read the

@@ -56,6 +56,14 @@ same-working-day deadline.
   the hotfix branch SHA-intact; do not use merge commits for ordinary topic
   PRs.) Every commit and PR title still
   follows [Conventional Commits](conventional-commits.md).
+  - The merge method decides **which subject reaches `dev`**, and therefore
+    which one `scripts/release.sh` reads. Under squash it is the PR title, so
+    the required `lint-pr-title` check governs the bump. Under a merge commit
+    it is the **branch commit subjects**, which that check never sees — the
+    gap recorded in #1004. `commit-subject-advisory.yml` reports non-Conventional
+    branch subjects as a **non-blocking** PR comment; it is deliberately not a
+    required check, and merging past it is allowed. Squashing remains the way
+    to make branch subjects irrelevant.
 - Release promotion PRs target `main`, have `dev` as their head, and use a
   **merge commit** so the shared history is preserved. Open them through
   `scripts/release.sh`; do not open ordinary feature PRs to `main`.

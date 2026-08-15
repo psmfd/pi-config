@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { fetchRows, resolveRepository, toRows, type GhRunner } from "../data.ts";
+import { fetchRows, fetchRuns, resolveRepository, toRows, toRunRows, type GhRunner } from "../data.ts";
 import type { GhRunResult } from "../../shared/github-read-types.ts";
 
 function ok(stdout: string): GhRunResult {
@@ -84,6 +84,102 @@ test("toRows defaults absent string fields rather than emitting undefined", () =
   assert.equal(row?.title, "");
   assert.equal(row?.author, "");
   assert.equal(row?.state, "");
+});
+
+// --- #987: workflow runs -----------------------------------------------------
+
+/** The Actions API wraps its list; issues/PRs return a bare array. */
+function runsPayload(runs: unknown[]): unknown {
+  return { total_count: runs.length, workflow_runs: runs };
+}
+
+function runRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 900100,
+    run_number: 12,
+    name: "validate",
+    display_title: "fix(repo-dash): a thing",
+    status: "completed",
+    conclusion: "success",
+    head_branch: "dev",
+    event: "push",
+    actor: { login: "octocat" },
+    updated_at: "2026-08-14T09:00:00Z",
+    ...overrides,
+  };
+}
+
+test("toRunRows unwraps workflow_runs rather than expecting a bare array", () => {
+  // The bug this guards: toRows' Array.isArray guard would return [] for every
+  // Actions response, silently yielding an always-empty /ci panel.
+  const rows = toRunRows(runsPayload([runRecord()]));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.id, 900100);
+  assert.equal(rows[0]?.conclusion, "success");
+  assert.equal(rows[0]?.status, "completed");
+});
+
+test("toRunRows returns no rows for a bare array or a missing wrapper key", () => {
+  assert.deepEqual(toRunRows([runRecord()]), []);
+  assert.deepEqual(toRunRows({ total_count: 1 }), []);
+  assert.deepEqual(toRunRows(null), []);
+});
+
+test("toRunRows keeps status and conclusion distinct", () => {
+  // #987: do not map conclusion onto state and lose the distinction.
+  const [row] = toRunRows(runsPayload([runRecord({ status: "in_progress", conclusion: null })]));
+  assert.equal(row?.status, "in_progress");
+  assert.equal(row?.conclusion, null);
+});
+
+test("toRunRows sanitizes the free-text run fields (#989 posture)", () => {
+  const esc = String.fromCharCode(0x1b);
+  const [row] = toRunRows(runsPayload([runRecord({
+    display_title: `${esc}[31mred\u202Eevil`,
+    name: "vali\u200Bdate",
+    head_branch: "feat/\u200Bsneaky",
+    actor: { login: "oct\u200Bocat" },
+  })]));
+  assert.equal(row?.displayTitle, "[31mredevil");
+  assert.equal(row?.workflowName, "validate");
+  assert.equal(row?.headBranch, "feat/sneaky");
+  assert.equal(row?.actor, "octocat");
+});
+
+test("toRunRows leaves fixed vocabularies and identifiers untouched", () => {
+  const [row] = toRunRows(runsPayload([runRecord({ status: "completed", conclusion: "timed_out", event: "workflow_dispatch" })]));
+  assert.equal(row?.status, "completed");
+  assert.equal(row?.conclusion, "timed_out");
+  assert.equal(row?.event, "workflow_dispatch");
+  assert.equal(row?.updatedAt, "2026-08-14T09:00:00Z");
+});
+
+test("toRunRows drops malformed records instead of throwing", () => {
+  const rows = toRunRows(runsPayload([runRecord(), null, "nonsense", { run_number: 3 }, { id: 1.5 }]));
+  assert.equal(rows.length, 1);
+});
+
+test("fetchRuns issues a read-only Actions vector and honours the branch filter", async () => {
+  const { run, calls } = recorder(ok(JSON.stringify(runsPayload([runRecord()]))));
+  const rows = await fetchRuns("psmfd/pi-config", "dev", undefined, run);
+  assert.equal(rows.length, 1);
+  const args = calls[0] ?? [];
+  // Same allowlisted api-GET prefix the model-facing reader uses.
+  assert.deepEqual(args.slice(0, 5), ["api", "--hostname", "github.com", "--method", "GET"]);
+  assert.ok(args.some((a) => a.includes("actions/runs")));
+  assert.ok(args.some((a) => a.includes("branch=dev")));
+  assert.ok(!args.some((a) => a === "-f" || a === "--input" || a === "--field"));
+});
+
+test("fetchRuns omits the branch filter when there is no branch", async () => {
+  const { run, calls } = recorder(ok(JSON.stringify(runsPayload([]))));
+  await fetchRuns("psmfd/pi-config", undefined, undefined, run);
+  assert.ok(!(calls[0] ?? []).some((a) => a.includes("branch=")));
+});
+
+test("fetchRuns propagates a gh failure with a sanitized diagnostic", async () => {
+  const { run } = recorder(fail("gh: rate limit exceeded"));
+  await assert.rejects(fetchRuns("psmfd/pi-config", undefined, undefined, run), /rate limit exceeded/);
 });
 
 test("resolveRepository reads nameWithOwner from an allowlisted gh shape", async () => {

@@ -20,6 +20,9 @@
     "localLlm": {
       "role": "full"
     },
+    "repoDash": {
+      "ciWidget": false
+    },
     "tokenMeter": {
       "enabled": false
     },

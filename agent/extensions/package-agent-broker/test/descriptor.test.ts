@@ -157,7 +157,14 @@ test("descriptor: environment keys and values are bounded ASCII", () => {
 });
 
 test("descriptor: duplicate JSON keys in the raw text are refused", () => {
-  const doc = descriptorDoc().replace("{", '{"name": "shadow-name", ');
+  // Anchored deliberately (#997). Targeting *the opening brace* rather than
+  // "the first `{` that happens to appear" is what this fixture means, and an
+  // anchored pattern cannot match twice by construction — a global replace
+  // would rewrite every nested brace and destroy the document. The previous
+  // unanchored single-occurrence form was correct but tripped CodeQL's
+  // `js/incomplete-sanitization`, which reads "replace a literal without /g"
+  // as an attempt at sanitization rather than fixture construction.
+  const doc = descriptorDoc().replace(/^\{/, '{"name": "shadow-name", ');
   assert.throws(() => validateDescriptor(doc, "work-item-planner"), StrictJsonError);
 });
 

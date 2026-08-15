@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { appendReference, formatReference, sanitizeTitle, stripUnsafe } from "../reference.ts";
+import { appendReference, formatReference, formatRunReference, sanitizeTitle, stripUnsafe } from "../reference.ts";
 
 // Invisible characters are written as escapes throughout this file, never as
 // literals. A literal zero-width or bidi character in the source is unreviewable
@@ -159,6 +159,28 @@ test("formatReference pairs the number with a quoted title", () => {
 
 test("formatReference degrades to a bare number when the title is empty", () => {
   assert.equal(formatReference(12, "   "), "#12");
+});
+
+test("formatRunReference uses a run handle, distinct from the #N namespace", () => {
+  // Workflow runs are outside GitHub's shared issue/PR numbering space, so a
+  // `#N` reference would point the model at an unrelated issue.
+  assert.equal(formatRunReference(900100, "fix: a thing"), 'run 900100 "fix: a thing"');
+});
+
+test("formatRunReference degrades to a bare handle when the title is empty", () => {
+  assert.equal(formatRunReference(7, "   "), "run 7");
+});
+
+test("formatRunReference sanitizes and bounds the title like formatReference", () => {
+  const esc = String.fromCharCode(0x1b);
+  assert.equal(formatRunReference(1, `${esc}[31mred\u202Eevil`), 'run 1 "[31mredevil"');
+  const long = formatRunReference(2, "z".repeat(200));
+  assert.ok(long.endsWith('…"'));
+});
+
+test("a run reference survives appendReference unchanged", () => {
+  // appendReference is row-type-agnostic; only reference construction varies.
+  assert.equal(appendReference("look at", "run 5"), "look at run 5");
 });
 
 test("appendReference returns the reference alone for an empty editor", () => {
