@@ -94,7 +94,12 @@ fm_value() {
 }
 
 fm_has_key() {
-  printf '%s\n' "$1" | grep -qE "^$2:"
+  # Counted, not `grep -q` — an early match SIGPIPEs the producer, and under
+  # pipefail that 141 misreads as "key absent" (#1016; see the §6b-quinquies
+  # note for the full mechanism). Same discipline at every piped grep below.
+  local fm_hits
+  fm_hits="$(printf '%s\n' "$1" | grep -cE "^$2:" || true)"
+  [ "${fm_hits:-0}" -gt 0 ]
 }
 
 # --- 1. Skills -------------------------------------------------------------
@@ -444,7 +449,8 @@ info "Running expertise audit (#601)"
 if [ -x scripts/expertise-audit.sh ]; then
   if ea_output="$(scripts/expertise-audit.sh 2>&1)"; then
     printf '%s\n' "$ea_output" | grep -E "^(SKIP|WARN|canonical_blob_sha=)" || true
-    if printf '%s\n' "$ea_output" | grep -q "^SKIP"; then
+    ea_skips="$(printf '%s\n' "$ea_output" | grep -c "^SKIP" || true)"
+    if [ "${ea_skips:-0}" -gt 0 ]; then
       skip "expertise-audit: skipped (see line above)"
     else
       ok "expertise-audit: passed"
@@ -487,11 +493,13 @@ else
     # quoted string, with or without trailing terminators). False-positive
     # cost is acceptable — the only realistic trigger is an actual SKIP_PATH_GLOBS
     # entry for these directories, which is what we want to fail.
-    if printf '%s\n' "$sg_block" | grep -qiE '(^|[^A-Za-z0-9_])drafts'; then
+    sg_drafts_hits="$(printf '%s\n' "$sg_block" | grep -ciE '(^|[^A-Za-z0-9_])drafts' || true)"
+    if [ "${sg_drafts_hits:-0}" -gt 0 ]; then
       err "secrets-guard: SKIP_PATH_GLOBS appears to include drafts/** (ADR-0006 § Consequences)"
       sg_bad=1
     fi
-    if printf '%s\n' "$sg_block" | grep -qiE '(^|[^A-Za-z0-9_])\.review'; then
+    sg_review_hits="$(printf '%s\n' "$sg_block" | grep -ciE '(^|[^A-Za-z0-9_])\.review' || true)"
+    if [ "${sg_review_hits:-0}" -gt 0 ]; then
       err "secrets-guard: SKIP_PATH_GLOBS appears to include .review/** (ADR-0006 § Consequences, ADR-0007)"
       sg_bad=1
     fi
@@ -541,7 +549,8 @@ for sp_file in $sp_files; do
   fi
   sp_active="$(grep -vE '^[[:space:]]*(#|//|\*|/\*)' "$sp_file")"
   for sp_frag in "${sp_common_fragments[@]}"; do
-    if ! printf '%s\n' "$sp_active" | grep -qF -- "$sp_frag"; then
+    sp_hits="$(printf '%s\n' "$sp_active" | grep -cF -- "$sp_frag" || true)"
+    if [ "${sp_hits:-0}" -eq 0 ]; then
       err "secret-lockstep: $sp_file active lines are missing canonical pattern fragment: $sp_frag"
       sp_bad=1
     fi
@@ -549,14 +558,16 @@ for sp_file in $sp_files; do
 done
 for sp_file in $sp_ts_files; do
   sp_active="$(grep -vE '^[[:space:]]*(#|//|\*|/\*)' "$sp_file")"
-  if ! printf '%s\n' "$sp_active" | grep -qF -- "$sp_jwt_ts"; then
+  sp_jwt_hits="$(printf '%s\n' "$sp_active" | grep -cF -- "$sp_jwt_ts" || true)"
+  if [ "${sp_jwt_hits:-0}" -eq 0 ]; then
     err "secret-lockstep: $sp_file active lines are missing canonical bounded JWT regex"
     sp_bad=1
   fi
 done
 sp_active="$(grep -vE '^[[:space:]]*#' hooks/secrets-guard.sh)"
 for sp_frag in "${sp_jwt_hook_fragments[@]}"; do
-  if ! printf '%s\n' "$sp_active" | grep -qF -- "$sp_frag"; then
+  sp_hook_hits="$(printf '%s\n' "$sp_active" | grep -cF -- "$sp_frag" || true)"
+  if [ "${sp_hook_hits:-0}" -eq 0 ]; then
     err "secret-lockstep: hooks/secrets-guard.sh active lines are missing bounded JWT scanner fragment: $sp_frag"
     sp_bad=1
   fi
@@ -579,9 +590,10 @@ vp_check() {
   # (The TS strip regex treats leading `*` as a block-comment line; a shell
   # `case` pattern like `*vault*.yml)` ALSO starts with `*`, so the shell
   # file gets a #-only strip.)
-  local active
+  local active vp_hits
   active="$(grep -vE "$3" "$1")"
-  if ! printf '%s\n' "$active" | grep -qF -- "$2"; then
+  vp_hits="$(printf '%s\n' "$active" | grep -cF -- "$2" || true)"
+  if [ "${vp_hits:-0}" -eq 0 ]; then
     err "vault-lockstep: $1 active lines are missing fragment: $2"
     vp_bad=1
   fi
@@ -633,9 +645,15 @@ else
   if [ "$tm_count" -ne 1 ]; then
     err "token-meter-lockstep: expected exactly one 'export const UNTAGGED = \"...\";' in $tm_record, found $tm_count — the gate cannot extract the sentinel"
     tm_bad=1
-  elif ! grep -vE '^[[:space:]]*#' "$tm_cli" | grep -qF "\"$tm_sentinel\""; then
-    err "token-meter-lockstep: $tm_cli active lines do not carry record.ts's sentinel literal \"$tm_sentinel\" — the jq \`policyof\` default and UNTAGGED have drifted (#521)"
-    tm_bad=1
+  else
+    # Counted, not `grep -q` — the sentinel matches early in the file, which
+    # is exactly the condition that SIGPIPEs the upstream `grep -v` and turned
+    # this gate into a random fail-closed on required CI (#1016).
+    tm_hits="$(grep -vE '^[[:space:]]*#' "$tm_cli" | grep -cF "\"$tm_sentinel\"" || true)"
+    if [ "${tm_hits:-0}" -eq 0 ]; then
+      err "token-meter-lockstep: $tm_cli active lines do not carry record.ts's sentinel literal \"$tm_sentinel\" — the jq \`policyof\` default and UNTAGGED have drifted (#521)"
+      tm_bad=1
+    fi
   fi
 fi
 if [ "$tm_bad" -eq 0 ]; then
@@ -1095,11 +1113,12 @@ if [ -z "$rs_embedded" ]; then
   err "release-signer: RELEASE_SIGNER_ALLOWED_SIGNERS not found in install.sh"
 elif [ ! -f "$rs_file" ]; then
   err "release-signer: $rs_file is missing"
-elif printf '%s' "$rs_embedded" | grep -q "REPLACE_WITH_REAL_PUBLIC_KEY"; then
+elif [ "$(printf '%s' "$rs_embedded" | grep -c "REPLACE_WITH_REAL_PUBLIC_KEY" || true)" -gt 0 ]; then
   warn "release-signer: pre-rollout placeholder key; lockstep with $rs_file deferred until the real key lands (ADR-0087, #627)"
 else
   rs_active="$(grep -vE '^[[:space:]]*(#|$)' "$rs_file")"
-  if printf '%s\n' "$rs_active" | grep -qxF "$rs_embedded"; then
+  rs_hits="$(printf '%s\n' "$rs_active" | grep -cxF "$rs_embedded" || true)"
+  if [ "${rs_hits:-0}" -gt 0 ]; then
     ok "release-signer: install.sh embedded key matches an active signer in $rs_file"
   else
     err "release-signer: install.sh embedded key does NOT match an active signer line in $rs_file (lockstep drift)"
@@ -1695,6 +1714,27 @@ if [ -x scripts/test-token-meter.sh ]; then
   fi
 else
   err "token-meter: scripts/test-token-meter.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-plain-english. plain-english test suite (#1022, ADR-0142) ----------
+info "Running plain-english test suite"
+if [ -x scripts/test-plain-english.sh ]; then
+  if pe_output="$(scripts/test-plain-english.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$pe_output"
+    fi
+    ok "plain-english: tests passed"
+  else
+    pe_status=$?
+    printf '%s\n' "$pe_output" >&2
+    if [ "$pe_status" -eq 2 ]; then
+      err "plain-english: test environment unavailable (node/npx); required check skipped"
+    else
+      err "plain-english: test suite failed (exit $pe_status)"
+    fi
+  fi
+else
+  err "plain-english: scripts/test-plain-english.sh missing or not executable; required check skipped"
 fi
 
 # --- 9b-prefill-meter. prefill-meter test suite (#891, ADR-0125) -----------

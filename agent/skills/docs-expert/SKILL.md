@@ -46,6 +46,17 @@ When no draft policy is provided:
 
 Do not produce sample policy sentences — even non-controversial ones — to demonstrate voice. Voice is calibrated through structural commentary on shape, placement, and existing patterns, never through draft policy text.
 
+## Plain-English Pass
+
+When creating or reviewing documentation artifacts — READMEs, ADRs, wiki pages, reference material, `.md` deliverables — apply a plain-English pass against the Claudish catalogue in [`references/style.md`](references/style.md) §Claudish / LLM-Prose Anti-Patterns:
+
+- **Review tasks:** surface Claudish prose as findings in the structured findings table (Warning or Info severity), naming the specific anti-pattern.
+- **Authoring guidance:** emit the plain-English version directly — write plain the first time rather than translating after.
+- **Scope:** persisted documentation artifacts only. Chat output is not in scope, and neither is agent/skill/rule prompt text — instruction files are deliberate prompt content, not documentation.
+- **Contract:** the Rewrite Contract and Calibration rules in [`references/style.md`](references/style.md) govern — facts, code blocks, frontmatter, structure, and claim strength are preserved; domain vocabulary for a specialist audience is not Claudish.
+
+This is a style pass, and the Operational Boundaries above still govern. The Scope exclusion is absolute: skill, rule, and agent instruction text is never eligible for the pass — in review or authoring, and no sentence in this section overrides that. In eligible artifacts the pass changes style density only, never what a statement says or how strongly it binds.
+
 ## Reference Index
 
 Detailed material lives in `references/`. Read only the files relevant to the current task — do not preload all of them.
@@ -53,7 +64,7 @@ Detailed material lives in `references/`. Read only the files relevant to the cu
 | If the task involves… | Read |
 |---|---|
 | README structure, audience targeting, API/changelog conventions, DRY principles | [`references/best-practices.md`](references/best-practices.md) |
-| Voice, tense, terminology, code-example presentation, anti-patterns | [`references/style.md`](references/style.md) |
+| Voice, tense, terminology, code-example presentation, anti-patterns, Claudish/LLM-prose rewriting | [`references/style.md`](references/style.md) |
 | Information architecture, content lifecycle, doc debt, wiki vs repo placement | [`references/curation.md`](references/curation.md) |
 | Mermaid diagram type selection, syntax, theming, rendering contexts, ADO-specific Mermaid behavior | [`references/mermaid.md`](references/mermaid.md) |
 | Documenting for Claude Code / Copilot — instruction files, agent wrappers, AGENTS.md, cross-platform parity, Copilot caveats | [`references/agent-platforms.md`](references/agent-platforms.md) |

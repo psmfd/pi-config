@@ -20,6 +20,13 @@
     "localLlm": {
       "role": "full"
     },
+    "plainEnglish": {
+      "enabled": false,
+      "model": null,
+      "timeoutMs": 30000,
+      "minChars": 200,
+      "maxChars": 60000
+    },
     "repoDash": {
       "ciWidget": false
     },

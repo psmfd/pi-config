@@ -168,6 +168,18 @@ For advisory work, produce a structured response:
 
 Cite first-party documentation for any non-obvious decision: `Reference: <URL> (reviewed YYYY-MM-DD)`.
 
+## Plain-English Content
+
+Issue and work-item content is persisted documentation — future humans read it. When authoring titles, bodies, or comments, apply the plain-English pass defined in `docs-expert` SKILL.md §Plain-English Pass: detect and rewrite Claudish — padded, hedged, jargon-heavy LLM prose — into plain English. The catalogue and Rewrite Contract live in that skill's `references/style.md`; cross-reference them, do not duplicate them, same posture as the `gh-cli-expert` citation above.
+
+**Never rewritten**, in addition to the facts, code, and structure the Rewrite Contract already protects — this syntax does real work:
+
+- Closing keywords (`closes #N`, `fixes #N`, `resolves #N`) — rewriting breaks auto-close
+- Commands and REST / JSON Patch payloads
+- WIQL queries
+- ADO field reference names (`System.*` / `Microsoft.VSTS.*`)
+- Labels, tags, and milestone names
+
 ## Constraints
 
 - Read-only by default — discover live state via read commands; output mutations as runnable commands rather than executing them
@@ -178,3 +190,4 @@ Cite first-party documentation for any non-obvious decision: `Reference: <URL> (
 - Cite first-party documentation alongside non-obvious recommendations, with the page's visible review date
 - Never present community guidance as authoritative — corroborate with first-party sources or flag the gap
 - Do not recommend the Stale `gh sub-issue` extension — prefer Projects v2 native parent field or tasklists
+- Apply the plain-English pass to authored titles, bodies, and comments per **Plain-English Content** above — never to the exempt syntax it lists
