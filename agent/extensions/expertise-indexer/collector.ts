@@ -1,25 +1,12 @@
 /**
- * expertise-indexer/collector.ts — pure-library primitives for the
- * orchestrator's canonical-fanout expertise pipeline (pi_config issue
- * #599, epic #595). Consumers: orchestrator model prompt-driven flow
- * (today), subagent runtime wiring (#611, LOCAL PATCH #6), CI
- * expertise-audit (#601), pre-push hook (#604).
+ * expertise-indexer/collector.ts — pure primitives for the canonical expertise
+ * pipeline (#599/#1055). The byte-level contracts are shared by the serial
+ * sequence gate, subagent runtime wiring, CI audit, and approval loop.
  *
- * WHY THIS EXISTS
- * ---------------
- * The methodology has three moving parts that MUST agree on byte-level
- * shape across every consumer:
- *   1. Pre-fanout: one canonical `expertise_search` query per research
- *      task, injected into every subagent brief as user-role content
- *      (never `--append-system-prompt` — see `no-mcp-servers.md`).
- *   2. Post-fanout: extract `EXPERTISE_CANDIDATES` payloads from child
- *      returns (Form B fenced-block or Form A REPORT_FILE), gate them
- *      through `acceptCandidates`, and fingerprint-coalesce identical
- *      proposals across subagents into single groups with merged
- *      provenance.
- *   3. Human approval: the coalesced groups are surfaced for out-of-band
- *      approval (mechanism deferred to #605; this module produces the
- *      structured data the approval loop consumes).
+ * Pipeline: build one canonical search block for the ordered research sequence,
+ * inject it identically into every independent child as user-role content, then
+ * extract and coalesce returned candidates after all children complete. Human
+ * approval remains outside this module.
  *
  * This module owns the string shapes and coalesce semantics. It does
  * NOT read files (Form A path validation returns the path; the caller
@@ -170,7 +157,7 @@ export const CANONICAL_RESULTS_END_MARKER = "<!-- END CANONICAL_EXPERTISE_RESULT
 /**
  * Per-result body byte cap for the injection block. A subagent brief
  * is bounded (the parent's per-child prompt is subject to the same
- * per-tool-result cap that gate the fanout), so we cap each result
+ * per-tool-result cap that gate the sequence), so we cap each result
  * body to keep the block from blowing out that budget on a single
  * verbose expertise entry.
  */
@@ -417,7 +404,7 @@ export type ExtractedPayload =
  * allowlist) are silently skipped — the transport rule (#600) is
  * fail-open at extraction and fail-closed at ingestion, so a subagent
  * that emits garbage simply contributes zero candidates rather than
- * blowing up the whole fanout.
+ * blowing up the whole sequence.
  */
 export function extractCandidatePayloads(childOutput: string): ExtractedPayload[] {
 	const out: ExtractedPayload[] = [];

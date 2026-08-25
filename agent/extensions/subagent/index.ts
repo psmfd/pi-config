@@ -6,7 +6,7 @@
  *
  * Supports three modes:
  *   - Single: { agent: "name", task: "..." }
- *   - Parallel: { tasks: [{ agent: "name", task: "..." }, ...] }
+ *   - Sequence: { sequence: [{ agent: "name", task: "..." }, ...] }
  *   - Chain: { chain: [{ agent: "name", task: "... {previous} ..." }, ...] }
  *
  * Uses JSON mode to capture structured output from subagents.
@@ -57,10 +57,9 @@ import {
 } from "./model-pin.ts";
 import { buildChildEnv, readSpawnDepth } from "./sanitize-env.ts";
 
-const MAX_PARALLEL_TASKS = 8;
-const MAX_CONCURRENCY = 4;
+const MAX_SEQUENCE_ITEMS = 8;
 const COLLAPSED_ITEM_COUNT = 10;
-const PER_TASK_OUTPUT_CAP = 50 * 1024;
+const PER_ITEM_OUTPUT_CAP = 50 * 1024;
 
 function formatTokens(count: number): string {
 	if (count < 1000) return count.toString();
@@ -273,13 +272,13 @@ interface SingleResult {
 }
 
 interface SubagentDetails {
-	mode: "single" | "parallel" | "chain";
+	mode: "single" | "sequence" | "chain";
 	agentScope: AgentScope;
 	projectAgentsDir: string | null;
 	results: SingleResult[];
 	/**
 	 * LOCAL PATCH #6 (pi_config #611): coalesced expertise candidates
-	 * across all children in this fanout. Absent when no child
+	 * across all children in this invocation. Absent when no child
 	 * produced any candidates. Downstream approval (#605) reads this
 	 * envelope to drive the human-in-the-loop `expertise_create` flow;
 	 * per the SECURITY invariant on `CoalescedGroup.candidate`, the
@@ -312,6 +311,7 @@ function getFinalOutput(messages: Message[]): string {
 }
 
 function isFailedResult(result: SingleResult): boolean {
+	if (result.exitCode === -2 || result.exitCode === -1) return false;
 	return result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
 }
 
@@ -322,9 +322,9 @@ function getResultOutput(result: SingleResult): string {
 	return getFinalOutput(result.messages) || "(no output)";
 }
 
-function truncateParallelOutput(output: string): string {
+function truncateSequenceOutput(output: string): string {
 	const byteLength = Buffer.byteLength(output, "utf8");
-	if (byteLength <= PER_TASK_OUTPUT_CAP) return output;
+	if (byteLength <= PER_ITEM_OUTPUT_CAP) return output;
 
 	// Truncate on the UTF-8 byte buffer directly (#793): the previous
 	// one-code-unit-at-a-time shrink loop recomputed byteLength over the
@@ -332,7 +332,7 @@ function truncateParallelOutput(output: string): string {
 	// toString() replaces a split trailing multi-byte character with U+FFFD;
 	// strip it so the marker text follows a clean boundary.
 	const truncated = Buffer.from(output, "utf8")
-		.subarray(0, PER_TASK_OUTPUT_CAP)
+		.subarray(0, PER_ITEM_OUTPUT_CAP)
 		.toString("utf8")
 		.replace(/\uFFFD+$/u, "");
 	return `${truncated}\n\n[Output truncated: ${byteLength - Buffer.byteLength(truncated, "utf8")} bytes omitted. Full output preserved in tool details.]`;
@@ -353,25 +353,6 @@ function getDisplayItems(messages: Message[]): DisplayItem[] {
 	return items;
 }
 
-async function mapWithConcurrencyLimit<TIn, TOut>(
-	items: TIn[],
-	concurrency: number,
-	fn: (item: TIn, index: number) => Promise<TOut>,
-): Promise<TOut[]> {
-	if (items.length === 0) return [];
-	const limit = Math.max(1, Math.min(concurrency, items.length));
-	const results: TOut[] = new Array(items.length);
-	let nextIndex = 0;
-	const workers = new Array(limit).fill(null).map(async () => {
-		while (true) {
-			const current = nextIndex++;
-			if (current >= items.length) return;
-			results[current] = await fn(items[current], current);
-		}
-	});
-	await Promise.all(workers);
-	return results;
-}
 
 async function writePromptToTempFile(agentName: string, prompt: string): Promise<{ dir: string; filePath: string }> {
 	const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-subagent-"));
@@ -492,7 +473,7 @@ async function buildCopilotFallback(
  * breaker state, read at spawn time rather than at fan-out setup.
  *
  * The staleness this closes is not hypothetical: `buildCopilotFallback` is
- * called once per tool call (before the parallel wave starts), so a breaker
+ * called once per tool call (before sequence or chain execution starts), so a breaker
  * that trips partway through a fan-out — say child 1 auto-escalating on its
  * second rate-limited model — would leave children 2..N consulting a rung the
  * breaker had already excluded, substituting a dead Copilot model and burning
@@ -684,7 +665,7 @@ async function runSingleAgent(
 		agent: agentName,
 		agentSource: agent.source,
 		task,
-		// -1 = still running, same sentinel parallel mode uses (#793): 0 was
+		// -1 = still running, same running sentinel sequence mode uses (#793): 0 was
 		// indistinguishable from "exited successfully" while streaming.
 		exitCode: -1,
 		messages: [],
@@ -964,20 +945,19 @@ async function runSingleAgent(
 	}
 }
 
-const TaskItem = Type.Object({
+const SequenceItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
 	task: Type.String({ description: "Task to delegate to the agent" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
-	// LOCAL PATCH #6 (pi_config #611, epic #595): optional canonical-fanout
-	// expertise injection. Orchestrator builds the block via
-	// `renderCanonicalResultsBlock` from the expertise-indexer collector
-	// primitives (#599) and passes it here; the extension prepends it to
-	// the child's `Task:` framing in user-role (never --append-system-prompt,
-	// per no-mcp-servers.md). Missing/empty string = normal fanout.
+	// LOCAL PATCH #6 (pi_config #611, epic #595): optional canonical-sequence
+	// expertise injection. The expertise gate builds the block via
+	// `renderCanonicalResultsBlock` and prepends the same block to every
+	// independent replica's user-role `Task:` framing. Missing/empty string
+	// means no injection.
 	expertiseInjection: Type.Optional(
 		Type.String({
 			description:
-				"Optional canonical-expertise block (pre-built via renderCanonicalResultsBlock) to prepend to the child's task. See ADR-0028 and agent/rules/expertise-canonical-fanout.md.",
+				"Optional canonical-expertise block (pre-built via renderCanonicalResultsBlock) to prepend to the child's task. See agent/rules/expertise-canonical-sequence.md.",
 		}),
 	),
 });
@@ -986,7 +966,7 @@ const ChainItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
 	task: Type.String({ description: "Task with optional {previous} placeholder for prior output" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
-	/** See TaskItem.expertiseInjection. */
+	/** See SequenceItem.expertiseInjection. */
 	expertiseInjection: Type.Optional(
 		Type.String({
 			description:
@@ -1003,14 +983,16 @@ const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 const SubagentParams = Type.Object({
 	agent: Type.Optional(Type.String({ description: "Name of the agent to invoke (for single mode)" })),
 	task: Type.Optional(Type.String({ description: "Task to delegate (for single mode)" })),
-	tasks: Type.Optional(Type.Array(TaskItem, { description: "Array of {agent, task} for parallel execution" })),
-	chain: Type.Optional(Type.Array(ChainItem, { description: "Array of {agent, task} for sequential execution" })),
+	sequence: Type.Optional(
+		Type.Array(SequenceItem, { description: "Ordered independent agents to execute serially" }),
+	),
+	chain: Type.Optional(Type.Array(ChainItem, { description: "Dependent agents to execute serially" })),
 	agentScope: Type.Optional(AgentScopeSchema),
 	confirmProjectAgents: Type.Optional(
 		Type.Boolean({ description: "Prompt before running project-local agents. Default: true.", default: true }),
 	),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
-	/** See TaskItem.expertiseInjection. Applies to single-mode invocations. */
+	/** See SequenceItem.expertiseInjection. Applies to single-mode invocations. */
 	expertiseInjection: Type.Optional(
 		Type.String({
 			description:
@@ -1035,7 +1017,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Subagent",
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
-			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
+			"Modes: single (agent + task), sequence (independent serial execution), chain (dependent serial execution with optional {previous} placeholder).",
 			`Default agent scope is "user" (from ${path.join(getAgentDir(), "agents")}).`,
 			`To enable project-local agents in ${CONFIG_DIR_NAME}/agents, set agentScope: "both" (or "project").`,
 		].join(" "),
@@ -1103,12 +1085,12 @@ export default function (pi: ExtensionAPI) {
 			const confirmProjectAgents = params.confirmProjectAgents ?? true;
 
 			const hasChain = (params.chain?.length ?? 0) > 0;
-			const hasTasks = (params.tasks?.length ?? 0) > 0;
+			const hasSequence = (params.sequence?.length ?? 0) > 0;
 			const hasSingle = Boolean(params.agent && params.task);
-			const modeCount = Number(hasChain) + Number(hasTasks) + Number(hasSingle);
+			const modeCount = Number(hasChain) + Number(hasSequence) + Number(hasSingle);
 
 			const makeDetails =
-				(mode: "single" | "parallel" | "chain") =>
+				(mode: "single" | "sequence" | "chain") =>
 				(results: SingleResult[]): SubagentDetails => {
 					// LOCAL PATCH #6 (pi_config #611): coalesce Form B expertise
 					// candidates across all children. Absent field when none were
@@ -1139,7 +1121,7 @@ export default function (pi: ExtensionAPI) {
 
 			const requestedAgentNames = new Set<string>();
 			if (params.chain) for (const step of params.chain) requestedAgentNames.add(step.agent);
-			if (params.tasks) for (const t of params.tasks) requestedAgentNames.add(t.agent);
+			if (params.sequence) for (const item of params.sequence) requestedAgentNames.add(item.agent);
 			if (params.agent) requestedAgentNames.add(params.agent);
 
 			// LOCAL PATCH #10 (pi_config #671, ADR-0093): fail-closed gate on
@@ -1149,7 +1131,7 @@ export default function (pi: ExtensionAPI) {
 			// part of this trust boundary. Widening shadows are refused outright;
 			// profile-weakening shadows need an interactive confirm, after which
 			// the user wrapper's profile is inherited onto the project agent.
-			const gateMode = hasChain ? ("chain" as const) : hasTasks ? ("parallel" as const) : ("single" as const);
+			const gateMode = hasChain ? ("chain" as const) : hasSequence ? ("sequence" as const) : ("single" as const);
 			const shadowGate = evaluateShadowGate(
 				discovery.shadowedProfiledAgents,
 				requestedAgentNames,
@@ -1189,7 +1171,7 @@ export default function (pi: ExtensionAPI) {
 					if (!ok)
 						return {
 							content: [{ type: "text", text: "Canceled: project-local agents not approved." }],
-							details: makeDetails(hasChain ? "chain" : hasTasks ? "parallel" : "single")([]),
+							details: makeDetails(hasChain ? "chain" : hasSequence ? "sequence" : "single")([]),
 						};
 				}
 			}
@@ -1266,48 +1248,45 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			if (params.tasks && params.tasks.length > 0) {
-				if (params.tasks.length > MAX_PARALLEL_TASKS)
+			if (params.sequence && params.sequence.length > 0) {
+				if (params.sequence.length > MAX_SEQUENCE_ITEMS)
 					return {
 						content: [
 							{
 								type: "text",
-								text: `Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`,
+								text: `Too many sequence items (${params.sequence.length}). Max is ${MAX_SEQUENCE_ITEMS}.`,
 							},
 						],
-						details: makeDetails("parallel")([]),
+						details: makeDetails("sequence")([]),
 					};
 
-				// Track all results for streaming updates
-				const allResults: SingleResult[] = new Array(params.tasks.length);
+				const allResults: SingleResult[] = params.sequence.map((item) => ({
+					agent: item.agent,
+					agentSource: "unknown",
+					task: item.task,
+					exitCode: -2, // queued; -1 is the single running child
+					messages: [],
+					stderr: "",
+					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+				}));
 
-				// Initialize placeholder results
-				for (let i = 0; i < params.tasks.length; i++) {
-					allResults[i] = {
-						agent: params.tasks[i].agent,
-						agentSource: "unknown",
-						task: params.tasks[i].task,
-						exitCode: -1, // -1 = still running
-						messages: [],
-						stderr: "",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-					};
-				}
-
-				const emitParallelUpdate = () => {
-					if (onUpdate) {
-						const running = allResults.filter((r) => r.exitCode === -1).length;
-						const done = allResults.filter((r) => r.exitCode !== -1).length;
-						onUpdate({
-							content: [
-								{ type: "text", text: `Parallel: ${done}/${allResults.length} done, ${running} running...` },
-							],
-							details: makeDetails("parallel")([...allResults]),
-						});
-					}
+				const emitSequenceUpdate = () => {
+					if (!onUpdate) return;
+					const queued = allResults.filter((r) => r.exitCode === -2).length;
+					const running = allResults.filter((r) => r.exitCode === -1).length;
+					const done = allResults.length - queued - running;
+					onUpdate({
+						content: [
+							{ type: "text", text: `Sequence: ${done}/${allResults.length} done, ${running} running, ${queued} queued...` },
+						],
+						details: makeDetails("sequence")([...allResults]),
+					});
 				};
 
-				const results = await mapWithConcurrencyLimit(params.tasks, MAX_CONCURRENCY, async (t, index) => {
+				for (let index = 0; index < params.sequence.length; index++) {
+					const item = params.sequence[index];
+					allResults[index] = { ...allResults[index], exitCode: -1 };
+					emitSequenceUpdate();
 					const result = await runSingleAgent(
 						ctx.cwd,
 						agents,
@@ -1317,30 +1296,28 @@ export default function (pi: ExtensionAPI) {
 						policyCandidates,
 						policyMatrix,
 						localRole,
-						t.agent,
-						t.task,
-						t.cwd,
+						item.agent,
+						item.task,
+						item.cwd,
 						undefined,
 						signal,
-						// Per-task update callback
 						(partial) => {
 							if (partial.details?.results[0]) {
 								allResults[index] = partial.details.results[0];
-								emitParallelUpdate();
+								emitSequenceUpdate();
 							}
 						},
-						makeDetails("parallel"),
-						t.expertiseInjection,
+						makeDetails("sequence"),
+						item.expertiseInjection,
 						snapshotIdentity,
 					);
 					allResults[index] = result;
-					emitParallelUpdate();
-					return result;
-				});
+					emitSequenceUpdate();
+				}
 
-				const successCount = results.filter((r) => !isFailedResult(r)).length;
-				const summaries = results.map((r) => {
-					const output = truncateParallelOutput(getResultOutput(r));
+				const successCount = allResults.filter((r) => !isFailedResult(r)).length;
+				const summaries = allResults.map((r) => {
+					const output = truncateSequenceOutput(getResultOutput(r));
 					const status = isFailedResult(r)
 						? `failed${r.stopReason && r.stopReason !== "end" ? ` (${r.stopReason})` : ""}`
 						: "completed";
@@ -1351,10 +1328,11 @@ export default function (pi: ExtensionAPI) {
 					content: [
 						{
 							type: "text",
-							text: `Parallel: ${successCount}/${results.length} succeeded\n\n${summaries.join("\n\n---\n\n")}`,
+							text: `Sequence: ${successCount}/${allResults.length} succeeded\n\n${summaries.join("\n\n---\n\n")}`,
 						},
 					],
-					details: makeDetails("parallel")(results),
+					details: makeDetails("sequence")(allResults),
+					...(successCount === 0 ? { isError: true } : {}),
 				};
 			}
 
@@ -1431,16 +1409,17 @@ export default function (pi: ExtensionAPI) {
 				if (args.chain.length > 3) text += `\n  ${theme.fg("muted", `... +${args.chain.length - 3} more`)}`;
 				return new Text(text, 0, 0);
 			}
-			if (args.tasks && args.tasks.length > 0) {
+			if (args.sequence && args.sequence.length > 0) {
 				let text =
 					theme.fg("toolTitle", theme.bold("subagent ")) +
-					theme.fg("accent", `parallel (${args.tasks.length} tasks)`) +
+					theme.fg("accent", `sequence (${args.sequence.length} items)`) +
 					theme.fg("muted", ` [${scope}]`);
-				for (const t of args.tasks.slice(0, 3)) {
-					const preview = t.task.length > 40 ? `${t.task.slice(0, 40)}...` : t.task;
-					text += `\n  ${theme.fg("accent", t.agent)}${theme.fg("dim", ` ${preview}`)}`;
+				for (let i = 0; i < Math.min(args.sequence.length, 3); i++) {
+					const item = args.sequence[i];
+					const preview = item.task.length > 40 ? `${item.task.slice(0, 40)}...` : item.task;
+					text += `\n  ${theme.fg("muted", `${i + 1}.`)} ${theme.fg("accent", item.agent)}${theme.fg("dim", ` ${preview}`)}`;
 				}
-				if (args.tasks.length > 3) text += `\n  ${theme.fg("muted", `... +${args.tasks.length - 3} more`)}`;
+				if (args.sequence.length > 3) text += `\n  ${theme.fg("muted", `... +${args.sequence.length - 3} more`)}`;
 				return new Text(text, 0, 0);
 			}
 			const agentName = args.agent || "...";
@@ -1559,14 +1538,9 @@ export default function (pi: ExtensionAPI) {
 			};
 
 			// ---------------------------------------------------------------
-			// LOCAL PATCH #16 (pi_config #794): shared chain/parallel row
-			// rendering. The two multi-result branches previously duplicated
-			// ~170 lines of per-row construction (header, Task line, tool-call
-			// arrows, final-output markdown, usage footers, totals); the only
-			// real differences — row icon, header prefix ("Step N: " vs none),
-			// and the collapsed empty-row sentinel — are parameterized here.
-			// test/render.test.ts pins the rendered output for both modes,
-			// streaming and finished, expanded and collapsed.
+			// LOCAL PATCH #16 (pi_config #794): shared chain/sequence row
+			// rendering. Multi-result rows share their construction while chain
+			// keeps step labels and sequence exposes queued/running state.
 			// ---------------------------------------------------------------
 			type RowOpts = {
 				rowIcon: (r: SingleResult) => string;
@@ -1586,15 +1560,17 @@ export default function (pi: ExtensionAPI) {
 				emptyText: () => "(no output)",
 			};
 
-			const parallelRowOpts: RowOpts = {
+			const sequenceRowOpts: RowOpts = {
 				rowIcon: (r) =>
-					r.exitCode === -1
-						? theme.fg("warning", "⏳")
-						: isFailedResult(r)
-							? theme.fg("error", "✗")
-							: theme.fg("success", "✓"),
+					r.exitCode === -2
+						? theme.fg("muted", "…")
+						: r.exitCode === -1
+							? theme.fg("warning", "⏳")
+							: isFailedResult(r)
+								? theme.fg("error", "✗")
+								: theme.fg("success", "✓"),
 				rowPrefix: () => "─── ",
-				emptyText: (r) => (r.exitCode === -1 ? "(running...)" : "(no output)"),
+				emptyText: (r) => (r.exitCode === -2 ? "(queued...)" : r.exitCode === -1 ? "(running...)" : "(no output)"),
 			};
 
 			const appendExpandedRows = (container: Container, results: SingleResult[], opts: RowOpts): void => {
@@ -1698,40 +1674,37 @@ export default function (pi: ExtensionAPI) {
 				return new Text(text, 0, 0);
 			}
 
-			if (details.mode === "parallel") {
+			if (details.mode === "sequence") {
+				const queued = details.results.filter((r) => r.exitCode === -2).length;
 				const running = details.results.filter((r) => r.exitCode === -1).length;
-				const successCount = details.results.filter((r) => r.exitCode !== -1 && !isFailedResult(r)).length;
-				const failCount = details.results.filter((r) => r.exitCode !== -1 && isFailedResult(r)).length;
-				const isRunning = running > 0;
+				const successCount = details.results.filter((r) => r.exitCode >= 0 && !isFailedResult(r)).length;
+				const failCount = details.results.filter((r) => r.exitCode >= 0 && isFailedResult(r)).length;
+				const isRunning = queued + running > 0;
 				const icon = isRunning
 					? theme.fg("warning", "⏳")
 					: failCount > 0
 						? theme.fg("warning", "◐")
 						: theme.fg("success", "✓");
 				const status = isRunning
-					? `${successCount + failCount}/${details.results.length} done, ${running} running`
-					: `${successCount}/${details.results.length} tasks`;
+					? `${successCount + failCount}/${details.results.length} done, ${running} running, ${queued} queued`
+					: `${successCount}/${details.results.length} items`;
 
 				if (expanded && !isRunning) {
 					const container = new Container();
 					container.addChild(
 						new Text(
-							`${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`,
+							`${icon} ${theme.fg("toolTitle", theme.bold("sequence "))}${theme.fg("accent", status)}`,
 							0,
 							0,
 						),
 					);
-					// A finished run has no exitCode:-1 rows, so the shared icon's
-					// running arm is unreachable here — output is byte-identical to
-					// the previous ✗/✓-only expanded logic.
-					appendExpandedRows(container, details.results, parallelRowOpts);
+					appendExpandedRows(container, details.results, sequenceRowOpts);
 					appendTotals(container, details.results);
 					return container;
 				}
 
-				// Collapsed view (or still running)
-				let text = `${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`;
-				text += renderCollapsedRows(details.results, parallelRowOpts);
+				let text = `${icon} ${theme.fg("toolTitle", theme.bold("sequence "))}${theme.fg("accent", status)}`;
+				text += renderCollapsedRows(details.results, sequenceRowOpts);
 				if (!isRunning) {
 					const usageStr = formatUsageStats(aggregateUsage(details.results));
 					if (usageStr) text += `\n\n${theme.fg("dim", `Total: ${usageStr}`)}`;

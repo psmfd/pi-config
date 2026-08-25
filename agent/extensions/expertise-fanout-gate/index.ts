@@ -2,49 +2,17 @@
 // Gated by validate.sh 6b-quinquies (ADR-0139): the declaration and the code must agree.
 
 /**
- * expertise-fanout-gate — pi extension (ADR-0095, #613, epic #595).
+ * expertise-fanout-gate — deterministic canonical expertise for serial
+ * subagent sequences (ADR-0148, #1055; component identity retained from
+ * ADR-0095). A `tool_call` hook recognizes a research-shaped `sequence`, runs
+ * one canonical `expertise_search`, and injects the same rendered block into
+ * every independent item before the subagent tool executes them in order.
  *
- * Makes the canonical-expertise pre-fetch DETERMINISTIC: "research starts →
- * expertise is searched" becomes a runtime property instead of orchestrator
- * prompt discipline. A `tool_call` hook on the `subagent` tool detects a
- * research-shaped parallel fanout (mechanical trigger — see
- * `expertise-indexer/fanout-derive.ts`), runs ONE canonical
- * `expertise_search` through the configured local or upstream bearer profile, and injects
- * the rendered `CANONICAL_EXPERTISE_RESULTS` block into every task by
- * mutating the tool input in place. The vendored subagent extension then
- * prepends it to each child's user-role `Task:` framing (LOCAL PATCH #6) —
- * never `--append-system-prompt`, per `agent/rules/no-mcp-servers.md`.
- *
- * Fail-open, self-caught: the pi runtime does NOT wrap `tool_call` handlers
- * in try/catch, so every failure path here is caught internally — a missing
- * bearer credential, an unreachable endpoint, a 429, a git probe failure, or a bug in
- * this extension must degrade to "fanout proceeds without canonical
- * context", never to a broken turn.
- *
- * Activity-stream visibility (security fan-out, ADR-0095): each automatic
- * search — precisely because it is NOT a model-visible tool call — emits a
- * single audit line (stderr always; `ctx.ui.notify` when interactive) and a
- * JSONL telemetry record naming the query, result count, and anchor sha.
- *
- * Rate-limit posture: the semantic endpoint allows 10 req/min. The gate
- * spends at most ONE search per fanout, backs off session-wide on a 429
- * (Retry-After when sent, else 60s), and never retries in-handler.
- *
- * Trust boundary: config comes from `process.env` plus fixed operator-owned
- * files: the legacy expertise-client `.env.local` and upstream
- * `~/.config/expertise-api/secrets.env`. The shared parser keeps legacy API
- * keys loopback-only and requires HTTPS for non-loopback bearer endpoints.
- * Project/repo content cannot steer the endpoint. Read-only: this extension
- * imports no create-capable module.
- *
- * Approval loop + create gate (#605, ADR-0095 § Approval design): a
- * `tool_result` hook surfaces coalesced EXPERTISE_CANDIDATES groups via
- * `ctx.ui.confirm` (one at a time, no timeout); a real confirm(true) is
- * the ONLY act that records the full-field approval hash in the
- * in-session single-use ledger; a `tool_call` gate on `expertise_create`
- * allows exactly a recorded field set and otherwise blocks FAIL-CLOSED
- * (deliberate contrast with the fail-open pre-fetch above). Headless
- * sessions queue candidates to a pending JSONL and never approve.
+ * Fail-open, self-caught: pre-fetch failures degrade to an uninjected sequence.
+ * Candidate approval remains fail-closed: only a real interactive confirmation
+ * records the single-use full-field hash accepted by the `expertise_create`
+ * gate. Child prompts receive the block as user-role `Task:` content, never as
+ * a system prompt.
  */
 
 import { homedir } from "node:os";
@@ -66,12 +34,12 @@ import {
 	type CoalesceResult,
 } from "../expertise-indexer/collector.ts";
 import {
-	deriveFanoutCanonicalInputs,
 	deriveQueryInputs,
-	isResearchShapedFanout,
+	deriveSequenceCanonicalInputs,
+	isResearchShapedSequence,
 	projectSearchResults,
-	type FanoutTask,
-} from "../expertise-indexer/fanout-derive.ts";
+	type SequenceTask,
+} from "../expertise-indexer/sequence-derive.ts";
 import {
 	buildClientConfig,
 	loadEnvLocal,
@@ -153,43 +121,54 @@ function loadLegacyClientEnv(deps: GateDeps): Record<string, string> {
 	};
 }
 
-/** Narrow the raw tool input's `tasks` to the derivation shape, or null when
- * the call is not a well-formed parallel fanout (let the tool validate). */
-export function narrowTasks(input: Record<string, unknown>): FanoutTask[] | null {
-	const raw = input.tasks;
+/** Narrow a raw `sequence` to the deterministic derivation shape. */
+export function narrowSequence(input: Record<string, unknown>): SequenceTask[] | null {
+	const raw = input.sequence;
 	if (!Array.isArray(raw) || raw.length === 0) return null;
-	const tasks: FanoutTask[] = [];
+	const sequence: SequenceTask[] = [];
 	for (const item of raw) {
 		if (item === null || typeof item !== "object" || Array.isArray(item)) return null;
 		const rec = item as Record<string, unknown>;
 		if (typeof rec.agent !== "string" || typeof rec.task !== "string") return null;
-		tasks.push({ agent: rec.agent, task: rec.task });
+		sequence.push({ agent: rec.agent, task: rec.task });
 	}
-	return tasks;
+	return sequence;
 }
 
-/** True when any task already carries a non-empty caller-supplied injection —
- * the orchestrator took manual control of this fanout; the gate stands down
- * rather than mixing two differently-anchored blocks in one fanout. */
-export function hasCallerInjection(input: Record<string, unknown>): boolean {
-	const raw = input.tasks;
+/**
+	* If the caller supplied canonical context on any item, make that first
+	* non-empty block authoritative for the whole independent sequence. This
+	* preserves manual control without allowing missing or divergent replica
+	* context. Returns true when automatic search should stand down.
+	*/
+export function normalizeCallerInjection(input: Record<string, unknown>): boolean {
+	const raw = input.sequence;
 	if (!Array.isArray(raw)) return false;
-	return raw.some(
-		(item) =>
-			item !== null &&
-			typeof item === "object" &&
-			typeof (item as Record<string, unknown>).expertiseInjection === "string" &&
-			((item as Record<string, unknown>).expertiseInjection as string).length > 0,
-	);
+	let canonical: string | undefined;
+	for (const item of raw) {
+		if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
+		const value = (item as Record<string, unknown>).expertiseInjection;
+		if (typeof value === "string" && value.length > 0) {
+			canonical = value;
+			break;
+		}
+	}
+	if (canonical === undefined) return false;
+	for (const item of raw) {
+		if (item !== null && typeof item === "object" && !Array.isArray(item)) {
+			(item as Record<string, unknown>).expertiseInjection = canonical;
+		}
+	}
+	return true;
 }
 
 export default function (pi: ExtensionAPI, deps: GateDeps = {}) {
 	// Session-scoped 429 backoff: epoch ms before which no search is attempted.
 	let rateLimitedUntil = 0;
-	// One search in flight at a time: overlapping concurrent fanouts must not
+	// One search in flight at a time: overlapping sequence calls must not
 	// double-spend the one-search budget (post-arc review finding).
 	let searchInFlight = false;
-	// Notify a missing/invalid config once per session, not once per fanout.
+	// Notify a missing/invalid config once per session, not once per sequence.
 	let configNotified = false;
 	// In-session approval ledger (#605): populated ONLY by real
 	// ctx.ui.confirm resolutions; consumed single-use by the create gate.
@@ -224,15 +203,15 @@ export default function (pi: ExtensionAPI, deps: GateDeps = {}) {
 			if (event.toolName !== "subagent") return undefined;
 			const input = event.input;
 
-			const tasks = narrowTasks(input);
-			if (tasks === null) return undefined;
-			if (!isResearchShapedFanout(tasks)) return undefined;
-			if (hasCallerInjection(input)) return undefined;
+			const sequence = narrowSequence(input);
+			if (sequence === null) return undefined;
+			if (!isResearchShapedSequence(sequence)) return undefined;
+			if (normalizeCallerInjection(input)) return undefined;
 
-			const agents = [...new Set(tasks.map((t) => t.agent))].sort();
+			const agents = [...new Set(sequence.map((item) => item.agent))].sort();
 			const base: Pick<TelemetryRecord, "agents" | "taskCount"> = {
 				agents,
-				taskCount: tasks.length,
+				taskCount: sequence.length,
 			};
 
 			if (now() < rateLimitedUntil) {
@@ -280,25 +259,21 @@ export default function (pi: ExtensionAPI, deps: GateDeps = {}) {
 					return undefined;
 				}
 
-				const query = buildCanonicalQuery(deriveQueryInputs(tasks));
+				const query = buildCanonicalQuery(deriveQueryInputs(sequence));
 				if (query === "") {
 					// Rule-doc exemption: never send a garbage query.
 					record({ event: "skip", reason: "empty-query", ...base });
 					return undefined;
 				}
-				// Scan the query BEFORE egress. It is built from model-controlled
-				// tasks[].agent / tasks[0].task text, and buildCanonicalQuery's
-				// lowercase+strip does not destroy `ghp_`/`github_pat_` shapes — an
-				// unscanned token would otherwise leave as a `?q=` param to a
-				// possibly non-loopback endpoint. Telemetry's sanitizeField only
-				// redacts the logged copy, after the request has already fired (#815).
+				// Scan the query before egress. It is built from model-controlled
+				// sequence item text; telemetry redaction happens only after egress.
 				if (scanRawString(query).length > 0) {
 					record({ event: "skip", reason: "secret-in-query", ...base });
 					return undefined;
 				}
 
 				const blob = computeCanonicalBlob(
-					deriveFanoutCanonicalInputs({ repoOrigin: git.origin, headSha: git.headSha, tasks }),
+					deriveSequenceCanonicalInputs({ repoOrigin: git.origin, headSha: git.headSha, sequence }),
 				);
 
 				// Bound the one search: the runtime does not time out a tool_call
@@ -340,9 +315,9 @@ export default function (pi: ExtensionAPI, deps: GateDeps = {}) {
 				const results = projectSearchResults(search.text);
 				const block = renderCanonicalResultsBlock(results, blob.sha);
 
-				// Mutate in place — later handlers and the tool itself see the
-				// injected tasks (SDK contract: input is mutable pre-execution).
-				for (const item of input.tasks as unknown[]) {
+				// Mutate in place so every independent serial replica receives the
+				// identical canonical block.
+				for (const item of input.sequence as unknown[]) {
 					(item as Record<string, unknown>).expertiseInjection = block;
 				}
 
@@ -362,8 +337,8 @@ export default function (pi: ExtensionAPI, deps: GateDeps = {}) {
 				searchInFlight = false;
 			}
 		} catch (err) {
-			// tool_call handler exceptions are NOT caught by the runtime —
-			// swallow everything; the fanout must proceed uninjected.
+			// Tool-call hook exceptions are not runtime-caught; serial execution
+			// must proceed without injection.
 			try {
 				appendTelemetry(
 					{ event: "error", detail: err instanceof Error ? err.message : String(err) },

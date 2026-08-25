@@ -1,6 +1,6 @@
 # ADR-0001: Adopt pi `subagent` extension and routing primitives as the orchestration substrate
 
-**Status:** Accepted
+**Status:** Accepted; parallel scheduling partially superseded by [ADR-0148](0148-serial-multi-agent-execution.md)
 **Date:** 2026-05-13
 
 ## Context and Problem Statement

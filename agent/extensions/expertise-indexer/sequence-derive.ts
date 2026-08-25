@@ -1,40 +1,30 @@
 /**
- * expertise-indexer — deterministic fanout derivation (#613, ADR-0095).
+ * expertise-indexer — deterministic serial-sequence derivation (#1055).
  *
  * Pure functions shared by the runtime trigger (`expertise-fanout-gate`) and
- * the CI audit (#601): given the exact `subagent` tool-call params, derive
- * (a) whether the fanout is "research-shaped", (b) the canonical query
- * inputs, and (c) the canonical-blob inputs that anchor the injection.
+ * the CI audit (#601): given the exact `subagent` sequence, derive whether it
+ * is research-shaped, the canonical query inputs, and the canonical-blob
+ * inputs that anchor the injection.
  *
  * DETERMINISM CONTRACT: every function here is a pure function of its
  * arguments — no clock, no I/O, no environment reads, no randomness. The CI
- * audit recomputes the expected `canonical_blob_sha` by feeding the SAME
- * derivation the telemetry-recorded task list plus its own git state; any
- * hidden input here would silently break that recomputation.
+ * audit recomputes the expected `canonical_blob_sha` from the same ordered
+ * sequence and repository state.
  *
- * Trigger definition (ADR-0095 — mechanical, no LLM judgment):
- *   - parallel mode only (`params.tasks`), length >= RESEARCH_FANOUT_MIN;
+ * Trigger definition (ADR-0148 — mechanical, no LLM judgment):
+ *   - sequence mode only (`params.sequence`), length >= RESEARCH_SEQUENCE_MIN;
  *   - NOT review-only: at least one requested agent falls outside the static
- *     review-agent set below. A three-way `/review`-style fanout (the repo's
- *     multi-reviewer command shape) is a review, not research — injecting
- *     canonical expertise there would burn rate-limit budget on the wrong
- *     shape.
- *   - Single-agent and chain-mode calls never trigger (accepted gap,
- *     ADR-0095): the rule's own scope is research-classified *fanouts*.
+ *     review-agent set below;
+ *   - single-agent and chain-mode calls never trigger.
  */
 
 import type { CanonicalInputs } from "./canonicalize.ts";
 import type { CanonicalQueryInputs, CanonicalResultEntry } from "./collector.ts";
 
-/** Minimum parallel-task count for a research-shaped fanout (mirrors the
- * divergence minimum in `agent/rules/research-parallelism.md`). */
-export const RESEARCH_FANOUT_MIN = 3;
+/** Minimum item count for a research-shaped serial sequence. */
+export const RESEARCH_SEQUENCE_MIN = 3;
 
-/**
- * Review agents: a fanout composed ENTIRELY of these is a multi-reviewer
- * command (e.g. the three-way `/review` shape), not research. Closed set,
- * maintained by hand — additions are a deliberate policy edit, not inference.
- */
+/** Review-only sequences are multi-reviewer workflows, not research. */
 export const REVIEW_ONLY_AGENTS: ReadonlySet<string> = new Set([
 	"checkmarx-expert",
 	"code-review-expert",
@@ -42,70 +32,44 @@ export const REVIEW_ONLY_AGENTS: ReadonlySet<string> = new Set([
 	"security-review-expert",
 ]);
 
-/** The two fields of a `subagent` parallel-task item the derivation reads. */
-export interface FanoutTask {
+/** The two sequence-item fields used by deterministic derivation. */
+export interface SequenceTask {
 	readonly agent: string;
 	readonly task: string;
 }
 
-/**
- * Mechanical research-shape test over the parallel-task list. Pure; the
- * caller (gate hook / audit) extracts the list from the tool-call params.
- */
-export function isResearchShapedFanout(tasks: readonly FanoutTask[]): boolean {
-	if (tasks.length < RESEARCH_FANOUT_MIN) return false;
-	return !tasks.every((t) => REVIEW_ONLY_AGENTS.has(t.agent));
+/** Mechanical research-shape test over the ordered sequence. */
+export function isResearchShapedSequence(sequence: readonly SequenceTask[]): boolean {
+	if (sequence.length < RESEARCH_SEQUENCE_MIN) return false;
+	return !sequence.every((item) => REVIEW_ONLY_AGENTS.has(item.agent));
 }
 
-/**
- * Canonical query inputs from the fanout, per the fixed template
- * `<domain> <technology> <task-type> <goal/symptom>`:
- *   - domain      — requested agent names, de-duplicated + sorted (each name
- *                   survives `buildCanonicalQuery` normalization as a single
- *                   token, so 3–6 agents cost 3–6 of the 12-token budget);
- *   - taskType    — the literal `research` (the trigger definition IS the
- *                   research classification);
- *   - goalOrSymptom — the FIRST task string as supplied. First-position is
- *                   part of the deterministic contract: re-deriving from the
- *                   same tool call always reads the same task.
- * `technology` is deliberately unset — nothing in the tool call names a
- * technology more reliably than the agent names already do.
- */
-export function deriveQueryInputs(tasks: readonly FanoutTask[]): CanonicalQueryInputs {
-	const agents = [...new Set(tasks.map((t) => t.agent))].sort();
+/** Canonical query inputs derived from the ordered sequence. */
+export function deriveQueryInputs(sequence: readonly SequenceTask[]): CanonicalQueryInputs {
+	const agents = [...new Set(sequence.map((item) => item.agent))].sort();
 	return {
 		domain: agents.join(" "),
 		taskType: "research",
-		goalOrSymptom: tasks[0]?.task ?? "",
+		goalOrSymptom: sequence[0]?.task ?? "",
 	};
 }
 
-/**
- * The canonical task string for the fanout blob: one line per task in the
- * caller-supplied order, `<agent>: <task>`. Order preservation is deliberate —
- * the blob anchors the exact call, not a normalized bag of tasks.
- */
-export function deriveFanoutTaskString(tasks: readonly FanoutTask[]): string {
-	return tasks.map((t) => `${t.agent}: ${t.task}`).join("\n");
+/** Preserve caller order in the canonical task string. */
+export function deriveSequenceTaskString(sequence: readonly SequenceTask[]): string {
+	return sequence.map((item) => `${item.agent}: ${item.task}`).join("\n");
 }
 
-/**
- * Canonical-blob inputs for a runtime fanout. `files` is EMPTY by contract:
- * a live fanout has no changed-set — the anchor is repo@HEAD plus the exact
- * task list. (The #601 CI audit's separate PR-changed-set blob is a different
- * blob for a different purpose; this one is what the injected block and every
- * returned candidate must carry.)
- */
-export function deriveFanoutCanonicalInputs(args: {
+/** Canonical-blob inputs for one live serial sequence. */
+export function deriveSequenceCanonicalInputs(args: {
 	readonly repoOrigin: string;
 	readonly headSha: string;
-	readonly tasks: readonly FanoutTask[];
+	readonly sequence: readonly SequenceTask[];
 }): CanonicalInputs {
 	return {
 		repoOrigin: args.repoOrigin,
 		headSha: args.headSha,
 		files: [],
-		taskString: deriveFanoutTaskString(args.tasks),
+		taskString: deriveSequenceTaskString(args.sequence),
 		agentFrontmatter: {},
 	};
 }

@@ -42,9 +42,10 @@
 #                                  dnf. Off by default per ADR-0011.
 #   PI_UPDATE=1                    Upgrade pi to latest (npm path only).
 #   INSTALL_GIT_HOOKS=1            Symlink hooks/secrets-guard.sh into
-#                                  .git/hooks/pre-commit AND
-#                                  hooks/gh-identity-guard.sh into
-#                                  .git/hooks/pre-push.
+#                                  .git/hooks/pre-commit, hooks/
+#                                  gh-identity-guard.sh into .git/hooks/
+#                                  pre-push, AND hooks/commit-trailer-guard.sh
+#                                  into .git/hooks/commit-msg.
 
 set -euo pipefail
 
@@ -323,6 +324,20 @@ else
     2) warn toolchain "pi-bash-parser: unsupported host triple; bash-destructive-guard AST second pass will be unavailable" ;;
     *) warn toolchain "pi-bash-parser install failed (rc=$bp_rc); bash-destructive-guard AST second pass will be unavailable" ;;
   esac
+  # Install landlock-run (Phase 2a bash-tool write-confinement launcher,
+  # ADR-0146 / #1046) from its sha256-pinned vendor record. Linux-only by
+  # nature (Landlock is a Linux LSM; upstream ships no other platforms), so
+  # rc=2 on macOS is the expected, quiet outcome — confinement on this host
+  # class arrives with the Seatbelt leg (#707).
+  set +e
+  ih_ensure_landlock_run
+  llr_rc=$?
+  set -e
+  case $llr_rc in
+    0) : ;;
+    2) info "landlock-run: Linux-only vendor; bash-tool write confinement unavailable on this host (ADR-0146; macOS = #707)" ;;
+    *) warn toolchain "landlock-run install failed (rc=$llr_rc); bash-tool write confinement will be unavailable" ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------
@@ -598,8 +613,9 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 5. Optional: install the secrets-guard git pre-commit hook AND the
-#    gh-identity-guard git pre-push hook into THIS repo.
+# 5. Optional: install the secrets-guard git pre-commit hook, the
+#    gh-identity-guard git pre-push hook, AND the commit-trailer-guard
+#    git commit-msg hook (ADR-0143) into THIS repo.
 # ---------------------------------------------------------------------------
 if [ "${INSTALL_GIT_HOOKS:-0}" = "1" ]; then
   info "INSTALL_GIT_HOOKS=1 — installing git hooks in ${REPO_DIR}"
@@ -655,8 +671,37 @@ if [ "${INSTALL_GIT_HOOKS:-0}" = "1" ]; then
       ok git-hook "pre-push hook linked"
     fi
   fi
+
+  # commit-trailer-guard commit-msg (ADR-0143): strips authorship-attribution
+  # trailers per conventional-commits.md. Announced here per the ADR — the
+  # operator learns at install time that messages will be edited.
+  CM_SRC="${REPO_DIR}/hooks/commit-trailer-guard.sh"
+  CM_DST="${REPO_DIR}/.git/hooks/commit-msg"
+  if [ ! -f "${CM_SRC}" ]; then
+    warn git-hook "hook source ${CM_SRC} missing; skipping commit-msg"
+  elif [ ! -d "${REPO_DIR}/.git" ]; then
+    : # already warned above
+  else
+    if [ -L "${CM_DST}" ] && [ "$(resolve_path "${CM_DST}")" = "${CM_SRC}" ]; then
+      ok git-hook "commit-msg hook already linked (strips attribution trailers, ADR-0143)"
+    elif [ "${DRY_RUN}" = "1" ]; then
+      if [ -e "${CM_DST}" ]; then
+        info "[dry-run] mv ${CM_DST} ${CM_DST}.preinstall.<ts>"
+      fi
+      info "[dry-run] ln -s ${CM_SRC} ${CM_DST}"
+    elif [ -e "${CM_DST}" ]; then
+      cm_backup="${CM_DST}.preinstall.$(date +%s)"
+      mv "${CM_DST}" "${cm_backup}"
+      warn git-hook "existing commit-msg backed up to ${cm_backup}"
+      ln -s "${CM_SRC}" "${CM_DST}"
+      ok git-hook "commit-msg hook linked (strips attribution trailers, ADR-0143)"
+    else
+      ln -s "${CM_SRC}" "${CM_DST}"
+      ok git-hook "commit-msg hook linked (strips attribution trailers, ADR-0143)"
+    fi
+  fi
 else
-  skip git-hook "INSTALL_GIT_HOOKS not set; pre-commit + pre-push hooks not installed (set =1 to opt in)"
+  skip git-hook "INSTALL_GIT_HOOKS not set; pre-commit + pre-push + commit-msg hooks not installed (set =1 to opt in)"
 fi
 
 # Next-steps footer is printed BEFORE the summary block so that the

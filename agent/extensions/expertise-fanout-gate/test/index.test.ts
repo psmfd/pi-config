@@ -1,18 +1,9 @@
 /**
- * expertise-fanout-gate — index.ts wiring tests (ADR-0095, #613).
+ * expertise-fanout-gate — serial-sequence wiring tests (#1055, ADR-0148).
  *
- * All I/O is injected: fake fetch, fake git executor, temp `.env.local`,
- * temp telemetry dir, fixed clock. The handler under test is registered on a
- * fake `pi` (the gh-identity-guard harness pattern) and invoked directly.
- *
- * The load-bearing assertions:
- *   - injection happens ONLY for research-shaped parallel fanouts;
- *   - the injected block round-trips through `parseCanonicalResultsBlock`
- *     with the sha the derivation predicts;
- *   - every failure path (no config, git probe down, network down, 429)
- *     resolves without throwing — the runtime does not catch tool_call
- *     handler exceptions, so "never throws" IS the fail-open contract;
- *   - a 429 arms the session backoff (no second fetch inside the window).
+ * Load-bearing assertions: only research-shaped sequences trigger; one
+	 * canonical block is injected identically into every serial item; failure
+	 * paths remain fail-open; rate-limit and overlapping-call guards remain intact.
  */
 
 import { test } from "node:test";
@@ -24,7 +15,7 @@ import { join } from "node:path";
 
 import { computeCanonicalBlob } from "../../expertise-indexer/canonicalize.ts";
 import { parseCanonicalResultsBlock } from "../../expertise-indexer/collector.ts";
-import { deriveFanoutCanonicalInputs } from "../../expertise-indexer/fanout-derive.ts";
+import { deriveSequenceCanonicalInputs } from "../../expertise-indexer/sequence-derive.ts";
 import type { ExecResult, GitExecutor } from "../lib/git-info.ts";
 import { telemetryDir } from "../lib/telemetry.ts";
 
@@ -93,7 +84,7 @@ function okFetch(calls: string[]): typeof fetch {
 
 function researchInput(): Record<string, unknown> {
 	return {
-		tasks: [
+		sequence: [
 			{ agent: "ansible-expert", task: "investigate handler semantics" },
 			{ agent: "docker-expert", task: "investigate compose interplay" },
 			{ agent: "shell-expert", task: "investigate hook wiring" },
@@ -214,7 +205,7 @@ test("installed client env path follows PI_CODING_AGENT_DIR package layout", () 
 	);
 });
 
-test("research fanout gets the canonical block injected into every task", async (tc) => {
+test("research sequence gets one canonical block injected into every item", async (tc) => {
 	const h = await makeHarness({});
 	tc.after(() => rm(h.dir, { recursive: true, force: true }));
 
@@ -224,29 +215,26 @@ test("research fanout gets the canonical block injected into every task", async 
 	assert.equal(h.calls.length, 1);
 	assert.match(h.calls[0], /\/expertise\/search\/semantic\?q=/);
 
-	const tasks = input.tasks as Record<string, unknown>[];
-	const blocks = tasks.map((t) => t.expertiseInjection);
+	const sequence = input.sequence as Record<string, unknown>[];
+	const blocks = sequence.map((item) => item.expertiseInjection);
 	assert.equal(blocks.length, 3);
-	assert.ok(blocks.every((b) => typeof b === "string" && b.length > 0));
-	assert.equal(new Set(blocks).size, 1, "one fanout, one block");
+	assert.ok(blocks.every((block) => typeof block === "string" && block.length > 0));
+	assert.equal(new Set(blocks).size, 1, "one serial sequence, one identical block");
 
 	const payload = parseCanonicalResultsBlock(blocks[0] as string);
 	assert.ok(payload);
 	assert.equal(payload.results.length, 1);
-
-	// The anchor is exactly what the shared derivation predicts.
 	const expected = computeCanonicalBlob(
-		deriveFanoutCanonicalInputs({
+		deriveSequenceCanonicalInputs({
 			repoOrigin: ORIGIN,
 			headSha: HEAD_SHA,
-			tasks: (researchInput().tasks as { agent: string; task: string }[]).map((t) => ({
-				agent: t.agent,
-				task: t.task,
+			sequence: (researchInput().sequence as { agent: string; task: string }[]).map((item) => ({
+				agent: item.agent,
+				task: item.task,
 			})),
 		}),
 	).sha;
 	assert.equal(payload.canonical_blob_sha, expected);
-
 	const rows = telemetryLines(h.agentDir);
 	assert.equal(rows.length, 1);
 	assert.equal(rows[0].event, "inject");
@@ -289,17 +277,17 @@ test("upstream static-OIDC config injects over HTTPS with agent headers", async 
 	assert.equal(seen.headers?.["x-actor-class"], "agent");
 	assert.match(seen.headers?.["user-agent"] ?? "", /pi-coding-agent/);
 	assert.ok(
-		(input.tasks as Record<string, unknown>[]).every(
-			(t) => typeof t.expertiseInjection === "string",
+		(input.sequence as Record<string, unknown>[]).every(
+			(item) => typeof item.expertiseInjection === "string",
 		),
 	);
-	const block = (input.tasks as Record<string, unknown>[])[0]
+	const block = (input.sequence as Record<string, unknown>[])[0]
 		.expertiseInjection as string;
 	const payload = parseCanonicalResultsBlock(block);
 	assert.equal(payload?.results[0]?.title, API_ROW.title);
 });
 
-test("non-subagent tools, single mode, small and review-only fanouts pass through", async (tc) => {
+test("non-subagent tools, single mode, small and review-only sequences pass through", async (tc) => {
 	const h = await makeHarness({});
 	tc.after(() => rm(h.dir, { recursive: true, force: true }));
 
@@ -307,10 +295,10 @@ test("non-subagent tools, single mode, small and review-only fanouts pass throug
 	await h.handler({ toolName: "bash", input: { command: "ls" } }, h.ctx);
 	await h.handler({ toolName: "subagent", input: single }, h.ctx);
 	const two = researchInput();
-	(two.tasks as unknown[]).pop();
+	(two.sequence as unknown[]).pop();
 	await h.handler({ toolName: "subagent", input: two }, h.ctx);
 	const review = {
-		tasks: [
+		sequence: [
 			{ agent: "code-review-expert", task: "review" },
 			{ agent: "security-review-expert", task: "review" },
 			{ agent: "linter", task: "lint" },
@@ -321,24 +309,26 @@ test("non-subagent tools, single mode, small and review-only fanouts pass throug
 	assert.equal(h.calls.length, 0, "no search fired");
 	assert.equal((single as Record<string, unknown>).expertiseInjection, undefined);
 	assert.ok(
-		(review.tasks as Record<string, unknown>[]).every(
-			(t) => t.expertiseInjection === undefined,
+		(review.sequence as Record<string, unknown>[]).every(
+			(item) => item.expertiseInjection === undefined,
 		),
 	);
 });
 
-test("caller-supplied injection makes the gate stand down", async (tc) => {
+test("caller-supplied injection is normalized across every serial replica", async (tc) => {
 	const h = await makeHarness({});
 	tc.after(() => rm(h.dir, { recursive: true, force: true }));
 
 	const input = researchInput();
-	(input.tasks as Record<string, unknown>[])[1].expertiseInjection = "<!-- caller block -->";
+	const sequence = input.sequence as Record<string, unknown>[];
+	sequence[1].expertiseInjection = "<!-- caller block -->";
+	sequence[2].expertiseInjection = "<!-- divergent block -->";
 	await h.handler({ toolName: "subagent", input }, h.ctx);
 	assert.equal(h.calls.length, 0);
-	assert.equal(
-		(input.tasks as Record<string, unknown>[])[0].expertiseInjection,
-		undefined,
-		"gate did not fill the other tasks",
+	assert.deepEqual(
+		sequence.map((item) => item.expertiseInjection),
+		["<!-- caller block -->", "<!-- caller block -->", "<!-- caller block -->"],
+		"first non-empty caller block is authoritative for every replica",
 	);
 });
 
@@ -349,7 +339,7 @@ test("missing config skips fail-open with telemetry", async (tc) => {
 	const input = researchInput();
 	await h.handler({ toolName: "subagent", input }, h.ctx);
 	assert.equal(h.calls.length, 0);
-	assert.equal((input.tasks as Record<string, unknown>[])[0].expertiseInjection, undefined);
+	assert.equal((input.sequence as Record<string, unknown>[])[0].expertiseInjection, undefined);
 	const rows = telemetryLines(h.agentDir);
 	assert.equal(rows.length, 1);
 	assert.equal(rows[0].event, "skip");
@@ -365,7 +355,7 @@ test("git probe failure skips fail-open", async (tc) => {
 	assert.equal(telemetryLines(h.agentDir)[0]?.reason, "no-git");
 });
 
-test("network failure never throws; fanout proceeds uninjected", async (tc) => {
+test("network failure never throws; sequence proceeds uninjected", async (tc) => {
 	const rejecting = (() => Promise.reject(new Error("ECONNREFUSED"))) as unknown as typeof fetch;
 	const h = await makeHarness({ fetchImpl: rejecting });
 	tc.after(() => rm(h.dir, { recursive: true, force: true }));
@@ -374,7 +364,7 @@ test("network failure never throws; fanout proceeds uninjected", async (tc) => {
 	await assert.doesNotReject(async () => {
 		await h.handler({ toolName: "subagent", input }, h.ctx);
 	});
-	assert.equal((input.tasks as Record<string, unknown>[])[0].expertiseInjection, undefined);
+	assert.equal((input.sequence as Record<string, unknown>[])[0].expertiseInjection, undefined);
 	assert.equal(telemetryLines(h.agentDir)[0]?.reason, "search-failed");
 });
 
@@ -392,7 +382,7 @@ test("429 arms the session backoff; Retry-After honored; window expiry re-enable
 	await h.handler({ toolName: "subagent", input: researchInput() }, h.ctx);
 	assert.equal(fetchCount, 1);
 
-	// Second fanout inside the window: skipped without a fetch.
+	// Second sequence inside the window: skipped without a fetch.
 	await h.handler({ toolName: "subagent", input: researchInput() }, h.ctx);
 	assert.equal(fetchCount, 1);
 
@@ -417,7 +407,7 @@ test("a throwing dependency is swallowed (tool_call handlers are uncaught upstre
 	});
 });
 
-test("overlapping fanouts never double-spend the one-search budget", async (tc) => {
+test("overlapping sequences never double-spend the one-search budget", async (tc) => {
 	let resolveFetch: ((r: Response) => void) | undefined;
 	let fetchCount = 0;
 	const gatedFetch = (() => {
@@ -434,9 +424,9 @@ test("overlapping fanouts never double-spend the one-search budget", async (tc) 
 	await new Promise((r) => setImmediate(r));
 	const secondInput = researchInput();
 	await h.handler({ toolName: "subagent", input: secondInput }, h.ctx);
-	assert.equal(fetchCount, 1, "second overlapping fanout must not fire a search");
+	assert.equal(fetchCount, 1, "second overlapping sequence must not fire a search");
 	assert.equal(
-		(secondInput.tasks as Record<string, unknown>[])[0].expertiseInjection,
+		(secondInput.sequence as Record<string, unknown>[])[0].expertiseInjection,
 		undefined,
 	);
 	resolveFetch?.(
@@ -453,16 +443,16 @@ test("overlapping fanouts never double-spend the one-search budget", async (tc) 
 	assert.ok(reasons.includes("inject:"));
 });
 
-test("malformed tasks arrays are left for the tool's own validation", async (tc) => {
+test("malformed sequence arrays are left for the tool's own validation", async (tc) => {
 	const h = await makeHarness({});
 	tc.after(() => rm(h.dir, { recursive: true, force: true }));
 
-	await h.handler({ toolName: "subagent", input: { tasks: [{ agent: 42, task: "x" }, "y", null] } }, h.ctx);
-	await h.handler({ toolName: "subagent", input: { tasks: "not-an-array" } }, h.ctx);
+	await h.handler({ toolName: "subagent", input: { sequence: [{ agent: 42, task: "x" }, "y", null] } }, h.ctx);
+	await h.handler({ toolName: "subagent", input: { sequence: "not-an-array" } }, h.ctx);
 	assert.equal(h.calls.length, 0);
 });
 
-test("overlapping fanouts racing on the git probe still spend one search (#815 TOCTOU)", async (tc) => {
+test("overlapping sequences racing on the git probe still spend one search (#815 TOCTOU)", async (tc) => {
 	// Gate the FIRST git rev-parse so invocation A parks inside the git probe —
 	// the window the pre-fix code left open by setting searchInFlight only after
 	// the probe. The existing 'never double-spend' test gates the fetch, which is
@@ -492,9 +482,9 @@ test("overlapping fanouts racing on the git probe still spend one search (#815 T
 	await h.handler({ toolName: "subagent", input: secondInput }, h.ctx);
 	// searchInFlight is committed before the git probe, so B is rejected here.
 	assert.equal(
-		(secondInput.tasks as Record<string, unknown>[])[0].expertiseInjection,
+		(secondInput.sequence as Record<string, unknown>[])[0].expertiseInjection,
 		undefined,
-		"second fanout must not inject while the first holds the one-search budget",
+		"second sequence must not inject while the first holds the one-search budget",
 	);
 	releaseGit?.();
 	await first;
@@ -524,14 +514,14 @@ test("a rejecting git executor hits the outer catch and records event=error (#81
 	assert.equal(typeof rows[0].detail, "string");
 });
 
-test("a secret-shaped token in a task is never sent as a query param (#815)", async (tc) => {
+test("a secret-shaped token in a sequence item is never sent as a query param (#815)", async (tc) => {
 	const calls: string[] = [];
 	const h = await makeHarness({ calls });
 	tc.after(() => rm(h.dir, { recursive: true, force: true }));
 
 	const token = `ghp_${"a".repeat(40)}`;
 	const input = {
-		tasks: [
+		sequence: [
 			{ agent: "ansible-expert", task: `leaked ${token} in handler notes` },
 			{ agent: "docker-expert", task: "investigate compose interplay" },
 			{ agent: "shell-expert", task: "investigate hook wiring" },
@@ -539,14 +529,10 @@ test("a secret-shaped token in a task is never sent as a query param (#815)", as
 	};
 	await h.handler({ toolName: "subagent", input }, h.ctx);
 	assert.equal(calls.length, 0, "no outbound request when the query carries a secret");
-	assert.equal((input.tasks as Record<string, unknown>[])[0].expertiseInjection, undefined);
+	assert.equal((input.sequence as Record<string, unknown>[])[0].expertiseInjection, undefined);
 	const rows = telemetryLines(h.agentDir);
 	assert.equal(rows[0]?.reason, "secret-in-query");
-	// The redacted query must not carry the raw token even in telemetry.
-	assert.ok(
-		!JSON.stringify(rows).includes(token),
-		"raw token must not appear in telemetry",
-	);
+	assert.ok(!JSON.stringify(rows).includes(token), "raw token must not appear in telemetry");
 });
 
 test("source-tree .env.local wins over the installed package copy (#815)", async (tc) => {

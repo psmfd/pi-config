@@ -232,6 +232,15 @@ export default function (pi: ExtensionAPI) {
     st.active = true;
     st.worktreePath = worktreePath;
     st.branch = branch;
+    // Publish the write grant for the Phase 2a bash-confinement wrapper
+    // (ADR-0146, #1046): this is the first point the session's worktree path
+    // is known, on both the fresh-create and re-attach paths. The wrapper
+    // reads PI_SESSION_WORKTREE from its inherited env; PI_CONFINE_SESSION
+    // keys the per-session scratch. Bash calls that precede the first
+    // worktree still find no grant — which is correct (the wrapper fails
+    // closed under enforce mode until a worktree exists).
+    process.env.PI_SESSION_WORKTREE = worktreePath;
+    process.env.PI_CONFINE_SESSION = safeSid(st.sid);
     startTimer(ctx);
     if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, `⌂ ${branch}`);
   };

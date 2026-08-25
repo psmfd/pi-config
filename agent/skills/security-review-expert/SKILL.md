@@ -80,7 +80,7 @@ Per `rules/structured-review-format.md`:
 
 ## Review Protocol
 
-0. **Verify ground-truth source is present** — before any other step, confirm the brief cites a `Source path:` (working-tree path, git revision range plus repo path, or specific file list) AND that the cited path exists and is readable via `read`/`grep`/`find`/`ls`. If no path is cited, or the cited path does not exist, emit a single-line `PRECONDITION_FAILURE` verdict naming the missing input and stop. Do not produce findings from memory of the codebase, from training-set familiarity, or from a partial fragment quoted in the brief. Reviewing from memory is a protocol violation per `rules/research-parallelism.md` § Ground-Truth Source Precondition. This step does not apply to research-mode advisory invocations (no diff, no specific code) — those proceed under the research-mode output rule below.
+0. **Verify ground-truth source is present** — before any other step, confirm the brief cites a `Source path:` (working-tree path, git revision range plus repo path, or specific file list) AND that the cited path exists and is readable via `read`/`grep`/`find`/`ls`. If no path is cited, or the cited path does not exist, emit a single-line `PRECONDITION_FAILURE` verdict naming the missing input and stop. Do not produce findings from memory of the codebase, from training-set familiarity, or from a partial fragment quoted in the brief. Reviewing from memory is a protocol violation per `rules/research-serial-execution.md` § Ground-Truth Source Precondition. This step does not apply to research-mode advisory invocations (no diff, no specific code) — those proceed under the research-mode output rule below.
 1. **Understand intent** — read the PR description, issue, or commit message to understand what the change is supposed to do before evaluating its security posture.
 2. **Identify the trust boundary** — for each changed file, determine where untrusted input enters and where authorization decisions are made. Most security findings cluster at boundary crossings.
 3. **Research the relevant doc** — for any non-obvious API, framework feature, or service configuration, fetch the first-party reference. Cite URL plus visible date.
@@ -118,7 +118,7 @@ If you have no diff to review and were invoked for advisory work (research mode)
 
 `security-review-expert` does. When `code-review-expert` flags a security smell that warrants exploit-chain analysis or full trust-boundary tracing, it should escalate explicitly: "Escalate to `security-review-expert` for exploit-chain analysis." This skill receives the escalation and deepens the analysis.
 
-When a PR touches authentication, secrets management, cryptographic primitives, network trust boundaries, IAM policy, or identity provider configuration, the orchestrator should fan out to BOTH agents in parallel and merge their findings tables.
+When a PR touches authentication, secrets management, cryptographic primitives, network trust boundaries, IAM policy, or identity provider configuration, the orchestrator should run BOTH agents as independent serial `sequence` items and merge their findings after both complete.
 
 ### vs `checkmarx-expert`
 

@@ -19,7 +19,7 @@ Cite first-party documentation alongside non-obvious findings, with the page's v
 
 ## Ground-truth source precondition
 
-Before producing any finding, verify the brief cites a `Source path:` (working-tree path, git revision range plus repo path, or specific file list) AND that the cited path exists and is readable via `read`/`grep`/`find`/`ls`. If no path is cited, or the cited path does not exist, emit a single-line `PRECONDITION_FAILURE` verdict naming the missing input and stop — do not produce findings from memory of the codebase or from training-set familiarity. Research-mode advisory invocations (no diff, no specific code under review) are exempt and proceed under the research-mode output rule in the Output section below. See `rules/research-parallelism.md` § Ground-Truth Source Precondition and the skill's Review Protocol step 0 for the full rationale.
+Before producing any finding, verify the brief cites a `Source path:` (working-tree path, git revision range plus repo path, or specific file list) AND that the cited path exists and is readable via `read`/`grep`/`find`/`ls`. If no path is cited, or the cited path does not exist, emit a single-line `PRECONDITION_FAILURE` verdict naming the missing input and stop — do not produce findings from memory of the codebase or from training-set familiarity. Research-mode advisory invocations (no diff, no specific code under review) are exempt and proceed under the research-mode output rule in the Output section below. See `rules/research-serial-execution.md` § Ground-Truth Source Precondition and the skill's Review Protocol step 0 for the full rationale.
 
 ## Output
 

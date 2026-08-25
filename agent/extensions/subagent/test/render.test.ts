@@ -4,7 +4,7 @@
  * never touched — running sentinel, partial output, per-task status icons,
  * running-vs-done status headers — plus the expanded per-row shape (step
  * headers, Task line, tool-call arrows, usage footers, totals), so the
- * chain/parallel row-rendering dedup is regression-guarded.
+ * chain/sequence row-rendering dedup is regression-guarded.
  *
  * pi-tui components expose `render(width): string[]`, so assertions run on
  * the joined rendered lines with an identity theme (fg/bold return the raw
@@ -129,7 +129,7 @@ test("single rendering surfaces the failed and fallback model path", () => {
 	}
 });
 
-test("parallel row rendering explains post-tool retry refusal", () => {
+test("sequence row rendering explains post-tool retry refusal", () => {
 	const result = makeResult({
 		exitCode: 1,
 		stopReason: "error",
@@ -142,7 +142,7 @@ test("parallel row rendering explains post-tool retry refusal", () => {
 	});
 	for (const expanded of [false, true]) {
 		const out = renderText(
-			{ mode: "parallel", agentScope: "user", projectAgentsDir: null, results: [result] },
+			{ mode: "sequence", agentScope: "user", projectAgentsDir: null, results: [result] },
 			expanded,
 		);
 		assert.match(out, /runtime failover refused after tool execution: github-copilot\/quota-dead/);
@@ -153,30 +153,31 @@ test("parallel row rendering explains post-tool retry refusal", () => {
 // Streaming (mid-run) states — previously untested (#794 item 2).
 // -----------------------------------------------------------------------------
 
-test("parallel collapsed mid-run: status header counts running tasks and shows the running sentinel", () => {
+test("sequence collapsed mid-run distinguishes done, running, and queued items", () => {
 	const out = renderText(
 		{
-			mode: "parallel",
+			mode: "sequence",
 			agentScope: "user",
 			projectAgentsDir: null,
 			results: [
 				makeResult({ agent: "done-one" }),
 				makeResult({ agent: "still-going", exitCode: -1, messages: [], model: undefined }),
+				makeResult({ agent: "waiting", exitCode: -2, messages: [], model: undefined }),
 			],
 		},
 		false,
 	);
-	assert.match(out, /1\/2 done, 1 running/);
-	assert.match(out, /⏳/);
-	assert.match(out, /\(running\.\.\.\)/, "running row shows the running sentinel, not (no output)");
-	assert.match(out, /done-one · prov\/model-x/, "completed row carries its model label");
-	assert.match(out, /still-going · model pending/, "running unpinned row shows the pending-model label");
+	assert.match(out, /1\/3 done, 1 running, 1 queued/);
+	assert.match(out, /\(running\.\.\.\)/);
+	assert.match(out, /\(queued\.\.\.\)/);
+	assert.match(out, /done-one · prov\/model-x/);
+	assert.match(out, /still-going · model pending/);
 });
 
-test("parallel collapsed mid-run: partial output streams into the row before completion", () => {
+test("sequence collapsed mid-run streams the active item's partial output", () => {
 	const out = renderText(
 		{
-			mode: "parallel",
+			mode: "sequence",
 			agentScope: "user",
 			projectAgentsDir: null,
 			results: [
@@ -189,10 +190,9 @@ test("parallel collapsed mid-run: partial output streams into the row before com
 		},
 		false,
 	);
-	assert.match(out, /0\/1 done, 1 running/);
+	assert.match(out, /0\/1 done, 1 running, 0 queued/);
 	assert.match(out, /partial finding so far/);
-	assert.match(out, /→ /, "tool-call arrow rendered mid-stream");
-	// Totals are suppressed while tasks are still running.
+	assert.match(out, /→ /);
 	assert.doesNotMatch(out, /Total:/);
 });
 
@@ -216,10 +216,10 @@ test("chain collapsed mid-run: per-step icons distinguish done, running, and fai
 	assert.match(out, /1\/2 steps/);
 });
 
-test("parallel finished with one failure: mixed icon set and no running sentinel", () => {
+test("sequence finished with one failure shows mixed status and complete totals", () => {
 	const out = renderText(
 		{
-			mode: "parallel",
+			mode: "sequence",
 			agentScope: "user",
 			projectAgentsDir: null,
 			results: [
@@ -229,11 +229,11 @@ test("parallel finished with one failure: mixed icon set and no running sentinel
 		},
 		false,
 	);
-	assert.match(out, /1\/2 tasks/);
+	assert.match(out, /1\/2 items/);
 	assert.match(out, /✓/);
 	assert.match(out, /✗/);
-	assert.doesNotMatch(out, /running/);
-	assert.match(out, /Total:/, "totals render once nothing is running");
+	assert.doesNotMatch(out, /running|queued/);
+	assert.match(out, /Total:/);
 });
 
 // -----------------------------------------------------------------------------
@@ -268,10 +268,10 @@ test("chain expanded: step header, Task line, tool-call arrow, output, per-step 
 	assert.match(out, /Total: 4 turns/, "aggregated totals across steps");
 });
 
-test("parallel expanded: unnumbered row headers, Task lines, and aggregated totals", () => {
+test("sequence expanded: ordered row headers, Task lines, and aggregated totals", () => {
 	const out = renderText(
 		{
-			mode: "parallel",
+			mode: "sequence",
 			agentScope: "user",
 			projectAgentsDir: null,
 			results: [
@@ -281,10 +281,10 @@ test("parallel expanded: unnumbered row headers, Task lines, and aggregated tota
 		},
 		true,
 	);
-	assert.match(out, /2\/2 tasks/);
+	assert.match(out, /2\/2 items/);
 	assert.match(out, /─── a1 · prov\/model-x ✓/);
 	assert.match(out, /─── a2 · prov\/model-x ✓/);
-	assert.doesNotMatch(out, /Step \d/, "parallel rows are not step-numbered");
+	assert.doesNotMatch(out, /Step \d/, "independent sequence rows are not chain steps");
 	assert.match(out, /Task: task one/);
 	assert.match(out, /Task: task two/);
 	assert.match(out, /Total: 4 turns/);

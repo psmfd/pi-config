@@ -15,6 +15,7 @@ This guide is the canonical maintainer runbook for checking, bumping, validating
 | ShellCheck | `agent/vendor/shellcheck/` | Release asset version and checksum metadata | [ADR-0011](../adrs/0011-toolchain-install-strategy.md) |
 | Gitleaks | `agent/vendor/gitleaks/` | Release asset version and checksum metadata | [ADR-0037](../adrs/0037-secret-scanner-tooling-strategy.md) |
 | pi-bash-parser | `agent/vendor/bash-parser/` | Release asset version and checksum metadata (first-party, attestation-verified). Bump procedure in the vendor dir's `README.md`. | [ADR-0099](../adrs/0099-reusable-release-workflows-and-parser-vendor.md), [ADR-0040](../adrs/0040-consume-psmfd-attested-pi-releases.md) |
+| landlock-run | `agent/vendor/landlock-run/` | npm-registry platform tarball version and checksum metadata (BSD-3-Clause; **Linux-only fetch** — the repo's first platform-gated vendor). Bump procedure below and in the vendor dir's `README.md`. | [ADR-0146](../adrs/0146-bash-tool-write-confinement.md) |
 | cocoindex-code | `agent/vendor/cocoindex-code/` | `ccc` engine + embedding-model pin record (`VERSION`, `CHECKSUMS`, `README.md`). Acquired **out-of-band** by pipx, not fetched by `setup.sh`; the runtime source of truth is `agent/extensions/indexing/pin.ts`. Bump procedure below. | [ADR-0033](../adrs/0033-codebase-indexing.md) |
 | Subagent extension | `agent/extensions/subagent/` | Vendored source snapshot with local patch table | [ADR-0001](../adrs/0001-subagent-orchestration-substrate.md) |
 | Extension SDK pin | `scripts/lib/extension-deps.sh` | `EXTENSION_DEPS_PI_AGENT_VERSION` — the `@earendil-works/pi-*` pin used by `typecheck-extensions.sh` / `lint-extensions.sh`. **Runtime-coupled**: policy is `EXTENSION_DEPS_PI_AGENT_VERSION` == `agent/vendor/pi/VERSION` (stripped to X.Y.Z). Automated by `pin-drift-check.yml` (#566). | [ADR-0021](../adrs/0021-extension-type-checking-and-linting.md), [ADR-0069](../adrs/0069-ext-ref-pin-drift-automation.md) |
@@ -302,6 +303,30 @@ scripts/validate.sh
 Gitleaks bump introduces new findings, classify them in the bump PR. Real
 secrets require rotation and remediation before merge; false positives require a
 reviewed allowlist or baseline decision.
+
+### landlock-run: `agent/vendor/landlock-run/`
+
+Phase 2a bash-tool write-confinement launcher (ADR-0146, #1046). Consumed by
+the composed `pi-bash-sandbox` shellPath wrapper; fetched by
+`ih_ensure_landlock_run` (Linux-only — rc=2 on other hosts by design).
+
+1. **Re-audit before bumping** — the dependency's public history was ~10
+   days old at adoption (Medium liveliness risk, ADR-0146 D2): check
+   maintenance signals, then read the `native/landlock-run/` C-source diff
+   between pins (~300 lines) in `deepseek-ai/deepseek-harness`.
+2. Fetch both npm platform tarballs
+   (`@deepseek-ai/node-addon-landlock-run-linux-{x64,arm64}` at the new
+   version), compute sha256s, update `VERSION` + `CHECKSUMS` + the README
+   citations. Note: npm `N.N.N` version, no `v` prefix.
+3. Gates: `scripts/validate-landlock-run-vendor.sh` (structure, in
+   validate.sh) and the landlock canary suite
+   (`scripts/test-landlock-canary.sh`) green on a Linux host — the `mcm`
+   self-hosted smoke workflow is the standing lane; GitHub-hosted runners
+   may probe `unusable` (seccomp) and are not proof.
+4. Watch the launcher's pinned CLI contract (`--ro`/`--rw`/`--`, `--probe`,
+   exit 125 + `landlock-run:` stderr marker) — a contract change breaks the
+   wrapper's grant construction and refusal detection; the canary suite is
+   the drift detector.
 
 ### Subagent extension: `agent/extensions/subagent/`
 

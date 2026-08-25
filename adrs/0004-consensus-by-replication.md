@@ -1,6 +1,6 @@
 # ADR-0004: Consensus-by-replication as a first-class fan-out shape
 
-**Status:** Accepted
+**Status:** Accepted; parallel composition superseded by [ADR-0148](0148-serial-multi-agent-execution.md)
 **Date:** 2026-05-19
 **Companion to:** [ADR-0001](0001-subagent-orchestration-substrate.md)
 **Tracking issue:** #76

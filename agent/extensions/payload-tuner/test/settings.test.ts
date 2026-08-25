@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import { DISABLED, parseSettings } from "../lib/settings.ts";
@@ -7,8 +8,12 @@ const VALID = {
   enabled: true,
   rules: [
     {
-      match: { modelId: "glm-*" },
-      apply: { chatTemplateKwargs: { enable_thinking: false } },
+      match: {
+        provider: "omlx",
+        baseUrl: "http://host.lima.internal:8000/v1",
+        modelId: "coding-workhorse",
+      },
+      apply: { chatTemplateKwargs: { reasoning_effort: "medium" } },
     },
   ],
 };
@@ -18,7 +23,18 @@ describe("parseSettings", () => {
     const s = parseSettings(VALID);
     assert.equal(s.enabled, true);
     assert.equal(s.rules.length, 1);
-    assert.equal(s.rules[0].match.modelId, "glm-*");
+    assert.equal(s.rules[0].match.modelId, "coding-workhorse");
+    assert.equal(s.rules[0].match.baseUrl, "http://host.lima.internal:8000/v1");
+  });
+
+  it("keeps the tracked settings example inert and aligned with the tested rule", () => {
+    const template = JSON.parse(
+      readFileSync(new URL("../../../settings.example.json", import.meta.url), "utf8"),
+    ) as { extensionSettings: { payloadTuner: typeof VALID } };
+    const tracked = template.extensionSettings.payloadTuner;
+    assert.equal(tracked.enabled, false);
+    assert.deepEqual({ ...tracked, enabled: true }, VALID);
+    assert.deepEqual(parseSettings(tracked), DISABLED);
   });
 
   it("is disabled unless enabled is exactly true", () => {

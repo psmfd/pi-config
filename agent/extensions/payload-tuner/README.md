@@ -1,34 +1,35 @@
 # payload-tuner
 
-Per-request wire-payload tuning for local models (ADR-0106, #769).
+Per-request wire-payload tuning for local models (ADR-0106, ADR-0147, #769).
 
 On `before_provider_request` — the extension-facing payload hook, where a
 non-`undefined` return replaces the outgoing wire payload — the resolved
 model (`ctx.model`) is matched against user-configured rules and the first
 match's tweaks are applied. The motivating use case is the local oMLX
-workhorse (psmfd/local-llm#44): suppress the thinking preamble on tool-call
-turns, normalize sampling, and clamp generation length.
+workhorse: set a stable model-appropriate reasoning effort, normalize sampling
+when evidence supports it, and clamp generation length.
 
 ## What it tunes
 
 | Tweak | Payload field | Notes |
 | --- | --- | --- |
-| `chatTemplateKwargs` | `chat_template_kwargs` (merged) | oMLX/vLLM-style servers; e.g. `{"enable_thinking": false}`. Guarded: local `openai-completions` targets only (see Defensive vetoes) |
+| `chatTemplateKwargs` | `chat_template_kwargs` (merged) | oMLX/vLLM-style servers; e.g. `{"reasoning_effort": "medium"}` for the gpt-oss workhorse (#1052 — the top-level `reasoning_effort` param is ignored by oMLX 0.5.7) or `{"enable_thinking": false}` for the GLM fallback. Guarded: local `openai-completions` targets only (see Defensive vetoes) |
 | `temperature` | `temperature` | overwrite; skipped when the payload carries active extended thinking |
 | `topP` | `top_p` | overwrite; skipped under active extended thinking |
 | `maxTokensCap` | `max_tokens` / `max_completion_tokens` / `max_output_tokens` | only lowers an emitted value; never raises, never adds; `max_output_tokens` floored at 16 (Responses API rejects lower); skipped under active extended thinking |
 
-## Defensive vetoes (ADR-0110)
+## Defensive vetoes (ADR-0147, superseding ADR-0110)
 
 A matched rule's `apply` block is filtered per request BEFORE application —
 the extension's fail-open posture covers its own errors, not a
 successfully-applied mutation that 400s at the provider:
 
 - **`chatTemplateKwargs`** applies only when the resolved model is
-  `api: "openai-completions"` **and** its baseUrl host is loopback/private
-  (RFC 1918). API family alone is insufficient — GitHub Copilot routes
-  several cloud models through `openai-completions` on a public baseUrl,
-  and cloud endpoints may reject unknown wire fields.
+  `api: "openai-completions"` **and** its baseUrl host is loopback, RFC 1918,
+  or exactly Lima's well-known `host.lima.internal` gateway. Arbitrary
+  `.internal` names and lookalikes remain rejected. API family alone is
+  insufficient — GitHub Copilot routes cloud models through
+  `openai-completions` on a public baseUrl, where unknown fields may 400.
 - **`temperature`, `topP`, `maxTokensCap`** are skipped when the outgoing
   payload carries an active extended-thinking config (`thinking` object
   with `type !== "disabled"`): the Anthropic adapter deliberately omits
@@ -51,10 +52,10 @@ flowchart TD
     C -- no --> Z
     C -- yes --> D{"first rule where every present matcher field matches (AND, glob *)"}
     D -- none --> Z
-    D -- matched --> E[filterApplyForContext — ADR-0110 vetoes]
+    D -- matched --> E[filterApplyForContext — ADR-0147 vetoes]
     E --> F{chatTemplateKwargs set?}
     F -- no --> G
-    F -- yes --> F1{"api = openai-completions AND private/loopback baseUrl?"}
+    F -- yes --> F1{"api = openai-completions AND loopback/private/exact Lima gateway?"}
     F1 -- yes --> G
     F1 -- no --> F2[suppress chatTemplateKwargs + count] --> G
     G{"payload.thinking active (object, type != disabled)?"}
@@ -97,14 +98,21 @@ in-session reload command).
 ```jsonc
 "extensionSettings": {
   "payloadTuner": {
-    "enabled": true,
+    // The tracked settings.example.json keeps this false. Copy/customize the
+    // rule in USER-layer settings.json, then opt in explicitly.
+    "enabled": false,
     "rules": [
       {
-        "match": { "baseUrl": "http://localhost:8000/*", "modelId": "glm-*" },
+        // Exact Lima-hosted gpt-oss workhorse policy. Explicit medium keeps
+        // the rendered template stable and is the quality default. Evaluate
+        // "low" separately before using it as a latency-oriented alternative.
+        "match": {
+          "provider": "omlx",
+          "baseUrl": "http://host.lima.internal:8000/v1",
+          "modelId": "coding-workhorse"
+        },
         "apply": {
-          "chatTemplateKwargs": { "enable_thinking": false },
-          "temperature": 0.6,
-          "maxTokensCap": 8192
+          "chatTemplateKwargs": { "reasoning_effort": "medium" }
         }
       }
     ]
@@ -115,6 +123,12 @@ in-session reload command).
 Match fields (`provider`, `baseUrl`, `modelId`) AND together; values
 support `*` as an anchored multi-character wildcard. First matching rule
 wins.
+
+For the operator-local policy, preserve the exact match and change only
+`enabled` to `true`. Do not add `temperature`, `topP`, or `maxTokensCap` without
+current model-specific evidence. Start a fresh session, run `/payload-tuner`,
+and confirm tuned requests do not increment the `chatTemplateKwargs` suppression
+counter.
 
 ### Communication flow
 
@@ -142,7 +156,7 @@ sequenceDiagram
     alt disabled, no ctx.model, no rule match, or handler throws
         Tuner-->>Core: undefined — payload ships unchanged (fail open)
     else rule matched
-        Tuner->>Tuner: filterApplyForContext vetoes (ADR-0110)
+        Tuner->>Tuner: filterApplyForContext vetoes (ADR-0147)
         Tuner->>Tuner: applyRule pure mutation (ADR-0106)
         alt payload changed
             Tuner-->>Core: tuned payload (replaces wire body)
@@ -164,7 +178,7 @@ coverage below).
 
 - `/payload-tuner` — status notification: enabled, rule count, requests
   tuned this session, last matched model, and per-field `suppressed:`
-  veto counters (ADR-0110).
+  veto counters (ADR-0147).
 - Status bar — when a UI is attached, a persistent `🎛 tuner on (N)` /
   `🎛 tuner off` segment, refreshed on every `session_start`.
 
@@ -184,7 +198,7 @@ emits top-level `temperature` and `max_tokens` or `max_completion_tokens`
 verbatim — so an added top-level `chat_template_kwargs` reaches the
 server body unchanged.
 
-Adjacent families (same pin, per ADR-0110's verification): plain/Azure
+Adjacent families (same pin, per ADR-0147's retained verification): plain/Azure
 OpenAI Responses emit `max_output_tokens` (server minimum 16); the default
 `openai-codex-responses` provider emits **no** token-limit field at all
 (the clamp is a no-op there by design); `anthropic-messages` emits
@@ -200,7 +214,7 @@ flowchart LR
     subgraph src["payload-tuner source"]
         IDX["index.ts — dispatcher, session_start, /payload-tuner, status bar"]
         APL["lib/apply.ts — pure applyRule (ADR-0106)"]
-        GRD["lib/guards.ts — vetoes (ADR-0110)"]
+        GRD["lib/guards.ts — vetoes (ADR-0147)"]
         MCH["lib/match.ts — matchRule, globMatch"]
         SET["lib/settings.ts — parseSettings, loadSettings, isPlainObject"]
     end
@@ -260,8 +274,8 @@ self-contained.
 - `settings.test.ts` — fail-closed settings parsing, including
   unknown-key rejection at every level (no silent half-application) and
   no-op-block rejection.
-- `guards.test.ts` — the ADR-0110 veto surface: loopback/RFC 1918 host
-  classification (with the Copilot public-baseUrl negative case),
+- `guards.test.ts` — the ADR-0147 veto surface: loopback/RFC 1918 and exact
+  Lima-gateway classification, lookalike negatives, the Copilot public-baseUrl case,
   active-thinking detection (including the no-`type`-key
   fail-toward-suppression edge), the per-field veto matrix,
   fail-toward-suppression on unknown api / unparseable baseUrl, and the

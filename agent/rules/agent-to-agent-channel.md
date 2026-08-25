@@ -37,9 +37,7 @@ coms: true
 ---
 ```
 
-The key defaults to `false`. All current catalog agents ship with the bus off and MUST be migrated explicitly. Once the rule activates, the AGENTS.md catalog table gains a `Bus` column reflecting each agent's `coms` value; the column is the authoritative quick-reference for which agents can exchange evidence in a given parallel batch.
-
-The ACL is "same parallel batch only" in v1 — an envelope from agent X to agent Y is delivered only when both were spawned in the same `subagent` `tasks: [...]` call. Cross-batch chains are deferred (ADR-0002 Open Questions §3).
+Historical design note: the unbuilt bus assumed a `Bus` catalog column and a same-parallel-`tasks` ACL. Both assumptions are obsolete: ADR-0008 withdrew the bus, and ADR-0148 removed the `tasks` API. This archived contract is not an available communication mechanism.
 
 ## Hard-excluded agents
 
@@ -76,7 +74,7 @@ Operators see the same frame rendered in the TUI. Agent authors writing prompts 
 
 ## Reporting obligation
 
-Coms exchanges are **additional to**, not a replacement for, the Form A/B return contract in [`subagent-parallel-handoff.md`](subagent-parallel-handoff.md). Every subagent that sent or received any envelope MUST include a `Coms exchanges:` section in its structured return listing:
+Coms exchanges are **additional to**, not a replacement for, the Form A/B return contract in [`subagent-sequence-handoff.md`](subagent-sequence-handoff.md). Every subagent that sent or received any envelope MUST include a `Coms exchanges:` section in its structured return listing:
 
 - Envelope IDs (ULID) sent, with recipient name(s).
 - Envelope IDs received, with sender name(s).
@@ -118,6 +116,6 @@ In every blocked case the exchange **did not happen**. The sending agent MUST NO
 
 - [ADR-0002](../../adrs/0002-agent-to-agent-channel.md) — design rationale, threat model, and 10-item hard-floor acceptance criteria.
 - [ADR-0001](../../adrs/0001-subagent-orchestration-substrate.md) — orchestration substrate this rule extends.
-- [`rules/subagent-parallel-handoff.md`](subagent-parallel-handoff.md) — Form A/B return contract that coms exchanges supplement.
+- [`rules/subagent-sequence-handoff.md`](subagent-sequence-handoff.md) — Form A/B return contract that coms exchanges supplement.
 - [`rules/secrets-guard.md`](secrets-guard.md) — pattern set, overrides, and skip rules applied to `coms_send` / `coms_recv`.
 - [`AGENTS.md` § Boundaries](../AGENTS.md#boundaries) — "No subagent invokes another subagent"; the evidence-exchange exemption is scoped by this rule.

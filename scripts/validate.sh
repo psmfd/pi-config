@@ -785,23 +785,30 @@ if [ -z "$tf_files" ]; then
   err "tool-free-gate: no non-test .ts files found under agent/extensions — cannot determine which extensions register tools"
   tf_bad=1
 else
+  # The call-site regex lives in a variable and the explanatory comments sit
+  # OUTSIDE the command substitution below on purpose (#1040): bash 3.2's
+  # old-style $() scanner mishandles the unbalanced '(' in a quoted pattern
+  # combined with paren-bearing comment lines inside the substitution — the
+  # mis-parse then surfaces as a phantom syntax error hundreds of lines later.
+  # Bash 4+ parses either form; the macOS setup-smoke job runs /bin/bash 3.2.
+  #
+  # Inner re-test rationale: comment lines are removed so a docblock mention
+  # alone never counts as a registration. Counted, NOT `grep -q` — `-q` exits
+  # on the first match, which SIGPIPEs the upstream `grep -v`; under
+  # `set -o pipefail` that 141 becomes the pipeline's status and the file
+  # scores as "no match". It only bites when the match is early enough in a
+  # long file that the producer has not finished — package-agent-broker
+  # (match at line 313) silently dropped out of this set while shorter files
+  # passed. That is fail-OPEN for the declared-but-registers direction, so
+  # the early exit must stay gone.
+  tf_call_re='(^|[^A-Za-z0-9_.])pi\.registerTool[[:space:]]*\('
+  tf_comment_re='^[[:space:]]*(//|\*|/\*)'
   tf_registering="$(printf '%s\n' "$tf_files" \
-    | xargs grep -lE '(^|[^A-Za-z0-9_.])pi\.registerTool[[:space:]]*\(' 2>/dev/null \
+    | xargs grep -lE "$tf_call_re" 2>/dev/null \
     | while IFS= read -r tf_f; do
         [ -n "$tf_f" ] || continue
-        # Re-test the file with comment lines removed, so a docblock mention
-        # alone never counts as a registration.
-        #
-        # Counted, NOT `grep -q`. `-q` exits on the first match, which SIGPIPEs
-        # the upstream `grep -v`; under `set -o pipefail` that 141 becomes the
-        # pipeline's status and the file scores as "no match". It only bites
-        # when the match is early enough in a long file that the producer has
-        # not finished — package-agent-broker (match at line 313) silently
-        # dropped out of this set while shorter files passed. That is fail-OPEN
-        # for the declared-but-registers direction, so the early exit must stay
-        # gone.
-        tf_hits="$(grep -vE '^[[:space:]]*(//|\*|/\*)' "$tf_f" \
-                     | grep -cE '(^|[^A-Za-z0-9_.])pi\.registerTool[[:space:]]*\(' || true)"
+        tf_hits="$(grep -vE "$tf_comment_re" "$tf_f" \
+                     | grep -cE "$tf_call_re" || true)"
         if [ "${tf_hits:-0}" -gt 0 ]; then
           printf '%s\n' "$tf_f"
         fi
@@ -1040,6 +1047,21 @@ if [ -x scripts/validate-bash-parser-vendor.sh ]; then
   fi
 else
   err "bash-parser vendor: scripts/validate-bash-parser-vendor.sh is missing or not executable"
+fi
+
+# --- 6e-landlock-run. landlock-run vendor pin (agent/vendor/landlock-run/) --
+# Per ADR-0146 (#1046). Phase 2a bash-tool write-confinement launcher,
+# BSD-3-Clause, npm-registry platform tarballs, Linux-only fetch — the
+# structural check itself is platform-independent and network-free.
+info "Validating agent/vendor/landlock-run/ (#1046, ADR-0146)"
+if [ -x scripts/validate-landlock-run-vendor.sh ]; then
+  if scripts/validate-landlock-run-vendor.sh; then
+    ok "landlock-run vendor: structurally consistent"
+  else
+    err "landlock-run vendor: structural validation failed (see ERROR lines above)"
+  fi
+else
+  err "landlock-run vendor: scripts/validate-landlock-run-vendor.sh is missing or not executable"
 fi
 
 # --- 6e-quater. scan-secrets self-test (ADR-0048) --------------------------
@@ -1399,6 +1421,52 @@ if [ -x scripts/test-bash-sandbox.sh ]; then
   fi
 else
   err "bash-sandbox: scripts/test-bash-sandbox.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-bash-confinement. Phase 2a policy extension suite (#1046, ADR-0146) -
+info "Running bash-confinement extension test suite"
+if [ -x scripts/test-bash-confinement.sh ]; then
+  if bc_output="$(scripts/test-bash-confinement.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$bc_output"
+    fi
+    ok "bash-confinement: tests passed"
+  else
+    bc_status=$?
+    printf '%s\n' "$bc_output" >&2
+    if [ "$bc_status" -eq 2 ]; then
+      err "bash-confinement: test environment unavailable; required check skipped"
+    else
+      err "bash-confinement: test suite failed (exit $bc_status)"
+    fi
+  fi
+else
+  err "bash-confinement: scripts/test-bash-confinement.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-landlock-canary. Phase 2a enforcement canaries (#1046, ADR-0146) ---
+# Linux-only by nature (self-SKIPs on other hosts — the repo's first per-OS
+# suite skip); on a Landlock-capable kernel it exercises the composed wrapper
+# end-to-end against the vendored launcher. A probe-unusable kernel WARNs and
+# skips enforcement cases loudly rather than passing silently.
+info "Running landlock enforcement canary suite"
+if [ -x scripts/test-landlock-canary.sh ]; then
+  if llc_output="$(scripts/test-landlock-canary.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ] || printf '%s' "$llc_output" | grep -q '^SKIP\|^WARN'; then
+      printf '%s\n' "$llc_output"
+    fi
+    ok "landlock-canary: suite passed (or platform-skipped; see output)"
+  else
+    llc_status=$?
+    printf '%s\n' "$llc_output" >&2
+    if [ "$llc_status" -eq 2 ]; then
+      err "landlock-canary: test environment unavailable; required check skipped"
+    else
+      err "landlock-canary: canary suite failed (exit $llc_status)"
+    fi
+  fi
+else
+  err "landlock-canary: scripts/test-landlock-canary.sh missing or not executable; required check skipped"
 fi
 
 # --- 9b-context-manager. context-manager test suite (#331/#334, ADR-0032) --
@@ -2025,6 +2093,30 @@ if [ -x scripts/test-package-agent-broker.sh ]; then
   fi
 else
   err "package-agent-broker: scripts/test-package-agent-broker.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-septies-bis. commit-trailer-guard hook tests (#1028, ADR-0143) -----
+# The commit-msg hook's match set is test-pinned: the suite proves each
+# attribution class strips, each exclusion (Signed-off-by, prose) survives,
+# and the end-to-end path (real repo, real commit) lands clean.
+info "Running commit-trailer-guard hook tests"
+if [ -x tests/commit-trailer-guard/run-tests.sh ]; then
+  if ctg_output="$(tests/commit-trailer-guard/run-tests.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$ctg_output"
+    fi
+    ok "commit-trailer-guard: hook tests passed"
+  else
+    ctg_status=$?
+    printf '%s\n' "$ctg_output" >&2
+    if [ "$ctg_status" -eq 2 ]; then
+      err "commit-trailer-guard: test environment unavailable; required check skipped"
+    else
+      err "commit-trailer-guard: hook tests failed (exit $ctg_status)"
+    fi
+  fi
+else
+  err "commit-trailer-guard: tests/commit-trailer-guard/run-tests.sh missing or not executable; required check skipped"
 fi
 
 # --- 9b-octies. guard-mutation verification (#931, ADR-0132) ---------------

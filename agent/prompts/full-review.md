@@ -1,81 +1,33 @@
 ---
 name: full-review
-description: Four-way parallel review — code + security + linter + checkmarx. Use when a Checkmarx One environment is configured and you want SAST/SCA/IaC scanning alongside semantic review.
+description: Four-reviewer serial sequence — code, security, lint, then Checkmarx — with one synthesized verdict.
 ---
 
 # /full-review
 
-Run a comprehensive review using all four specialist subagents in parallel: `code-review-expert`, `security-review-expert`, `linter`, and `checkmarx-expert`.
+Use when `cx --version` succeeds and the change warrants semantic review plus SAST/SCA/IaC scanning. Otherwise fall back to `/review`.
 
-Use this when:
+## Step 1 — Scope
 
-- A Checkmarx One environment is authenticated and configured (`cx --version` works)
-- The change is large enough to warrant SAST/SCA/IaC scanning in addition to semantic review
-- You want the most comprehensive read-only assessment possible before merge
+Resolve the requested base or compare the current branch with `dev`. Confirm the repository path and revision range.
 
-For routine PRs, prefer `/review` (3-way, no scanner dependency).
+## Step 2 — Execute the sequence
 
-## Pre-flight check
-
-Before invoking, verify Checkmarx is available:
-
-```bash
-cx --version 2>&1
-```
-
-If `cx` is missing or unauthenticated, **fall back to `/review`** and tell the user. Do not attempt the four-way fan-out without `cx`.
-
-## Step 1 — Identify scope
-
-Same as `/review`: respect a user-supplied base ref, otherwise default to current branch vs `dev`/`main`. Surface scope before fanning out.
-
-## Step 2 — Fan out via the subagent tool
-
-Invoke the `subagent` tool once in parallel mode with all four agents. Note: parallel mode is capped at 8 tasks / 4 concurrent — four reviewers fits comfortably.
+Each self-contained task defines Form B because child context files are suppressed.
 
 ```json
 {
-  "tasks": [
-    { "agent": "code-review-expert", "task": "Review the diff <base>..HEAD in <repo-path>. Source path: <absolute-repo-path> (revision: <base>..HEAD). …" },
-    { "agent": "security-review-expert", "task": "Security review of <base>..HEAD in <repo-path>. Source path: <absolute-repo-path> (revision: <base>..HEAD). …" },
-    { "agent": "linter", "task": "Lint changed files in <base>..HEAD in <repo-path>. …" },
-    { "agent": "checkmarx-expert", "task": "Run cx scan against <repo-path> appropriate for the languages present. Report Critical/High findings with file:line and triage notes." }
+  "sequence": [
+    { "agent": "code-review-expert", "task": "Review <base>..HEAD. Source path: <absolute-repo-path> (revision: <base>..HEAD). Return Form B: open a fenced block with three backticks followed by report, include the complete report, close with three backticks, then output Summary: <one line> and Verdict: PASS | PASS_WITH_WARNINGS | NEEDS_CHANGES | PRECONDITION_FAILURE." },
+    { "agent": "security-review-expert", "task": "Security review <base>..HEAD. Source path: <absolute-repo-path> (revision: <base>..HEAD). Cite first-party sources. Return Form B: open a fenced block with three backticks followed by report, include the complete report, close with three backticks, then output Summary: <one line> and Verdict: PASS | PASS_WITH_WARNINGS | NEEDS_CHANGES | PRECONDITION_FAILURE." },
+    { "agent": "linter", "task": "Lint changed files in <base>..HEAD under <absolute-repo-path> in report-only mode. Return Form B: open a fenced block with three backticks followed by report, include the complete report, close with three backticks, then output Summary: <one line> and Verdict: PASS | PASS_WITH_WARNINGS | NEEDS_CHANGES | PRECONDITION_FAILURE." },
+    { "agent": "checkmarx-expert", "task": "Run the appropriate cx scan against <absolute-repo-path>. Report Critical/High findings with file:line and triage notes. Return Form B: open a fenced block with three backticks followed by report, include the complete report, close with three backticks, then output Summary: <one line> and Verdict: PASS | PASS_WITH_WARNINGS | NEEDS_CHANGES | PRECONDITION_FAILURE." }
   ]
 }
 ```
 
-The `Source path:` line in `code-review-expert` and `security-review-expert` briefs is mandatory per `agent/rules/research-parallelism.md` § Ground-Truth Source Precondition; without it the subagent will return `PRECONDITION_FAILURE` and the fan-out will need to be re-issued.
+The deterministic order is code → security → lint → Checkmarx. Reviewers remain independent, and one failure does not stop later items.
 
-## Step 3 — Synthesize the merged report
+## Step 3 — Synthesize
 
-Same shape as `/review`'s merged report, with a fourth `Source` column value (`checkmarx (sast)`, `checkmarx (sca)`, `checkmarx (kics)`, `checkmarx (scs)`).
-
-````markdown
-# Full Review Summary
-
-**Scope:** `<base-ref>..HEAD` (`<n>` commits, `<m>` files)
-**Reviewers:** code-review-expert, security-review-expert, linter, checkmarx-expert
-
-## Merged Findings
-
-| Severity | Source | File | Line | Finding |
-| --- | --- | --- | --- | --- |
-| Critical | checkmarx (sast) | src/db.py | 88 | SQL Injection — taint flow from request.args to cursor.execute |
-| Error | security-review | src/auth.cs | 42 | … |
-| Warning | linter (markdownlint) | README.md | 14 | MD024 … |
-
-**Aggregate Verdict:** PASS | PASS_WITH_WARNINGS | NEEDS_CHANGES
-
-## Cross-reviewer Convergence
-
-- Findings flagged by ≥2 reviewers: <list — these are the highest-confidence issues>
-- Findings only checkmarx flagged: <list — verify reachability before fixing>
-- Findings only semantic reviewers flagged: <list — checkmarx blind spots>
-````
-
-Same most-severe-wins aggregate verdict rule as `/review`.
-
-## Constraints
-
-- Do **not** invoke without `cx` available — fall back to `/review` and tell the user.
-- Do **not** mutate files. The four reviewers are all read-only; checkmarx may write its own scan-output artifacts but does not touch source.
+Merge and deduplicate all findings with source attribution. Apply structured-review most-severe-wins. Treat `PRECONDITION_FAILURE` as incomplete coverage. Include an Agent Efficacy Report only after the complete sequence. This workflow is read-only.

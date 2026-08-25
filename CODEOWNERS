@@ -35,3 +35,7 @@
 /agent/vendor/shellcheck/CHECKSUMS @pdavis
 /agent/vendor/gitleaks/VERSION @pdavis
 /agent/vendor/gitleaks/CHECKSUMS @pdavis
+/agent/vendor/bash-parser/VERSION @pdavis
+/agent/vendor/bash-parser/CHECKSUMS @pdavis
+/agent/vendor/landlock-run/VERSION @pdavis
+/agent/vendor/landlock-run/CHECKSUMS @pdavis

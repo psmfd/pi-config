@@ -29,12 +29,20 @@ After completing the work for an individual task (GitHub Issue or other ticket),
 
 - **Transition the ticket to Closed (or equivalent)** only after the gates above pass. Ticket state must reflect actual delivery progress in real time, not be batched until PR merge.
 
+## Testing Doctrine
+
+Three failure classes recur in agentic test suites and are cheap to legislate against (#1035, adopted from the DeepSeek Harness testing policy via psmfd/FingerTrap ADR-0027 P10). Apply them when writing or reviewing any test this rule's gates require:
+
+1. **Verify the world, not the self-report.** An e2e assertion re-runs the command or re-reads the file externally; a keyword probe on the subject's own output lets a cheating (or broken) subject pass. Where cheap, assert that untouched files are byte-identical.
+2. **A guard only guards if the regression actually fails it.** For every new guard, gate, or conformance test: introduce the regression, watch the suite go red, revert. A guard born green proves nothing — record the red-first proof in the PR body.
+3. **Test the real entry path.** At least one smoke exercises the installed/built artifact — the vendored pi binary path, hook scripts invoked the way git invokes them — not just the repo checkout's source plane.
+
 ## Pre-PR Gate
 
 Once all tasks for the PR are complete, **no later than immediately before the `gh pr create` / `gh pr ready` invocation that publishes the PR** (or, on an already-open PR, before pushing the final commit that will trigger merge):
 
 - **Run `scripts/validate.sh`** if it exists and the change touches skills, agents, prompts, rules, or extensions. Required checks must actually run: environment-unavailable or missing-script paths for required suites are validation failures, not acceptable skips.
-- **Run `/review`** (the 3-way parallel review workflow) on the aggregate diff.
+- **Run `/review`** (the three-item serial review sequence) on the aggregate diff.
 - **Re-review the aggregate diff** for cross-task drift — file conflicts, README aggregation issues, doc-sync pairs touched by multiple tasks.
 - **Confirm every task in the PR has its per-task gate evidence** (linter clean, tests passing, ticket Closed or queued for closing-on-merge).
 
@@ -43,7 +51,7 @@ Once all tasks for the PR are complete, **no later than immediately before the `
 If the target repo has auto-merge configured (an auto-merge GitHub Action, branch-protection auto-merge, or any mechanism that merges a PR the instant required checks turn green), the `/review` pass races the merge. We have observed in production:
 
 1. PR opened, CI starts.
-2. `/review` subagents fan out in parallel — typically 1-3 minutes.
+2. `/review` subagents execute serially — latency is cumulative.
 3. CI completes (faster than `/review` for small PRs).
 4. Auto-merge fires.
 5. `/review` returns with `NEEDS_CHANGES` or `PASS_WITH_WARNINGS` findings — too late, the PR is already on the integration branch.

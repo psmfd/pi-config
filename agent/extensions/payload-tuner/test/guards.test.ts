@@ -8,7 +8,7 @@ import {
 
 // --- isPrivateOrLoopbackHost -------------------------------------------------
 
-test("guards: loopback and RFC 1918 hosts classify as private", () => {
+test("guards: loopback, RFC 1918, and the exact Lima gateway classify as local", () => {
 	for (const url of [
 		"http://localhost:8000/v1",
 		"http://127.0.0.1:8000/v1",
@@ -18,6 +18,7 @@ test("guards: loopback and RFC 1918 hosts classify as private", () => {
 		"http://172.16.0.1/v1",
 		"http://172.31.255.254/v1",
 		"http://192.168.1.10:11434/v1",
+		"http://host.lima.internal:8000/v1",
 	]) {
 		assert.equal(isPrivateOrLoopbackHost(url), true, url);
 	}
@@ -32,6 +33,9 @@ test("guards: public/cloud hosts classify as NOT private", () => {
 		"http://172.32.0.1/v1",
 		"http://11.0.0.1/v1",
 		"http://193.168.1.1/v1",
+		"http://host.lima.internal.example.com:8000/v1",
+		"http://evilhost.lima.internal:8000/v1",
+		"http://anything.internal:8000/v1",
 		"not a url",
 		"",
 	]) {
@@ -62,7 +66,7 @@ test("guards: disabled/absent/non-object thinking is NOT active", () => {
 // --- filterApplyForContext ---------------------------------------------------
 
 const FULL_APPLY = {
-	chatTemplateKwargs: { enable_thinking: false },
+	chatTemplateKwargs: { reasoning_effort: "medium" },
 	temperature: 0.6,
 	topP: 0.95,
 	maxTokensCap: 4096,
@@ -76,6 +80,24 @@ test("guards: local openai-completions model keeps the full apply block (live om
 	});
 	assert.deepEqual(filtered, FULL_APPLY);
 	assert.deepEqual(suppressed, []);
+});
+
+test("guards: Lima gateway keeps kwargs only for openai-completions", () => {
+	const apply = { chatTemplateKwargs: { reasoning_effort: "medium" } };
+	const accepted = filterApplyForContext(apply, {
+		api: "openai-completions",
+		baseUrl: "http://host.lima.internal:8000/v1",
+		payload: {},
+	});
+	assert.deepEqual(accepted, { filtered: apply, suppressed: [] });
+
+	const rejected = filterApplyForContext(apply, {
+		api: "openai-responses",
+		baseUrl: "http://host.lima.internal:8000/v1",
+		payload: {},
+	});
+	assert.deepEqual(rejected.filtered, {});
+	assert.deepEqual(rejected.suppressed, ["chatTemplateKwargs"]);
 });
 
 test("guards: cloud openai-completions (github-copilot shape) suppresses chatTemplateKwargs only", () => {

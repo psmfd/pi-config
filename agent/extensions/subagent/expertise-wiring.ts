@@ -101,7 +101,7 @@ export function extractFormBRawPayloads(childOutput: string): string[] {
 /**
  * Per-child bag of extracted Form B payloads, carried on
  * `SingleResult.extractedExpertisePayloads` so the finalizer for
- * single/parallel/chain can coalesce across all children uniformly.
+ * single/sequence/chain can coalesce across all children uniformly.
  */
 export interface ExtractedExpertise {
 	/** Form B rawJson blobs, in source-order of the child's output. */
@@ -120,11 +120,10 @@ export function extractExpertiseFromChildOutput(childOutput: string): ExtractedE
 }
 
 /**
- * Coalesce candidates across every child in a single/parallel/chain
+ * Coalesce candidates across every child in a single/sequence/chain
  * finalizer. Returns `undefined` when no child produced any
  * candidates, so `SubagentDetails.expertiseCandidates` stays absent
- * in the common case (the vast majority of fanouts do not surface
- * expertise).
+ * in the common case.
  *
  * `proposedBy` is the ORCHESTRATOR-attributed subagent name — the
  * `agent` field on each `SingleResult` — never any field lifted from

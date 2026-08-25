@@ -59,7 +59,7 @@ Compare upstream `examples/extensions/subagent/{index.ts,agents.ts}` against `ag
 | Our code that upstream lacks | **Verify each line is one of our documented patches.** If yes, port the patch onto the new upstream. If no, the line is undocumented drift — write it up before re-applying. |
 | Upstream changed code we also changed | **Conflict zone.** Re-apply our patches against the new context. Update line numbers in the patch table. |
 
-The active patch surface is the complete #3–#14 inventory in the subagent
+The active patch surface is the complete patch-table inventory in the subagent
 README and `PATCH_MANIFEST.json`: UI refresh, model pin/fallback/liveness,
 expertise/env/guard policy, effective-model rendering, matrix/local/tier policy,
 shadow gating, strict child environments, and the canonical snapshot. Audit
@@ -89,14 +89,16 @@ After the bump, run a representative slice of the agent catalog:
 # Single-agent run (read-only specialist)
 pi -p '/subagent agent: "tauri-expert", task: "Summarize Tauri 2 capability model"'
 
-# Parallel fan-out (the patched mode)
-pi -p '/review'   # Triggers code-review + security-review + linter in parallel
+# Independent serial sequence (the patched mode)
+pi -p '/review'   # Runs code-review, security-review, then linter serially
 ```
 
 Verify:
 
-- Per-task output is full (not 100-char truncated) in the parallel result returned to the model.
-- Failed-task diagnostics show `stopReason` tagging when a child errors (force this by giving an agent an invalid `--model`).
+- Sequence output includes every item in deterministic order.
+- Exactly one child is active at a time; later items remain queued.
+- A failed independent item does not stop later items.
+- Failed-item diagnostics show `stopReason` tagging.
 - Streaming TUI updates appear per turn (`message_end` events).
 - Per-tool-call UI refresh fires (the `tool_execution_*` patch listed in `agent/extensions/subagent/README.md` still works — confirm event names haven't drifted again).
 
@@ -123,7 +125,7 @@ ADR-0001 documents *why* we vendor. Bumps don't change the why. Update only if:
 ```text
 chore(subagent): bump vendored snapshot to pi X.Y.Z
 
-- Re-applied recorded patches #3-#14 against the new snapshot
+- Re-applied recorded patches the recorded patch set against the new snapshot
 - Confirmed patches #1/#2 remain upstream-adopted
 - Updated patch table and regenerated PATCH_MANIFEST.json
 - No event-name drift detected against agent-session.js

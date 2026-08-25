@@ -1,7 +1,7 @@
 # pi runtime vendor pin
 
-> **Pinned to pi `v0.84.1-psmfd.1`** (source: PSMFD-attested rebuilds on
-> [`psmfd/pi`](https://github.com/psmfd/pi/releases), upstream base `0.84.1`).
+> **Pinned to pi `v0.84.2-psmfd.1`** (source: PSMFD-attested rebuilds on
+> [`psmfd/pi`](https://github.com/psmfd/pi/releases), upstream base `0.84.2`).
 >
 > Per [ADR-0040](../../../adrs/0040-consume-psmfd-attested-pi-releases.md),
 > PSMFD-form pins (`vX.Y.Z-psmfd.N`) fetch from `psmfd/pi` with the tag

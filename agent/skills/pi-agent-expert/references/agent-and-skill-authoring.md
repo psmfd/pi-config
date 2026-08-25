@@ -140,10 +140,10 @@ Discovery is **non-recursive** — subdirectories are ignored unless explicitly 
 
 ```markdown
 ---
-description: Run all three reviewers in parallel
+description: Run all three reviewers serially
 argument-hint: "[scope]"
 ---
-Fan out to code-review-expert, security-review-expert, and linter in one subagent call...
+Run code-review-expert, security-review-expert, and linter in one serial subagent sequence...
 ```
 
 | Field | Required | Purpose |
@@ -164,9 +164,9 @@ Filename → command: `review.md` → `/review`.
 
 | Command | File | Effect |
 |---|---|---|
-| `/review` | `agent/prompts/review.md` | Fan out 3 ways: `code-review-expert` + `security-review-expert` + `linter` |
+| `/review` | `agent/prompts/review.md` | Serial sequence of 3: `code-review-expert` → `security-review-expert` → `linter` |
 | `/security-review` | `agent/prompts/security-review.md` | Single agent: `security-review-expert` |
-| `/full-review` | `agent/prompts/full-review.md` | Fan out 4 ways (adds `checkmarx-expert` if `cx` available) |
+| `/full-review` | `agent/prompts/full-review.md` | Serial sequence of 4 (adds `checkmarx-expert` if `cx` is available) |
 
 These templates are the orchestrator's pre-composed routing decisions. When users want a workflow that fits one of them, prefer the slash command over hand-rolled `subagent` calls.
 

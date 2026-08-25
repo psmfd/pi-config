@@ -77,7 +77,7 @@ EXT_MIRRORS=(
   pi-cache-meter@v0.1.4
   pi-token-meter@v0.2.4
   pi-gh-identity-guard@v0.1.3
-  pi-compaction-optimizer@v0.4.0
+  pi-compaction-optimizer@v0.5.0
   pi-expertise-client@v0.6.1
   pi-indexing@v0.1.4
   pi-context-manager@v0.1.4

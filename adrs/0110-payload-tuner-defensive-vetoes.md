@@ -1,11 +1,11 @@
 ---
-status: Accepted
+status: Superseded
 date: 2026-07-20
 ---
 
 # ADR-0110: payload-tuner — defensive per-field vetoes over the match/apply model
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0147](0147-payload-tuner-lima-gateway-policy.md) on 2026-08-25.
 **Date:** 2026-07-20
 **Related:** [ADR-0106](0106-payload-tuner-extension.md) (the extension this hardens — additive, NOT superseded: its four original invariants stand), pi_config #778 (delivery issue), #769 (original delivery), psmfd/local-llm#44 (the live `enable_thinking` rule this must not disturb)
 

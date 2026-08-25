@@ -12,7 +12,7 @@
  *      `max_completion_tokens` / `max_output_tokens` the adapter emitted;
  *      it never raises a value and never adds a field the adapter omitted.
  *      `max_output_tokens` (plain/Azure OpenAI Responses) is floored at 16
- *      — the Responses API rejects lower values (#778, ADR-0110). The
+ *      — the Responses API rejects lower values (#778, ADR-0147). The
  *      default openai-codex provider emits no token-limit field at all, so
  *      the clamp is a no-op there by design.
  *

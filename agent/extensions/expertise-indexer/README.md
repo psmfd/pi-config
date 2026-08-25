@@ -2,7 +2,7 @@
 
 Pure-library extension providing the deterministic **canonicalizer** used by every stage of the expertise-consumption pipeline (pi_config epic #595).
 
-- **Source rule:** [`agent/rules/expertise-canonical-fanout.md`](../../rules/expertise-canonical-fanout.md) (the rule #603 originally scoped as `expertise-consumption.md` shipped under this name)
+- **Source rule:** [`agent/rules/expertise-canonical-sequence.md`](../../rules/expertise-canonical-sequence.md) (serial-sequence successor under ADR-0148)
 - **Tracking:** #598 — canonicalizer + cache & manifest, epic #595
 
 This extension does not register any pi tool. It holds the pure library modules imported by the `expertise-fanout-gate` extension (ADR-0095), the vendored subagent's expertise wiring (#611), the candidate-gate (#608), and the CI expertise-audit stage (#601) — plus `audit-cli.ts`, the audit's tsx-invoked runner (not an extension entry point).
@@ -22,10 +22,10 @@ sequenceDiagram
     participant Tel as "Telemetry JSONL"
     participant CGate as "fanout-gate (expertise_create gate)"
 
-    O->>Gate: subagent tool_call, tasks list
-    Gate->>Lib: isResearchShapedFanout(tasks)
+    O->>Gate: subagent tool_call, ordered sequence
+    Gate->>Lib: isResearchShapedSequence(sequence)
     alt research-shaped (>=3, not review-only)
-        Gate->>Lib: deriveQueryInputs / deriveFanoutCanonicalInputs
+        Gate->>Lib: deriveQueryInputs / deriveSequenceCanonicalInputs
         Lib-->>Gate: canonical query + canonical_blob_sha
         Gate->>API: searchExpertise(query)
         API-->>Gate: results, or 429, or error
@@ -150,7 +150,7 @@ Rejection reasons are stable string codes (`RejectionReason` union type) safe to
 
 ### Collector primitives (#599)
 
-Orchestrator-side building blocks for the canonical-fanout methodology described in [`agent/rules/expertise-canonical-fanout.md`](../../rules/expertise-canonical-fanout.md). **Pure — no I/O, no tool invocations.** Consumed today by the orchestrator model's prompt-driven flow; will additionally be consumed by the subagent runtime wiring (#611), CI expertise-audit (#601), and pre-push hook (#604).
+Orchestrator-side building blocks for the canonical-sequence methodology described in [`agent/rules/expertise-canonical-sequence.md`](../../rules/expertise-canonical-sequence.md). **Pure — no I/O, no tool invocations.** Consumed today by the orchestrator model's prompt-driven flow; will additionally be consumed by the subagent runtime wiring (#611), CI expertise-audit (#601), and pre-push hook (#604).
 
 | Export | Contract |
 |---|---|
@@ -160,15 +160,15 @@ Orchestrator-side building blocks for the canonical-fanout methodology described
 | `extractCandidatePayloads(childOutput)` | Extracts `EXPERTISE_CANDIDATES` transport payloads from a subagent's raw output blob per #600. Form B: fenced-block `rawJson` (caller feeds to `acceptCandidates`). Form A: validated `reportFile` path against the strict allowlist `^/tmp/subagent-expertise-[a-z0-9-]+-\d+\.candidates\.json$` (no `..`, no double-slash, no NUL, no non-ASCII). Duplicate Form A paths collapse at extraction. Multiple blocks per output supported; malformed blocks silently skipped (fail-open at extraction; fail-closed at ingestion). |
 | `coalesceCandidates(inputs)` | Gates each `{rawJson, proposedBy}` through `acceptCandidates`, then fingerprints accepted candidates by SHA-256 of the normalized `{domain, title}` pair (NFKC + lowercase + whitespace-collapsed). Identical fingerprints merge into one `CoalescedGroup` with `proposalCount`, order-independent `variantCount` (distinct concrete-shape count computed via a `Set`), sorted-deduplicated `proposedByList`, and — when `variantCount > 1` — a frozen prototype-less `bodyHashesByProposer` map so the approval UI can enforce per-proposer body inspection (defense against body-smuggling under merged provenance). Representative selection: longest-body wins; deterministic on tie. Group order: stable by first-seen fingerprint. Rejections carry `proposedBy` forward. `proposedByList` and `bodyHashesByProposer` are both sourced from the ORCHESTRATOR-supplied `CoalesceInput.proposedBy` (never the untrusted `candidate.proposedBy` field) so attribution cannot be forged by a subagent. |
 
-### Fanout derivation (`fanout-derive.ts`, #613 / ADR-0095)
+### Serial-sequence derivation (`sequence-derive.ts`, #1055 / ADR-0148)
 
-Pure derivation shared by the runtime trigger ([`expertise-fanout-gate/`](../expertise-fanout-gate/README.md)) and the CI audit (#601): given the exact `subagent` tool-call params, decide whether the fanout is research-shaped and derive the canonical query + blob inputs. **Determinism contract:** pure functions of the arguments only — no clock, I/O, env, or randomness — so the audit can recompute the expected `canonical_blob_sha` from the telemetry-recorded task list plus its own git state.
+Pure derivation shared by the historically named [`expertise-fanout-gate/`](../expertise-fanout-gate/README.md) and the CI audit: given the exact ordered `subagent.sequence`, decide whether it is research-shaped and derive canonical query/blob inputs. The functions use no clock, I/O, environment, or randomness.
 
 | Export | Contract |
 |---|---|
-| `isResearchShapedFanout(tasks)` | Mechanical trigger: `tasks.length >= RESEARCH_FANOUT_MIN` (3, mirroring the divergence minimum in `research-parallelism.md`) AND not review-only. `REVIEW_ONLY_AGENTS` is the closed set `checkmarx-expert`/`code-review-expert`/`linter`/`security-review-expert` — a fanout composed entirely of those is the multi-reviewer `/review` shape, not research. |
-| `deriveQueryInputs(tasks)` | `{domain: sorted de-duplicated agent names, taskType: "research", goalOrSymptom: first task string}` — feeds `buildCanonicalQuery` unchanged. |
-| `deriveFanoutTaskString(tasks)` / `deriveFanoutCanonicalInputs(args)` | Canonical blob inputs for a live fanout: `<agent>: <task>` lines in caller order; `files` EMPTY by contract (a live fanout has no changed-set — the anchor is repo@HEAD + the exact task list); empty frontmatter. |
+| `isResearchShapedSequence(sequence)` | Mechanical trigger: `sequence.length >= RESEARCH_SEQUENCE_MIN` and not review-only. |
+| `deriveQueryInputs(sequence)` | Sorted de-duplicated agent names, `research` task type, and the first serial prompt. |
+| `deriveSequenceTaskString(sequence)` / `deriveSequenceCanonicalInputs(args)` | Ordered `<agent>: <task>` lines with empty files/frontmatter; the anchor represents repo@HEAD plus the exact serial sequence. |
 | `projectSearchResults(text)` | Tolerant projection of the semantic endpoint's `{"results":[…]}` (or bare-array) body into `CanonicalResultEntry[]`; schema drift degrades to fewer results, never a throw into the (runtime-uncaught) `tool_call` hook. |
 
 ### Approval binding (`approval.ts`, #605 / ADR-0095)
@@ -199,19 +199,19 @@ NOT an extension entry point (deliberately not `index.ts`); invoked by `scripts/
 
 The collector primitives are wired into the vendored `subagent` extension's runtime as of #611 (LOCAL PATCH #6, "Option A"). The sibling module `agent/extensions/subagent/expertise-wiring.ts`:
 
-- prepends the orchestrator-supplied canonical block to each child's user-role `Task:` framing (via the `subagent` tool's `expertiseInjection` param) — this wiring module does **not** call `expertise_search` itself; the autonomous search runs one layer up, in the `expertise-fanout-gate` `tool_call` hook (delivered by #613, now closed; see **Fanout derivation** above), which mutates the `subagent` tool input before this wiring runs;
+- prepends the orchestrator-supplied canonical block to each child's user-role `Task:` framing (via the `subagent` tool's `expertiseInjection` param) — this wiring module does **not** call `expertise_search` itself; the autonomous search runs one layer up, in the `expertise-fanout-gate` `tool_call` hook (delivered by #613, now closed; see **Serial-sequence derivation** above), which mutates the `subagent` tool input before this wiring runs;
 - extracts Form B `EXPERTISE_CANDIDATES` payloads from each child return via `extractCandidatePayloads`, coalesces them via `coalesceCandidates` with `proposedBy` set to the orchestrator-attributed `SingleResult.agent`, and surfaces the result on `SubagentDetails.expertiseCandidates` (structured data, never merged into the tool-result text);
 - reads Form A (`REPORT_FILE`) payloads through the hardened `form-a-reader.ts` (ADR-0095 closed the earlier deferral); a constraint violation drops the payload with a one-line stderr warning naming the structured reason.
 
 ## Decision flow
 
-The acceptance/coalesce/approval decisioning these primitives implement (the fanout trigger and the fail-closed create gate live in `expertise-fanout-gate`, shown for context):
+The acceptance/coalesce/approval decisioning these primitives implement (the serial trigger and fail-closed create gate live in the historically named `expertise-fanout-gate`):
 
 ```mermaid
 flowchart TD
-    A["subagent tool_call: tasks list"] --> B{"tasks.length >= 3 ?"}
+    A["subagent tool_call: ordered sequence"] --> B{"sequence.length >= 3 ?"}
     B -- no --> Z1["not research-shaped: gate stands down"]
-    B -- yes --> C{"every task.agent in REVIEW_ONLY_AGENTS ?"}
+    B -- yes --> C{"every sequence item agent in REVIEW_ONLY_AGENTS ?"}
     C -- yes --> Z1
     C -- no --> D["research-shaped: run canonical search"]
 
@@ -262,7 +262,7 @@ flowchart LR
         CZ["canonicalize.ts"]
         CG["candidate-gate.ts"]
         CL["collector.ts"]
-        FD["fanout-derive.ts"]
+        FD["sequence-derive.ts"]
         AP["approval.ts"]
         FA["form-a-reader.ts"]
         AL["audit-lib.ts"]
@@ -322,7 +322,7 @@ flowchart LR
 | `canonicalize.test.ts` | 29 | Normalization (NFKC, CRLF/CR→LF, trailing-ws strip, idempotency); determinism (5-run stability, file/key-order invariance, NFC-vs-NFD duplicate detection, #817); byte-stable **golden fixture**; validation (invalid head/blob sha, duplicate paths, `NaN`); persistence (0600/0700, gzip round-trip, secret-scan refusal, leaf-symlink refusal, ancestor-symlink tolerance); cache-dir resolution. |
 | `candidate-gate.test.ts` | 56 | Happy paths + optional-field round-trip; payload rejections (invalid JSON, non-object, unknown top-level key, bad `schemaVersion`, non-array); field rejections (missing/wrong-type/invalid-enum, `Info`-justification, `invalid-canonical-blob-sha`, non-string tags, unknown field); approval-state rejection; prototype-poisoning (root/nested/string-safe); secret detection (secret-scan-first invariant, category dedupe, no substring leak); batch-index isolation; structural freeze invariants. |
 | `collector.test.ts` | 55 | `buildCanonicalQuery` / `renderCanonicalResultsBlock` (byte-locked, caps, END-marker escaping) / `parseCanonicalResultsBlock` round-trip / `extractCandidatePayloads` (Form A + B) / `coalesceCandidates` (fingerprint, variant counting, `bodyHashesByProposer`, provenance). |
-| `fanout-derive.test.ts` | 15 | `isResearchShapedFanout` boundaries, `deriveQueryInputs`, `deriveFanoutCanonicalInputs`, `projectSearchResults` schema-drift tolerance. |
+| `sequence-derive.test.ts` | 15 | Serial trigger boundaries, ordered query/blob derivation, and search-result projection. |
 | `approval.test.ts` | 6 | `computeApprovalHash` byte-locking + `approvalFieldsFromCandidate` ↔ `approvalFieldsFromCreateInput` round trip. |
 | `form-a-reader.test.ts` | 7 | O_NOFOLLOW / fstat constraint set: valid read, path-shape rejections, standalone `parent-escape` (#817), leaf-symlink, permissions, oversize. |
 | `audit-lib.test.ts` | 15 | `parseArgs`, `changedEntries` (fixture git), `auditQuery` determinism, and the `auditTelemetry` anchor cross-check incl. the forged/displaced-anchor case (#601, #817). |

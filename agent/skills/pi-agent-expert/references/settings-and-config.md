@@ -187,6 +187,6 @@ For our subagent children, CLI flags constructed by `index.ts` win over the chil
 These keep getting asked about — they're not real:
 
 - One `subagent.*` key exists since #536: `extensionSettings.subagent.copilotFallbackModel` (user-layer only, ADR-0080) — the spawn-gate's Copilot fallback target. Everything else remains per-agent frontmatter
-- No `maxConcurrent` or `queueSize` — we cap parallel mode at 8 tasks / 4 concurrent in `index.ts` constants
+- No `maxConcurrent` or `queueSize` — sequence mode is fixed at 8 items maximum and concurrency 1
 - No `defaultAgent` — every `subagent` call must name an agent
 - No skill-disable list in settings — use `disable-model-invocation` in the skill's own frontmatter instead

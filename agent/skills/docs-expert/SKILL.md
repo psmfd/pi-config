@@ -30,7 +30,7 @@ This skill provides documentation structure and style expertise. It is not a sub
 - Asserting a position on a contested rule under the guise of a tone-calibration sample
 - Evaluating two policy phrasings against each other (e.g., "option A reads more naturally") — this is policy substance dressed as docs commentary
 
-This applies to **every** domain agent whose content includes opinionated technical rules — language coding conventions, framework usage patterns, architectural choices, security policies. Route policy substance to the relevant domain expert in parallel — do not supply it yourself while awaiting that routing.
+This applies to **every** domain agent whose content includes opinionated technical rules — language coding conventions, framework usage patterns, architectural choices, security policies. Route policy substance to the relevant domain expert as an independent serial `sequence` item; do not supply it yourself while awaiting that routing.
 
 When a brief asks for review of a domain skill's rule or policy section, treat the request as docs-structure only regardless of whether the restriction is stated explicitly. The boundary holds even when the brief is silent. State the deferral explicitly: "Policy substance deferred to `<domain-agent>` per scope of this review."
 

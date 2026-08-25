@@ -40,14 +40,14 @@
               "chatTemplateKwargs": {
                 "type": "object",
                 "minProperties": 1,
-                "description": "Merged into the payload's `chat_template_kwargs` (oMLX/vLLM-style servers), e.g. {\"enable_thinking\": false}. Must stay stable turn-to-turn within a session (server-side template churn would defeat the oMLX prefix cache)."
+                "description": "Merged into the payload's `chat_template_kwargs` (oMLX/vLLM-style servers), e.g. {\"reasoning_effort\": \"medium\"} for the gpt-oss workhorse (#1052) or {\"enable_thinking\": false} for the GLM fallback. Must stay stable turn-to-turn within a session (server-side template churn would defeat the oMLX prefix cache)."
               },
               "temperature": { "type": "number", "description": "Overwrites the payload's `temperature`." },
               "topP": { "type": "number", "description": "Overwrites the payload's `top_p`." },
               "maxTokensCap": {
                 "type": "integer",
                 "minimum": 1,
-                "description": "Upper bound applied to `max_tokens` / `max_completion_tokens` / `max_output_tokens` when the adapter emitted one. Only ever lowers; never raises and never adds the field. `max_output_tokens` (Responses API family) is floored at 16 — the API rejects lower values (ADR-0110)."
+                "description": "Upper bound applied to `max_tokens` / `max_completion_tokens` / `max_output_tokens` when the adapter emitted one. Only ever lowers; never raises and never adds the field. `max_output_tokens` (Responses API family) is floored at 16 — the API rejects lower values (ADR-0147)."
               }
             }
           }

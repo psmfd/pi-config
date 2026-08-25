@@ -1,5 +1,5 @@
 /**
- * payload-tuner defensive vetoes (#778, ADR-0110).
+ * payload-tuner defensive vetoes (ADR-0147, superseding ADR-0110).
  *
  * Pure filters applied by the dispatcher BEFORE `applyRule`: a matched
  * rule's `apply` block is reduced to the fields that are safe for the
@@ -11,10 +11,10 @@
  *
  * Vetoes (each recorded in the returned `suppressed` list):
  *   - `chatTemplateKwargs` unless the model is `api: "openai-completions"`
- *     AND its baseUrl host is loopback/private. API family alone is not
- *     sufficient: GitHub Copilot routes several cloud models through
- *     `openai-completions` on a public baseUrl, and cloud endpoints may
- *     reject unknown wire fields with a 400.
+ *     AND its baseUrl host is loopback/private or exactly the Lima host gateway
+ *     `host.lima.internal`. API family alone is not sufficient: GitHub Copilot
+ *     routes several cloud models through `openai-completions` on a public
+ *     baseUrl, and cloud endpoints may reject unknown wire fields with a 400.
  *   - `temperature`, `topP`, and `maxTokensCap` when the payload carries an
  *     active extended-thinking config (`payload.thinking` object with
  *     `type !== "disabled"`). The Anthropic adapter deliberately omits
@@ -29,10 +29,10 @@
 import { isPlainObject, type RuleApply } from "./settings.ts";
 
 /**
- * True when the URL's host is loopback or in an RFC 1918 private range —
- * the structural "local serving stack" signal (deliberately not a hostname
- * allowlist). Unparseable URLs classify as NOT private (fail toward
- * suppressing, which leaves the payload untouched — the safe direction).
+ * True when the URL identifies a trusted local serving endpoint: loopback, an
+ * RFC 1918 private address, or Lima's exact well-known host gateway name.
+ * Arbitrary `.internal` names and lookalikes are deliberately rejected.
+ * Unparseable URLs fail toward suppression, leaving the payload untouched.
  */
 export function isPrivateOrLoopbackHost(baseUrl: string): boolean {
   let host: string;
@@ -44,6 +44,7 @@ export function isPrivateOrLoopbackHost(baseUrl: string): boolean {
   // WHATWG URL keeps brackets on IPv6 literals — hostname is "[::1]",
   // never bare "::1", so only the bracketed form is checked.
   if (host === "localhost" || host === "[::1]") return true;
+  if (host === "host.lima.internal") return true;
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
   if (!m) return false;
   const [a, b] = [Number(m[1]), Number(m[2])];

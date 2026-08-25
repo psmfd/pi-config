@@ -1,21 +1,21 @@
 {
   "manifestVersion": 2,
-  "pinnedPiVersion": "v0.84.1-psmfd.1",
+  "pinnedPiVersion": "v0.84.2-psmfd.1",
   "upstreamRelativePath": "examples/extensions/subagent",
   "trackedFiles": {
     "index.ts": {
-      "upstreamSha256": "d7f717bcdc6d335363ea3719dcb3fcfc0b5ee791eae81e3f803af2ff0d0d22a4",
-      "localSha256": "8f3a6833f596db5f5ff926f3ba6bd7e04b395eb5c446d491eb5f568358280a2d",
-      "hunks": 33,
-      "netLines": 732
+      "upstreamSha256": "a40c373c2defaaceddd158c7eb7c4b0d0922456a69e1427e3f2bed38a525757d",
+      "localSha256": "da76d631ecef152fcbb8e2c1b092711d05de5efba5b730c329d72ddf4213f62a",
+      "hunks": 31,
+      "netLines": 687
     },
     "agents.ts": {
-      "upstreamSha256": "e1ab7addbd4c0dcd11a2acd11ad21e1aef8b91d61c0a2216f8b6c29a0bfde904",
+      "upstreamSha256": "cc85ecd33b89aa575bea3d2a9a9da7654a6305da4de02e5041aa5342a1de29b4",
       "localSha256": "b29cf36eb663bce1d68017f3b9eb781680e49e636adbf4fe64cdd44e300f1819",
       "hunks": 6,
-      "netLines": 237
+      "netLines": 206
     }
   },
-  "generatedAt": "2026-08-11T13:00:27Z",
+  "generatedAt": "2026-08-25T12:47:42Z",
   "note": "See agent/extensions/subagent/README.md for the patch table. Regenerate with: scripts/validate-subagent-drift.sh --regenerate"
 }

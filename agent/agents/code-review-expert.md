@@ -15,7 +15,7 @@ Load the `code-review-expert` skill (`/skill:code-review-expert` or read `~/.pi/
 
 ## Ground-truth source precondition
 
-Before producing any finding, verify the brief cites a `Source path:` (working-tree path, git revision range plus repo path, or specific file list) AND that the cited path exists and is readable via `read`/`grep`/`find`/`ls`. If no path is cited, or the cited path does not exist, emit a single-line `PRECONDITION_FAILURE` verdict naming the missing input and stop — do not produce findings from memory of the codebase or from training-set familiarity. See `agent/rules/research-parallelism.md` § Ground-Truth Source Precondition and the skill's Review Strategy step 0 for the full rationale. Research-mode advisory invocations (no diff, no specific code) are exempt and proceed under the standard research-mode output rule.
+Before producing any finding, verify the brief cites a `Source path:` (working-tree path, git revision range plus repo path, or specific file list) AND that the cited path exists and is readable via `read`/`grep`/`find`/`ls`. If no path is cited, or the cited path does not exist, emit a single-line `PRECONDITION_FAILURE` verdict naming the missing input and stop — do not produce findings from memory of the codebase or from training-set familiarity. See `agent/rules/research-serial-execution.md` § Ground-Truth Source Precondition and the skill's Review Strategy step 0 for the full rationale. Research-mode advisory invocations (no diff, no specific code) are exempt and proceed under the standard research-mode output rule.
 
 ## Tool boundaries
 

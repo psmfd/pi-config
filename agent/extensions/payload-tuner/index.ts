@@ -8,8 +8,10 @@
  * non-`undefined` return replaces the outgoing wire payload), the resolved
  * model (`ctx.model`) is matched against user-configured rules and the first
  * match's tweaks are applied: `chat_template_kwargs` injection (e.g.
- * `enable_thinking: false` for the oMLX GLM workhorse — psmfd/local-llm#44),
- * sampling normalization (`temperature`/`top_p`), and a `max_tokens` clamp.
+ * `reasoning_effort: "medium"` for the oMLX gpt-oss workhorse — #1052,
+ * psmfd/local-llm#73/ADR-013; or `enable_thinking: false` for the GLM
+ * fallback — psmfd/local-llm#44), sampling normalization
+ * (`temperature`/`top_p`), and a `max_tokens` clamp.
  *
  * Never touches messages/system/tools content — prefix-cache-safe by
  * construction (the ADR-0032 invariant is reconciled in ADR-0106). Fails
@@ -39,7 +41,7 @@ export default function payloadTuner(pi: ExtensionAPI): void {
   // Session-lifetime counters surfaced by /payload-tuner (observability only).
   let tunedCount = 0;
   let lastMatch: string | null = null;
-  // ADR-0110 guard-veto counters: a matched rule whose apply block was
+  // ADR-0147 guard-veto counters: a matched rule whose apply block was
   // partially withheld must be visible to the operator, or a "tuned" status
   // line silently hides that the rule is doing less than configured.
   const suppressedCounts = new Map<string, number>();
@@ -80,7 +82,7 @@ export default function payloadTuner(pi: ExtensionAPI): void {
       if (!model) return undefined;
       const rule = matchRule(settings.rules, model);
       if (!rule) return undefined;
-      // Defensive vetoes (#778, ADR-0110): reduce the rule's apply block to
+      // Defensive vetoes (ADR-0147): reduce the rule's apply block to
       // the fields safe for this model's API family and the payload's
       // thinking state, BEFORE the pure applyRule runs.
       const { filtered, suppressed } = filterApplyForContext(rule.apply, {

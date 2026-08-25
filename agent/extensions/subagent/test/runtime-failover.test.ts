@@ -310,10 +310,10 @@ test("no eligible alternate returns structured no-alternate telemetry without a 
   assert.match(result.content[0].text, /no eligible alternate/);
 });
 
-test("parallel mode preserves input ordering while sharing the session deny state", async () => {
+test("sequence preserves input ordering while sharing the session deny state", async () => {
   process.env.FAILOVER_RATE_LIMIT_MODELS = MODEL_A;
   const result = await execute({
-    tasks: [
+    sequence: [
       { agent: "policy-agent", task: "alpha" },
       { agent: "policy-agent", task: "beta" },
     ],
@@ -322,10 +322,7 @@ test("parallel mode preserves input ordering while sharing the session deny stat
   assert.notEqual(result.isError, true);
   assert.deepEqual(result.details.results.map((entry) => entry.agent), ["policy-agent", "policy-agent"]);
   assert.ok(result.details.results.every((entry) => entry.model === MODEL_B));
-  const spawned = captures().map((entry) => entry.model);
-  assert.ok(spawned.length === 3 || spawned.length === 4, `unexpected spawn count: ${spawned.length}`);
-  assert.ok(spawned.includes(MODEL_A));
-  assert.ok(spawned.includes(MODEL_B));
+  assert.deepEqual(captures().map((entry) => entry.model), [MODEL_A, MODEL_B, MODEL_B]);
   assert.deepEqual(sessionDeny.models().map((record) => record.key), [MODEL_A]);
 });
 
@@ -385,18 +382,19 @@ test("a MODEL-scope deny of the pinned id still spawns (ADR-0122 pins stay autho
   assert.deepEqual(captures().map((entry) => entry.model), [MODEL_A]);
 });
 
-test("a tripped breaker refuses every parallel pinned child without spawning", async () => {
+test("a tripped breaker refuses every serial pinned child and continues the sequence", async () => {
   sessionDeny.markProvider(PROVIDER, { source: "operator", reason: "operator disable" });
   const result = await execute({
-    tasks: [
+    sequence: [
       { agent: "pinned-agent", task: "one" },
       { agent: "pinned-agent", task: "two" },
       { agent: "pinned-agent", task: "three" },
     ],
   });
 
-  assert.deepEqual(captures(), [], "deterministic: zero spawns regardless of scheduling");
+  assert.deepEqual(captures(), [], "deterministic: zero spawns");
   assert.equal(result.details.results.length, 3);
+  assert.equal(result.isError, true, "an all-failed sequence is aggregate-error");
   assert.match(result.content[0]?.text ?? "", /disabled for this session/);
   for (const row of result.details.results) {
     assert.equal(row.usage.turns, 0, "every child refused before spawning");
@@ -434,12 +432,10 @@ test("a plain matrix miss still reports no-alternate, not provider-breaker", asy
   assert.equal(sessionDeny.isProviderDenied(PROVIDER), false, "one model is not a pattern");
 });
 
-test("a breaker tripped MID-fan-out disables the Copilot rung for later children", async () => {
-  // Regression guard for the staleness found while designing fan-out re-queue:
-  // `buildCopilotFallback` runs ONCE per tool call, before any child spawns, so
-  // a breaker state captured there goes stale the moment a child trips one.
-  // Chain mode makes the ordering deterministic — step 2 spawns strictly after
-  // step 1 completes, inside the SAME tool call and the same prebuilt rung.
+test("a breaker tripped mid-sequence disables the Copilot rung for later children", async () => {
+  // `buildCopilotFallback` runs once per tool call. Serial execution makes the
+  // ordering deterministic while provider-breaker state remains live between
+  // independent children in the same sequence.
   availableModels = [
     // cheapest capable row → step 1's policy pick
     { provider: "github-copilot", id: "claude-sonnet-5", contextWindow: 200_000, cost: { input: 1, output: 1 } },
@@ -455,7 +451,7 @@ test("a breaker tripped MID-fan-out disables the Copilot rung for later children
   process.env.FAILOVER_RATE_LIMIT_MODELS = "github-copilot/claude-sonnet-5";
 
   const result = await execute({
-    chain: [
+    sequence: [
       { agent: "policy-agent", task: "trip the breaker" },
       { agent: "omlx-pinned-agent", task: "consult the rung" },
     ],

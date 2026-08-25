@@ -171,7 +171,7 @@ test("depth guard: at the limit, every mode refuses before spawning", async () =
 	try {
 		const modes: Record<string, unknown>[] = [
 			{ agent: "itest-agent", task: "single task" },
-			{ tasks: [{ agent: "itest-agent", task: "parallel task" }] },
+			{ sequence: [{ agent: "itest-agent", task: "sequence task" }] },
 			{ chain: [{ agent: "itest-agent", task: "chain task" }] },
 		];
 		for (const params of modes) {
@@ -248,7 +248,7 @@ test("context-files: inherit opts the child back into context-file loading", asy
 	writeFileSync(depthCapturePath, "");
 });
 
-test("expertiseInjection reaches each child's argv through the real dispatch", async (tc) => {
+test("serial sequence preserves isolated prompts and identical expertise injection", async (tc) => {
 	tc.after(async () => {
 		process.argv[1] = realArgv1;
 		await rm(baseDir, { recursive: true, force: true });
@@ -258,7 +258,7 @@ test("expertiseInjection reaches each child's argv through the real dispatch", a
 	const result = await tool!.execute(
 		"tc-itest-1",
 		{
-			tasks: [
+			sequence: [
 				{ agent: "itest-agent", task: "alpha task", expertiseInjection: BLOCK },
 				{ agent: "itest-agent", task: "beta task", expertiseInjection: BLOCK },
 			],
@@ -279,9 +279,10 @@ test("expertiseInjection reaches each child's argv through the real dispatch", a
 	assert.equal(argvLines.length, 2);
 	const wantAlpha = `${BLOCK}\n\nTask: alpha task`;
 	const wantBeta = `${BLOCK}\n\nTask: beta task`;
-	const flat = argvLines.map((a) => a.join(" "));
-	assert.ok(flat.some((a) => a.includes(wantAlpha)), "alpha child argv carries the injected block");
-	assert.ok(flat.some((a) => a.includes(wantBeta)), "beta child argv carries the injected block");
+	const flat = argvLines.map((argv) => argv.join(" "));
+	assert.ok(flat[0].includes(wantAlpha), "alpha runs first with the injected block");
+	assert.ok(flat[1].includes(wantBeta), "beta runs second with the identical injected block");
+	assert.equal(flat[1].includes("Task: alpha task"), false, "later replicas cannot observe earlier prompts");
 	// The block must never travel via --append-system-prompt (no-mcp-servers.md).
 	for (const argv of argvLines) {
 		const idx = argv.indexOf("--append-system-prompt");

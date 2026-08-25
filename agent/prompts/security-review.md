@@ -8,7 +8,7 @@ description: Single-agent security review — invokes security-review-expert in 
 Run a focused security review using `security-review-expert` only. Use this when:
 
 - You only want the security lens (not code-quality / lint findings)
-- You're scoping a change too large for a 3-way fan-out and want a targeted check
+- You want a targeted check instead of the standard three-reviewer sequence
 - You're following up on a `Escalate to security-review-expert` note from a prior `/review`
 
 For a full multi-lens review, use `/review` (3-way) or `/full-review` (4-way with checkmarx).
@@ -30,7 +30,7 @@ Single-mode invocation:
 }
 ```
 
-The brief MUST include an explicit `Source path:` line naming a working-tree path the subagent can `read`/`grep`/`find`/`ls` (or a revision range plus repo path) per `agent/rules/research-parallelism.md` § Ground-Truth Source Precondition. If the orchestrator has not cloned/checked out the target before dispatching, do that first — the subagent will return `PRECONDITION_FAILURE` rather than reviewing from memory.
+The brief MUST include an explicit `Source path:` line naming a working-tree path the subagent can `read`/`grep`/`find`/`ls` (or a revision range plus repo path) per `agent/rules/research-serial-execution.md` § Ground-Truth Source Precondition. If the orchestrator has not cloned/checked out the target before dispatching, do that first — the subagent will return `PRECONDITION_FAILURE` rather than reviewing from memory.
 
 The brief must be self-contained — name the repo path, the diff range or files, and any context the orchestrator already gathered.
 

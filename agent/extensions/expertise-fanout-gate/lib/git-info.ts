@@ -7,7 +7,7 @@
  *
  * Fail-soft: any probe failure (git missing, not a repo, timeout) yields
  * `null` — the caller skips injection for this fanout (fail-open posture,
- * `agent/rules/expertise-canonical-fanout.md` § Exemptions).
+ * `agent/rules/expertise-canonical-sequence.md` § Exemptions).
  */
 
 import { spawn } from "node:child_process";

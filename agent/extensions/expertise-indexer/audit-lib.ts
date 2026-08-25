@@ -84,7 +84,7 @@ export function changedEntries(
 	return entries;
 }
 
-/** Deterministic audit query from the changed set (mirrors fanout-derive's style). */
+/** Deterministic audit query from the changed set (mirrors sequence-derive's style). */
 export function auditQuery(entries: readonly CanonicalFileEntry[]): string {
 	const areas = [
 		...new Set(

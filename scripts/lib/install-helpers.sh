@@ -653,6 +653,68 @@ ih_ensure_bash_parser() {
   return 0
 }
 
+# Install landlock-run (the Phase 2a bash-tool write-confinement launcher,
+# ADR-0146 / #1046) from the agent/vendor/landlock-run/ pin. Linux-only by
+# nature — the Landlock LSM is a Linux kernel feature and upstream ships no
+# other platforms; non-Linux hosts get rc=2 (unsupported host triple), the
+# repo's first deliberately platform-gated vendor fetch. The npm-registry
+# tarball URL shape does not fit _ih_vendor_fetch_extract's GitHub-releases
+# base/tag/asset construction, so this helper carries its own fetch using the
+# same primitives (versioned cache dir, sha256 verify, local-bin symlink).
+ih_ensure_landlock_run() {
+  local vendor_dir ver os arch narch asset sha cache_dir archive_path url bin_path
+  vendor_dir="$(_ih_vendor_dir landlock-run)" || return 1
+  ver="$(tr -d '[:space:]' < "$vendor_dir/VERSION")" || { _ih_error "cannot read $vendor_dir/VERSION"; return 1; }
+  os="$(pd_os)" || return $?
+  arch="$(pd_arch)" || return $?
+
+  # npm arch naming: amd64 -> x64. Linux-only: everything else is rc=2.
+  case "${os}-${arch}" in
+    linux-amd64) narch="x64" ;;
+    linux-arm64) narch="arm64" ;;
+    *) _ih_error "unsupported host triple for landlock-run (Linux-only vendor, ADR-0146): ${os}-${arch}"; return 2 ;;
+  esac
+
+  asset="node-addon-landlock-run-linux-${narch}-${ver}.tgz"
+  sha="$(_ih_vendor_sha_for_asset landlock-run "$asset")" || return 1
+  cache_dir="$HOME/.cache/pi_config/landlock-run-${ver}"
+  archive_path="$cache_dir/$asset"
+  url="https://registry.npmjs.org/@deepseek-ai/node-addon-landlock-run-linux-${narch}/-/${asset}"
+
+  if [ "$__IH_DRY_RUN" = "1" ]; then
+    _ih_info "[dry-run] curl -fsSL -o $archive_path $url"
+    _ih_info "[dry-run] sha256 verify $asset against agent/vendor/landlock-run/CHECKSUMS"
+    _ih_info "[dry-run] symlink ~/.local/bin/landlock-run -> $cache_dir/package/bin/landlock-run"
+    return 0
+  fi
+
+  mkdir -p "$cache_dir" || { _ih_error "mkdir -p $cache_dir failed"; return 1; }
+  if [ ! -f "$archive_path" ]; then
+    _ih_info "downloading $asset"
+    if ! curl -fsSL -o "${archive_path}.part" "$url"; then
+      rm -f "${archive_path}.part"
+      _ih_error "curl failed: $url"
+      return 1
+    fi
+    mv "${archive_path}.part" "$archive_path"
+  fi
+
+  if ! _ih_verify_sha256 "$archive_path" "$sha"; then
+    mv "$archive_path" "${archive_path}.bad" 2>/dev/null || true
+    _ih_error "sha256 verify failed for $asset (moved to ${archive_path}.bad)"
+    return 1
+  fi
+
+  tar --no-same-owner --no-same-permissions -xzf "$archive_path" -C "$cache_dir" || {
+    _ih_error "tar extract failed: $asset"; return 1; }
+
+  bin_path="$cache_dir/package/bin/landlock-run"
+  [ -x "$bin_path" ] || { _ih_error "landlock-run binary not found at $bin_path after extract"; return 1; }
+  _ih_link_local_bin "$bin_path" landlock-run || return 1
+  _ih_ok "landlock-run installed ($ver, linux-${narch})"
+  return 0
+}
+
 # --- Internal: distro package install via apt/dnf/brew ---------------------
 # Args: tool name, apt-pkg, dnf-pkg, brew-pkg (use '-' to disable a channel).
 # Honors PI_ALLOW_SUDO_APT / PI_ALLOW_SUDO_DNF (off by default).

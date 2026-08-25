@@ -41,9 +41,9 @@ End every review with a machine-readable verdict line:
 - **PASS** — no findings, or Info-only findings.
 - **PASS_WITH_WARNINGS** — Warning-level findings exist but no Critical or Error findings.
 - **NEEDS_CHANGES** — one or more Critical or Error findings. The review does not pass.
-- **PRECONDITION_FAILURE** — the source under review was not cited in the brief, or the cited path was not readable, so no findings were produced. Distinct from `NEEDS_CHANGES`: signals the review did not happen, not that the code was rejected. Applies to `security-review-expert` and `code-review-expert` per `rules/research-parallelism.md` § Ground-Truth Source Precondition. Emission format is a single line, e.g. `**Verdict:** PRECONDITION_FAILURE — no Source path cited in brief`.
+- **PRECONDITION_FAILURE** — the source under review was not cited in the brief, or the cited path was not readable, so no findings were produced. Distinct from `NEEDS_CHANGES`: signals the review did not happen, not that the code was rejected. Applies to `security-review-expert` and `code-review-expert` per `rules/research-serial-execution.md` § Ground-Truth Source Precondition. Emission format is a single line, e.g. `**Verdict:** PRECONDITION_FAILURE — no Source path cited in brief`.
 
-## Merged Reports (multi-subagent fan-out)
+## Merged Reports (serial multi-subagent sequence)
 
 When the orchestrator combines output from multiple review subagents (e.g. via `/review` or `/full-review`), the merged report adds a `Source` column to identify which subagent produced each finding, and uses a most-severe-wins aggregate verdict:
 

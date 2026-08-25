@@ -91,13 +91,17 @@
 //       including cached-token detail, in the final stream chunk when pi requests
 //       stream_options.include_usage; a `false` here zeroes every local turn in
 //       token-meter/task-types measurement. See ADR-0077, local-llm#34.)
+//       (supportsReasoningEffort stays false: the TOP-LEVEL reasoning_effort
+//       param is ignored by oMLX 0.5.7 — effort control is injected via
+//       chat_template_kwargs by the payload-tuner extension; #1052,
+//       local-llm#73.)
 //       "models": [
 //         {
 //           "id": "coding-workhorse",
-//           "name": "coding-workhorse — GLM-4.7-Flash (local oMLX)",
-//           "reasoning": false,
+//           "name": "coding-workhorse — gpt-oss-120b (local oMLX)",
+//           "reasoning": true,
 //           "input": ["text"],
-//           "contextWindow": 76800,
+//           "contextWindow": 122880,
 //           "maxTokens": 8192,
 //           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
 //         }
@@ -105,14 +109,16 @@
 //     }
 //   }
 //
-// `id` is the oMLX ALIAS (= mlx-community/GLM-4.7-Flash-6bit, the sole pinned
-// resident — local-llm ADR-010). contextWindow is deliberately held to 76800,
-// far inside the 202K native window: the oMLX prefill memory guard rejects
-// single prefills above ~84K tokens at its observed idle dynamic ceiling
-// (66 GB; KV+SDPA ~0.433 GB/1K tokens — local-llm ADR-011, #889 ladder
-// benchmark), so pi must compact before the guard 400s; concurrency is also
-// prefill-activation-bound (ADR-009/010). Cost 0 ⇒ auto-router renders the
-// hint "local/free"; the cost-0 routing policy is #363's scope.
+// `id` is the oMLX ALIAS (= mlx-community/gpt-oss-120b-4bit, the sole pinned
+// resident — local-llm ADR-013). contextWindow 122880 = the model's native
+// 131,072 positions minus the 8,192 maxTokens decode reservation; the model's
+// position limit — not the oMLX prefill guard — is the binding constraint
+// (local-llm ADR-013, #73: 130K-token prompts accepted fresh-idle and
+// post-soak at KV ~0.070 GB/1K). pi SHOULD still compact deep transcripts
+// around ~60K tokens — past that the memory enforcer brushes soft pressure
+// and can transiently pause prefill (benign, self-recovering). Cost 0 ⇒
+// auto-router renders the hint "local/free"; the cost-0 routing policy is
+// #363's scope.
 {
   "providers": {}
 }

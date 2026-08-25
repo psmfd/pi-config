@@ -5,7 +5,7 @@ date: 2026-07-12
 
 # ADR-0095: Deterministic expertise consumption — fanout gate extension, shared client stack, code-enforced approval
 
-**Status:** Accepted
+**Status:** Accepted; parallel trigger partially superseded by [ADR-0148](0148-serial-multi-agent-execution.md)
 **Date:** 2026-07-12
 **Related:** [ADR-0028](0028-agent-expertise-api-client.md) (the loopback expertise-api client and its trust boundary), [ADR-0029](0029-expertise-client-coexistence.md), [ADR-0065] / [ADR-0088](0088-cross-extension-import-boundary.md) (the `shared/` inline mechanism and the #635 cross-extension-import precedent this extends), [ADR-0019] (per-extension data subtree the telemetry follows), #595 (epic), #613 (this trigger), #605 (approval loop, layered on this design), #601 (CI audit consuming the telemetry)
 

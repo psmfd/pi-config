@@ -1,5 +1,5 @@
 /**
- * fanout-derive tests — deterministic trigger + derivation (#613, ADR-0095).
+ * sequence-derive tests — deterministic trigger + derivation (#1055, ADR-0148).
  */
 
 import { test } from "node:test";
@@ -8,45 +8,42 @@ import assert from "node:assert/strict";
 import { computeCanonicalBlob } from "../canonicalize.ts";
 import { buildCanonicalQuery } from "../collector.ts";
 import {
-	deriveFanoutCanonicalInputs,
-	deriveFanoutTaskString,
 	deriveQueryInputs,
-	isResearchShapedFanout,
+	deriveSequenceCanonicalInputs,
+	deriveSequenceTaskString,
+	isResearchShapedSequence,
 	projectSearchResults,
-	RESEARCH_FANOUT_MIN,
+	RESEARCH_SEQUENCE_MIN,
 	REVIEW_ONLY_AGENTS,
-	type FanoutTask,
-} from "../fanout-derive.ts";
+	type SequenceTask,
+} from "../sequence-derive.ts";
 
-const t = (agent: string, task = "investigate the thing"): FanoutTask => ({ agent, task });
+const t = (agent: string, task = "investigate the thing"): SequenceTask => ({ agent, task });
 
-// --- isResearchShapedFanout -------------------------------------------------
-
-test("fanout below the minimum never triggers", () => {
-	assert.equal(isResearchShapedFanout([]), false);
-	assert.equal(isResearchShapedFanout([t("ansible-expert")]), false);
-	assert.equal(isResearchShapedFanout([t("ansible-expert"), t("docker-expert")]), false);
+test("sequence below the minimum never triggers", () => {
+	assert.equal(isResearchShapedSequence([]), false);
+	assert.equal(isResearchShapedSequence([t("ansible-expert")]), false);
+	assert.equal(isResearchShapedSequence([t("ansible-expert"), t("docker-expert")]), false);
 });
 
-test("three divergent agents trigger", () => {
+test("three divergent serial agents trigger", () => {
 	assert.equal(
-		isResearchShapedFanout([t("ansible-expert"), t("docker-expert"), t("shell-expert")]),
+		isResearchShapedSequence([t("ansible-expert"), t("docker-expert"), t("shell-expert")]),
 		true,
 	);
 });
 
-test("review-only fanout never triggers (multi-reviewer command shape)", () => {
+test("review-only sequence never triggers", () => {
 	assert.equal(
-		isResearchShapedFanout([
+		isResearchShapedSequence([
 			t("code-review-expert"),
 			t("security-review-expert"),
 			t("linter"),
 		]),
 		false,
 	);
-	// The four-way review composition stays a review.
 	assert.equal(
-		isResearchShapedFanout([
+		isResearchShapedSequence([
 			t("code-review-expert"),
 			t("security-review-expert"),
 			t("checkmarx-expert"),
@@ -56,9 +53,9 @@ test("review-only fanout never triggers (multi-reviewer command shape)", () => {
 	);
 });
 
-test("one non-review agent flips a review trio into research", () => {
+test("one non-review agent makes the sequence research-shaped", () => {
 	assert.equal(
-		isResearchShapedFanout([
+		isResearchShapedSequence([
 			t("code-review-expert"),
 			t("security-review-expert"),
 			t("docs-expert"),
@@ -67,17 +64,15 @@ test("one non-review agent flips a review trio into research", () => {
 	);
 });
 
-test("the review set is the closed policy set", () => {
+test("the review set and serial research floor are fixed policy", () => {
 	assert.deepEqual(
 		[...REVIEW_ONLY_AGENTS].sort(),
 		["checkmarx-expert", "code-review-expert", "linter", "security-review-expert"],
 	);
-	assert.equal(RESEARCH_FANOUT_MIN, 3);
+	assert.equal(RESEARCH_SEQUENCE_MIN, 3);
 });
 
-// --- deriveQueryInputs ------------------------------------------------------
-
-test("query inputs: sorted de-duplicated agents, research taskType, first task", () => {
+test("query inputs use sorted agents and the first serial prompt", () => {
 	const inputs = deriveQueryInputs([
 		t("shell-expert", "harden the pre-push hook"),
 		t("ansible-expert", "second task"),
@@ -89,51 +84,49 @@ test("query inputs: sorted de-duplicated agents, research taskType, first task",
 });
 
 test("query inputs feed buildCanonicalQuery deterministically", () => {
-	const tasks = [
+	const sequence = [
 		t("shell-expert", "Harden the pre-push HOOK!"),
 		t("ansible-expert", "x"),
 		t("docker-expert", "y"),
 	];
-	const q1 = buildCanonicalQuery(deriveQueryInputs(tasks));
-	const q2 = buildCanonicalQuery(deriveQueryInputs(tasks));
+	const q1 = buildCanonicalQuery(deriveQueryInputs(sequence));
+	const q2 = buildCanonicalQuery(deriveQueryInputs(sequence));
 	assert.equal(q1, q2);
 	assert.match(q1, /^ansible-expert docker-expert shell-expert research harden/);
 });
 
-// --- canonical blob inputs ---------------------------------------------------
-
-test("fanout task string preserves caller order", () => {
+test("sequence task string preserves caller order", () => {
 	assert.equal(
-		deriveFanoutTaskString([t("b-agent", "two"), t("a-agent", "one")]),
+		deriveSequenceTaskString([t("b-agent", "two"), t("a-agent", "one")]),
 		"b-agent: two\na-agent: one",
 	);
 });
 
-test("fanout canonical inputs: empty files, deterministic sha", () => {
+test("sequence canonical inputs have empty files and deterministic sha", () => {
 	const args = {
 		repoOrigin: "git@github.com:psmfd/pi-config.git",
 		headSha: "a".repeat(40),
-		tasks: [t("ansible-expert"), t("docker-expert"), t("shell-expert")],
+		sequence: [t("ansible-expert"), t("docker-expert"), t("shell-expert")],
 	};
-	const inputs = deriveFanoutCanonicalInputs(args);
+	const inputs = deriveSequenceCanonicalInputs(args);
 	assert.deepEqual(inputs.files, []);
 	assert.deepEqual(inputs.agentFrontmatter, {});
 	const sha1 = computeCanonicalBlob(inputs).sha;
-	const sha2 = computeCanonicalBlob(deriveFanoutCanonicalInputs(args)).sha;
+	const sha2 = computeCanonicalBlob(deriveSequenceCanonicalInputs(args)).sha;
 	assert.equal(sha1, sha2);
 	assert.match(sha1, /^[0-9a-f]{64}$/);
 });
 
-test("blob sha changes when the task list changes", () => {
+test("blob sha changes when the serial prompt list changes", () => {
 	const base = {
 		repoOrigin: "origin",
 		headSha: "b".repeat(40),
-		tasks: [t("ansible-expert", "one"), t("docker-expert", "two"), t("shell-expert", "three")],
+		sequence: [t("ansible-expert", "one"), t("docker-expert", "two"), t("shell-expert", "three")],
 	};
-	const other = { ...base, tasks: [...base.tasks.slice(0, 2), t("shell-expert", "different")] };
+	const other = { ...base, sequence: [...base.sequence.slice(0, 2), t("shell-expert", "different")] };
 	assert.notEqual(
-		computeCanonicalBlob(deriveFanoutCanonicalInputs(base)).sha,
-		computeCanonicalBlob(deriveFanoutCanonicalInputs(other)).sha,
+		computeCanonicalBlob(deriveSequenceCanonicalInputs(base)).sha,
+		computeCanonicalBlob(deriveSequenceCanonicalInputs(other)).sha,
 	);
 });
 

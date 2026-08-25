@@ -15,7 +15,7 @@ export interface ModelLike {
   provider?: unknown;
   baseUrl?: unknown;
   /** Adapter-family discriminator (e.g. "openai-completions") — read by the
-   *  ADR-0110 guards, not by rule matching. */
+   *  ADR-0147 guards, not by rule matching. */
   api?: unknown;
 }
 
