@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { existsSync, promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
@@ -18,6 +18,24 @@ import { snapshotWip, systemGitRunner } from "../lib/git.ts";
 import { saveManifest } from "../lib/manifest.ts";
 
 const run = systemGitRunner();
+
+const ENV_WORKTREE = "PI_SESSION_WORKTREE";
+const ENV_SESSION = "PI_CONFINE_SESSION";
+const TOUCHED_ENV = [ENV_WORKTREE, ENV_SESSION, "HOME", "PATH"] as const;
+const savedEnv: Record<string, string | undefined> = {};
+
+beforeEach(() => {
+  for (const key of TOUCHED_ENV) savedEnv[key] = process.env[key];
+  delete process.env[ENV_WORKTREE];
+  delete process.env[ENV_SESSION];
+});
+
+afterEach(() => {
+  for (const key of TOUCHED_ENV) {
+    if (savedEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = savedEnv[key];
+  }
+});
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
@@ -152,14 +170,81 @@ test("lazy trigger: first primary write creates + locks the worktree, then denie
   await s.pi.emit("session_shutdown", { reason: "quit" }, s.ctx);
 });
 
-test("non-repo cwd and linked-worktree cwd never arm", async () => {
+test("shutdown and inactive replacement revoke the prior session worktree grant", async () => {
+  const active = await scenario("sid-active");
+  await active.pi.emit("session_start", { reason: "startup" }, active.ctx);
+  await active.pi.emit(
+    "tool_call",
+    { toolName: "write", input: { path: "src/a.ts", content: "x" } },
+    active.ctx,
+  );
+  assert.match(process.env[ENV_WORKTREE] ?? "", /sid-active$/);
+  assert.equal(process.env[ENV_SESSION], "sid-active");
+
+  await active.pi.emit("session_shutdown", { reason: "new" }, active.ctx);
+  assert.equal(process.env[ENV_WORKTREE], undefined);
+  assert.equal(process.env[ENV_SESSION], undefined);
+
+  process.env[ENV_WORKTREE] = "/stale/session-a";
+  process.env[ENV_SESSION] = "stale-session-a";
+  const inactive = await scenario("sid-inactive", { extensionSettings: { worktree: { enabled: false } } });
+  await inactive.pi.emit("session_start", { reason: "new" }, inactive.ctx);
+  assert.equal(process.env[ENV_WORKTREE], undefined);
+  assert.equal(process.env[ENV_SESSION], undefined);
+});
+
+test("successful worktree done revokes the worktree grant", async () => {
+  const s = await scenario("sid-done");
+  const fakeBin = join(s.home, "bin");
+  await fs.mkdir(fakeBin, { recursive: true });
+  const fakeGh = join(fakeBin, "gh");
+  await fs.writeFile(fakeGh, "#!/bin/sh\nprintf 'MERGED\\n'\n", "utf8");
+  await fs.chmod(fakeGh, 0o755);
+  process.env.PATH = `${fakeBin}:${process.env.PATH ?? ""}`;
+
+  await s.pi.emit("session_start", { reason: "startup" }, s.ctx);
+  await s.pi.emit(
+    "tool_call",
+    { toolName: "write", input: { path: "src/a.ts", content: "x" } },
+    s.ctx,
+  );
+  assert.equal(process.env[ENV_SESSION], "sid-done");
+
+  const command = s.pi.commands.get("worktree");
+  assert.ok(command);
+  await command.handler("done", s.ctx);
+  assert.ok(s.notifications.some((message) => message.includes("done — reaped")));
+  assert.equal(process.env[ENV_WORKTREE], undefined);
+  assert.equal(process.env[ENV_SESSION], undefined);
+});
+
+test("non-repo stays inert; linked-worktree child publishes only its current grant", async () => {
   const s = await scenario("sid-x");
   const bare = await fs.mkdtemp(join(tmpdir(), "wt-norepo-"));
-  const ctx = { ...(s.ctx as unknown as Record<string, unknown>), cwd: bare } as unknown as ExtensionContext;
-  await s.pi.emit("session_start", { reason: "startup" }, ctx);
-  const result = await s.pi.emit("tool_call", { toolName: "write", input: { path: "a.ts", content: "x" } }, ctx);
+  const bareCtx = { ...(s.ctx as unknown as Record<string, unknown>), cwd: bare } as unknown as ExtensionContext;
+  await s.pi.emit("session_start", { reason: "startup" }, bareCtx);
+  const result = await s.pi.emit("tool_call", { toolName: "write", input: { path: "a.ts", content: "x" } }, bareCtx);
   assert.equal(result, undefined);
   assert.equal(existsSync(join(bare, ".worktrees")), false);
+  assert.equal(process.env[ENV_WORKTREE], undefined);
+
+  const linked = join(s.home, "linked-child");
+  await git(s.repo, "worktree", "add", "-b", "feat/linked-child", linked, "HEAD");
+  process.env[ENV_WORKTREE] = "/stale/parent-worktree";
+  process.env[ENV_SESSION] = "stale-parent";
+  const linkedCtx = {
+    ...(s.ctx as unknown as Record<string, unknown>),
+    cwd: linked,
+    sessionManager: { getSessionId: () => "sid-child" },
+  } as unknown as ExtensionContext;
+  await s.pi.emit("session_start", { reason: "new" }, linkedCtx);
+  assert.equal(process.env[ENV_WORKTREE], await fs.realpath(linked));
+  assert.equal(process.env[ENV_SESSION], "sid-child");
+  assert.equal(existsSync(join(linked, ".worktrees")), false);
+
+  await s.pi.emit("session_shutdown", { reason: "quit" }, linkedCtx);
+  assert.equal(process.env[ENV_WORKTREE], undefined);
+  assert.equal(process.env[ENV_SESSION], undefined);
 });
 
 test("reportOnly observes without creating or mutating", async () => {

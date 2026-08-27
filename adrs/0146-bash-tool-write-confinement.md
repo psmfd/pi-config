@@ -132,11 +132,15 @@ sessions) runs first, then
 preserved end-to-end (`-lc` is rejected: login-profile chains make
 unauditable writes the grant set cannot anticipate); `HISTFILE` is
 neutralized; the chain is `exec`-only so signals and exit codes propagate
-without relay. A thin extension supplies policy: exports
-`PI_SESSION_WORKTREE` and mode/grant configuration from
-`extensionSettings` into pi's process env, runs `--probe` at session
-start, and emits transcript-visible warnings. The wrapper fails closed
-(exit 125 + marker) on a missing worktree var under enforce mode.
+without relay. Two thin extensions supply the session-scoped contract: the
+worktree extension exports `PI_SESSION_WORKTREE` / `PI_CONFINE_SESSION` for
+the verified current checkout (created/re-attached isolation tree or an
+already-linked child checkout), while bash-confinement exports mode/grant
+policy from
+`extensionSettings`, runs `--probe` at session start, and emits
+transcript-visible notices. Both revoke their owned variables during session
+replacement. The wrapper fails closed (exit 125 + marker) on a missing
+worktree under enforce mode or an explicit strict-policy refusal state.
 
 ### D4 — Default grant set (Linux)
 
@@ -167,15 +171,17 @@ start, and emits transcript-visible warnings. The wrapper fails closed
 
 ### D5 — Rollout posture
 
-Mode `{enforce, advisory, off}` per host via `extensionSettings`.
-Defaults: **enforce when probe reports `full`**; loud advisory — a
-transcript-visible warning on every session, never a silent log — when
-`partial` or `unusable`; strict fail-closed (refuse the bash tool)
-selectable for disposable VMs and CI, matching ADR-0130's
-refuse-when-unverifiable philosophy. macOS: inert with a one-time notice
-until the Seatbelt stage (#707). No standing Debian-13 CI lane exists to
-exercise the probe today; #1046 validates on the `mcm` self-hosted runner
-or a pibox Lima VM and records which.
+Mode `{auto, enforce, advisory, off}` per host via `extensionSettings`. `auto`
+is the default: enforce when the probe reports `full`; emit a loud advisory —
+a transcript-visible warning on every session, never a silent log — when it
+reports `partial` or `unusable`. `enforce` is the selectable strict posture
+for disposable VMs and CI: on a non-`full` probe the policy extension exports
+an explicit refusal state and the wrapper exits 125 before running bash,
+matching ADR-0130's refuse-when-unverifiable philosophy. `advisory` never
+enforces; `off` is inert. macOS remains inert with a one-time notice until the
+Seatbelt stage (#707). No standing Debian-13 CI lane exists to exercise the
+probe today; #1046 validates on the `mcm` self-hosted runner or a pibox Lima
+VM and records which.
 
 ### D6 — Escape hatch: operator-only, non-self-certifiable
 

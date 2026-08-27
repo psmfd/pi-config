@@ -1,6 +1,6 @@
 # ADR-0085: Bash-capable (mutation-heavy) agents stick to the primary, not local
 
-**Status:** Accepted
+**Status:** Accepted; the `gitflow-expert` classification is partially superseded by [ADR-0149](0149-gitflow-local-llm-eligibility.md)
 **Date:** 2026-07-08
 
 ## Context and Problem Statement

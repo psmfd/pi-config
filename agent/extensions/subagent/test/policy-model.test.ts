@@ -278,16 +278,32 @@ test("integration pin: the review trio declares capability-tier: frontier", () =
   }
 });
 
-test("integration pin: local-llm tag never appears on a bash-capable wrapper", () => {
-  let tagged = 0;
+test("integration pin: first-party local-llm eligibility set is explicit and never bash-capable", () => {
+  const tagged = new Set<string>();
   for (const file of readdirSync(REPO_AGENTS_DIR).filter((f) => f.endsWith(".md"))) {
     const content = readFileSync(join(REPO_AGENTS_DIR, file), "utf-8");
     if (!/^local-llm: true$/m.test(content)) continue;
-    tagged += 1;
-    const tools = content.match(/^tools:(.*)$/m)?.[1] ?? "";
-    assert.equal(tools.includes("bash"), false, `${file} is bash-capable but tagged local-llm: true`);
+    tagged.add(file);
+    const tools = content.match(/^tools:(.*)$/m);
+    assert.ok(tools, `${file} is local-eligible but omits an explicit tools allowlist`);
+    assert.equal(tools[1].includes("bash"), false, `${file} is bash-capable but tagged local-llm: true`);
   }
-  assert.equal(tagged, 13, `expected the 13 migrated wrappers, found ${tagged}`);
+  assert.deepEqual([...tagged].sort(), [
+    "ansible-expert.md",
+    "aws-expert.md",
+    "azure-devops-expert.md",
+    "azure-infra-expert.md",
+    "docker-expert.md",
+    "docs-expert.md",
+    "dotnet-expert.md",
+    "gitflow-expert.md",
+    "hyperv-expert.md",
+    "pi-agent-expert.md",
+    "shell-expert.md",
+    "tauri-expert.md",
+    "vcluster-expert.md",
+    "wsl2-expert.md",
+  ]);
 });
 
 test("combined local-llm + capability-tier: tier pick may select local ONLY within lever+tag eligibility", () => {

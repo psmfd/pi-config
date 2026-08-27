@@ -138,13 +138,47 @@ if [ "$(uname -s)" = "Linux" ]; then
   printf '#!/bin/sh\nexit 0\n' > "$SCRATCH/fake-launcher" && chmod +x "$SCRATCH/fake-launcher"
   set +e
   got_err="$(PI_BASH_SANDBOX_HOME="$SCRATCH/home" PI_BASH_CONFINE=enforce \
-    PI_CONFINE_LAUNCHER="$SCRATCH/fake-launcher" "$WRAPPER" -c 'true' 2>&1 >/dev/null)"
+    PI_SESSION_WORKTREE='' PI_CONFINE_LAUNCHER="$SCRATCH/fake-launcher" \
+    "$WRAPPER" -c 'true' 2>&1 >/dev/null)"
   rc=$?
   set -e
   if [ "$rc" -eq 125 ] && printf '%s' "$got_err" | grep -q '^landlock-run: refused'; then
     ok enforce-refusal "missing worktree under enforce => exit 125 + marker"
   else
     err enforce-refusal "rc=$rc stderr='$got_err'"
+  fi
+
+  # 14. Explicit strict-refusal policy state => refuse before running bash.
+  set +e
+  got_err="$(PI_BASH_SANDBOX_HOME="$SCRATCH/home" PI_BASH_CONFINE=refuse \
+    "$WRAPPER" -c 'true' 2>&1 >/dev/null)"
+  rc=$?
+  set -e
+  if [ "$rc" -eq 125 ] && printf '%s' "$got_err" | grep -q 'could not verify Landlock enforcement'; then
+    ok strict-refusal "policy refusal state => exit 125 + marker"
+  else
+    err strict-refusal "rc=$rc stderr='$got_err'"
+  fi
+
+  # 15. The operator hatch bypasses the strict-refusal state visibly.
+  got_err="$(PI_BASH_SANDBOX_HOME="$SCRATCH/home" PI_BASH_CONFINE=refuse \
+    SKIP_BASH_CONFINEMENT=1 "$WRAPPER" -c 'true' 2>&1 >/dev/null)"
+  if printf '%s' "$got_err" | grep -q 'skipped via SKIP_BASH_CONFINEMENT'; then
+    ok strict-skip-hatch "operator hatch bypasses strict refusal visibly"
+  else
+    err strict-skip-hatch "expected visible strict-state skip, got '$got_err'"
+  fi
+
+  # 16. An assignment inside the wrapped command cannot bypass outer refusal.
+  set +e
+  got_err="$(PI_BASH_SANDBOX_HOME="$SCRATCH/home" PI_BASH_CONFINE=refuse \
+    "$WRAPPER" -c 'SKIP_BASH_CONFINEMENT=1 true' 2>&1 >/dev/null)"
+  rc=$?
+  set -e
+  if [ "$rc" -eq 125 ] && printf '%s' "$got_err" | grep -q '^landlock-run: refused'; then
+    ok strict-inline-non-bypass "inline skip cannot bypass outer refusal"
+  else
+    err strict-inline-non-bypass "rc=$rc stderr='$got_err'"
   fi
 
   # 14. SKIP_BASH_CONFINEMENT=1 bypasses with a visible notice.

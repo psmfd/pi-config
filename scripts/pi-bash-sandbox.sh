@@ -46,9 +46,11 @@
 # PI_BASH_CONFINE=enforce, the final exec is wrapped in the vendored
 # landlock-run launcher: read+exec granted everywhere (--ro /), writes
 # denied outside the granted set (deny-by-default, inherited across execve).
+# PI_BASH_CONFINE=refuse is the strict-policy state: the wrapper exits 125
+# before running bash because the extension could not verify enforcement.
 # Env contract (exported by the bash-confinement policy extension; all read
 # from THIS process's environment, never from the wrapped command string):
-#   PI_BASH_CONFINE        enforce | anything-else (anything else = passthrough)
+#   PI_BASH_CONFINE        enforce | refuse | anything-else (passthrough)
 #   PI_SESSION_WORKTREE    the session worktree — the primary rw grant;
 #                          REQUIRED under enforce (missing => refuse, exit 125)
 #   PI_CONFINE_GRANTS_RW   colon-separated extra rw paths (extension-computed)
@@ -254,15 +256,25 @@ main() {
   mkdir -p "$HOME/tmp" && chmod 700 "$HOME/tmp" 2>/dev/null || true
   export TMPDIR="$HOME/tmp"
 
-  # Passthrough paths: layer not requested, non-Linux host (macOS confinement
-  # is the Seatbelt leg, #707 — the policy extension owns the inert notice),
-  # or the operator hatch.
-  if [ "${PI_BASH_CONFINE:-off}" != "enforce" ] || [ "$(uname -s)" != "Linux" ]; then
+  # Passthrough paths: non-Linux host (macOS confinement is the Seatbelt leg,
+# #707 — the policy extension owns the inert notice) or a policy state other
+# than enforce/refuse.
+  local confine_mode="${PI_BASH_CONFINE:-off}"
+  if [ "$(uname -s)" != "Linux" ]; then
     exec "$real_bash" "$@"
   fi
+  case "$confine_mode" in
+    enforce|refuse) ;;
+    *) exec "$real_bash" "$@" ;;
+  esac
+
+  # The operator hatch applies to both enforce and strict-refusal states.
   if [ "${SKIP_BASH_CONFINEMENT:-0}" = "1" ]; then
     printf 'landlock-run: confinement skipped via SKIP_BASH_CONFINEMENT=1 (operator env)\n' >&2
     exec "$real_bash" "$@"
+  fi
+  if [ "$confine_mode" = "refuse" ]; then
+    refuse "policy mode=enforce could not verify Landlock enforcement"
   fi
 
   # Enforce mode: fail closed on every unmet precondition (ADR-0146 D3/D5).

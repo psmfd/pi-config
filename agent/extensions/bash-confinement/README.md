@@ -12,23 +12,30 @@ those hosts is the Seatbelt leg, #707).
 
 ## What it does
 
+The environment contract is session-scoped. Every `session_start` first revokes
+`PI_BASH_CONFINE` and `PI_CONFINE_GRANTS_RW` before resolving policy, and
+`session_shutdown` revokes them again. Replacement flows (`/new`, `/resume`,
+`/fork`, and `/reload`) therefore cannot inherit stale mode or grant values.
+
 At `session_start`:
 
 1. Reads the rollout mode from the USER settings layer (below).
 2. On Linux, runs `landlock-run --probe` (tri-state: `full` / `partial` /
    `unusable` — the probe is the authority, never the kernel version).
-3. If confinement is warranted, exports into `process.env` (inherited by the
-   shellPath wrapper pi spawns for each bash-tool call):
-   - `PI_BASH_CONFINE=enforce`
-   - `PI_CONFINE_GRANTS_RW` — colon-separated extra rw grants: the
-     executed-cache dirs ordinary dev work writes (`~/.cache/pi_config`,
-     `~/.npm`) plus any per-host lines from
+3. Exports the session policy into `process.env` (inherited by the shellPath
+   wrapper pi spawns for each bash-tool call):
+   - `PI_BASH_CONFINE=enforce` when `auto` or `enforce` receives a `full` probe.
+   - `PI_BASH_CONFINE=refuse` when strict `enforce` receives a `partial` or
+     `unusable` probe; the wrapper exits 125 before running bash.
+   - `PI_CONFINE_GRANTS_RW` only while enforcement is armed — colon-separated
+     extra rw grants: the executed-cache dirs ordinary dev work writes
+     (`~/.cache/pi_config`, `~/.npm`) plus any per-host lines from
      `~/.config/pi/bash-confinement-grants.conf`.
    The **worktree** extension separately exports `PI_SESSION_WORKTREE` and
    `PI_CONFINE_SESSION` when it activates a session worktree — the primary
    write grant. This extension never owns the worktree path.
-4. Emits a transcript-visible notice: armed (info), or a loud warning when it
-   cannot confine (probe not `full` under `mode=enforce`, or advisory mode).
+4. Emits a transcript-visible notice: armed (info), advisory (warning), or
+   strict refusal (warning).
 
 It **only takes effect** when the operator has wired
 `"shellPath": "~/.local/bin/pi-bash-sandbox"` in `~/.pi/agent/settings.json`
@@ -44,13 +51,13 @@ boundary the guard trio and token-meter use):
 | mode | behavior |
 | --- | --- |
 | `auto` (default) | enforce when the probe reports `full`; loud advisory (warn, no enforcement) otherwise |
-| `enforce` | force enforce; refuse to arm with a loud warning if the probe is not `full` |
+| `enforce` | strict: enforce on `full`; publish the wrapper's exit-125 refusal state on `partial`/`unusable` |
 | `advisory` | never enforce; emit the standing advisory warning each session |
 | `off` | fully inert (also `{"enabled": false}`) |
 
-Even at `auto`/`enforce` nothing is confined until `shellPath` points at the
-wrapper — this extension is safe to enable by default because arming is
-gated on that operator action.
+Even at `auto`/`enforce`, neither enforcement nor strict refusal reaches bash
+until `shellPath` points at the wrapper. The armed and refusal notices state
+that operator wiring requirement rather than asserting the wrapper is active.
 
 ## Refusal policy (per-rule)
 
@@ -62,6 +69,8 @@ happens in the wrapper (`scripts/pi-bash-sandbox.sh`), not here:
   `landlock-run:` stderr marker). Correct: bash before any worktree exists
   has no write grant.
 - **Enforce + launcher missing** → wrapper refuses (exit 125 + marker).
+- **Enforce + probe not `full`** → the extension publishes `refuse`; the
+  wrapper exits 125 with a marker before running bash.
 - **A denied write** → `landlock-run` returns `EACCES`, surfaced as an
   ordinary "Permission denied" line in the bash-tool output.
 
@@ -77,8 +86,9 @@ can write. Per-host extra grants: `~/.config/pi/bash-confinement-grants.conf`
   injected block and mutates no tool call. Its only model-visible effect is
   indirect — a denied bash write appears as a normal `EACCES` line in that
   tool's own output, exactly as any permission error would.
-- **When it fires**: `session_start` only (probe + env export + at most one
-  `ctx.ui.notify`). The notify is operator-facing UI, not model context.
+- **When it fires**: `session_start` (revoke, probe, env export, and at most one
+  `ctx.ui.notify`) plus `session_shutdown` (revoke only). The notify is
+  operator-facing UI, not model context.
 - **Token effect**: zero standing tokens. No system-prompt or context
   contribution.
 - **Cache effect**: none — no context mutation, so the provider's cached
@@ -94,7 +104,7 @@ can write. Per-host extra grants: `~/.config/pi/bash-confinement-grants.conf`
 ## Tests
 
 - `scripts/test-bash-confinement.sh` — unit tests for mode resolution, probe
-  handling, env export, and the non-Linux inert path (mocked launcher +
-  settings; no kernel dependency).
+  handling, session lifecycle revocation, env export, and the non-Linux inert
+  path (mocked launcher + settings; no kernel dependency).
 - `scripts/test-landlock-canary.sh` — real enforcement on a Landlock kernel
   (the mechanism side; Linux-only self-skip).

@@ -104,6 +104,11 @@ function defaultGrants(): string[] {
 export default function bashConfinement(pi: ExtensionAPI): void {
   let notified = false;
 
+  const resetPolicyEnv = (): void => {
+    delete process.env[ENV_MODE];
+    delete process.env[ENV_GRANTS_RW];
+  };
+
   const noticeOnce = (ctx: ExtensionContext, text: string, level: "info" | "warning"): void => {
     if (notified || !ctx.hasUI) return;
     notified = true;
@@ -111,6 +116,10 @@ export default function bashConfinement(pi: ExtensionAPI): void {
   };
 
   pi.on("session_start", async (_event, ctx) => {
+    notified = false;
+    // Session replacement reuses this process. Revoke the prior policy before
+    // any async resolution or early return can expose stale grants.
+    resetPolicyEnv();
     const mode: Mode = await readMode();
     if (mode === "off") return;
 
@@ -132,9 +141,12 @@ export default function bashConfinement(pi: ExtensionAPI): void {
 
     if (!armed) {
       if (mode === "enforce") {
+        // Strict mode remains fail-closed when enforcement cannot be verified.
+        // The wrapper recognizes this explicit state and refuses with exit 125.
+        process.env[ENV_MODE] = "refuse";
         noticeOnce(
           ctx,
-          `mode=enforce but the launcher probes ${p} — NOT confining. Bash writes are unrestricted; run setup.sh or check the kernel Landlock LSM.`,
+          `mode=enforce but the launcher probes ${p} — refusing bash calls until the probe reports full. Requires shellPath → pi-bash-sandbox to take effect. Run setup.sh or check the kernel Landlock LSM.`,
           "warning",
         );
       } else {
@@ -160,5 +172,9 @@ export default function bashConfinement(pi: ExtensionAPI): void {
       "write confinement armed (Landlock, enforce). Bash writes are limited to the session worktree, scratch, and granted paths. Requires shellPath → pi-bash-sandbox to take effect.",
       "info",
     );
+  });
+
+  pi.on("session_shutdown", () => {
+    resetPolicyEnv();
   });
 }

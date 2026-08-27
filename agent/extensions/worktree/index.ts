@@ -228,6 +228,16 @@ export default function (pi: ExtensionAPI) {
     st.timer = timer;
   };
 
+  const revokeConfinementGrant = (): void => {
+    delete process.env.PI_SESSION_WORKTREE;
+    delete process.env.PI_CONFINE_SESSION;
+  };
+
+  const publishConfinementGrant = (worktreePath: string, sid: string): void => {
+    process.env.PI_SESSION_WORKTREE = worktreePath;
+    process.env.PI_CONFINE_SESSION = safeSid(sid);
+  };
+
   const activate = (ctx: ExtensionContext, worktreePath: string, branch: string): void => {
     st.active = true;
     st.worktreePath = worktreePath;
@@ -239,8 +249,7 @@ export default function (pi: ExtensionAPI) {
     // keys the per-session scratch. Bash calls that precede the first
     // worktree still find no grant — which is correct (the wrapper fails
     // closed under enforce mode until a worktree exists).
-    process.env.PI_SESSION_WORKTREE = worktreePath;
-    process.env.PI_CONFINE_SESSION = safeSid(st.sid);
+    publishConfinementGrant(worktreePath, st.sid);
     startTimer(ctx);
     if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, `⌂ ${branch}`);
   };
@@ -442,6 +451,9 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.on("session_start", async (_event, ctx) => {
+    // Session replacement reuses this process. Revoke the prior worktree
+    // before any async resolution or inactive-session early return.
+    revokeConfinementGrant();
     stopTimer();
     st = freshState();
     st.settings = await loadSettings(ctx.cwd, {
@@ -456,7 +468,27 @@ export default function (pi: ExtensionAPI) {
     if (!st.settings.enabled) return;
     const repoRoot = await repoToplevel(run, ctx.cwd);
     if (repoRoot === null) return;
-    if (await isLinkedWorktree(run, ctx.cwd)) return; // subagent inside a worktree, or operator-launched
+    // Sanitize at the source: st.sid is THE session key — lock reasons,
+    // manifests, refs, directory names, and confinement scratch all derive
+    // from it.
+    try {
+      st.sid = safeSid(ctx.sessionManager.getSessionId());
+    } catch {
+      st.sid = safeSid(`pid-${process.pid}`);
+    }
+    if (await isLinkedWorktree(run, ctx.cwd)) {
+      // Subagents and operator-launched linked-worktree sessions do not need
+      // another isolation worktree, but confined bash still needs an explicit
+      // current-worktree grant after stale parent state was revoked.
+      let linkedRoot = repoRoot;
+      try {
+        linkedRoot = await fs.realpath(repoRoot);
+      } catch {
+        // repoRoot remains the best verified path from git.
+      }
+      publishConfinementGrant(linkedRoot, st.sid);
+      return;
+    }
     st.repoRoot = repoRoot;
     try {
       st.cwdReal = await fs.realpath(ctx.cwd);
@@ -464,14 +496,6 @@ export default function (pi: ExtensionAPI) {
       st.cwdReal = ctx.cwd;
     }
     st.commonDir = await gitCommonDir(run, ctx.cwd);
-    // Sanitize at the source: st.sid is THE session key — lock reasons,
-    // manifests, refs, and directory names all derive from it, so they can
-    // never disagree the way a raw-vs-sanitized split would.
-    try {
-      st.sid = safeSid(ctx.sessionManager.getSessionId());
-    } catch {
-      st.sid = safeSid(`pid-${process.pid}`);
-    }
     st.armed = true;
 
     // Re-attach this session's own worktree across resume/restart.
@@ -614,6 +638,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
+    revokeConfinementGrant();
     if (st.active) await snapshotNow(ctx);
     stopTimer();
   });
@@ -703,6 +728,7 @@ export default function (pi: ExtensionAPI) {
           st.active = false;
           st.worktreePath = null;
           st.branch = null;
+          revokeConfinementGrant();
           if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, undefined);
           notify(`worktree: done — ${result}`);
         } else {

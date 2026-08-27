@@ -24,12 +24,12 @@ steered** into a per-session worktree instead.
 
 | Phase | What happens |
 |---|---|
-| Arm (`session_start`) | cwd inside a git repo, primary checkout (not a linked worktree), `enabled` — else inert. Re-attaches this sid's own worktree across resume/restart; reconciles orphans (below). |
-| Trigger (first `write`/`edit` targeting the repo) | Creates `<repo>/.worktrees/<sid>/` via `git worktree add -b feat/wt-<sid> … <base>` (base: `baseRef` setting → `origin/dev` → `origin/main` → `origin/HEAD` → `HEAD`), locks it with a `session:<sid> pid:<pid> host:<h> started:<iso>` reason (the liveness record), appends `/.worktrees/` to `<common-dir>/info/exclude`, hydrates (`linkFiles` symlinks + `postCreate`, both trust-gated), writes the manifest. Bash-only mutation workflows do not trigger (v1 accepted gap, #861). |
-| Enforce (`tool_call`) | `write`/`edit` → primary paths **denied** with a redirect reason naming the worktree target; exemption globs (default `NEXT_SESSION*.md`, `.review/**`) keep scratch/handoff files writable in primary. `read`/`grep`/`find`/`ls` → primary paths **rewritten** into the worktree (prefer the worktree copy; keep primary only for files that exist there and not in the worktree). `bash` → command wrapped `cd <wt> && ( … )` (in-place `tool_call.input` mutation — documented API; first mutation use in this repo, ADR-0120). `subagent` → `cwd` defaulted to the worktree (single/steps/tasks); children then disarm because a linked worktree never re-isolates. |
+| Arm (`session_start`) | First revokes any prior `PI_SESSION_WORKTREE` / `PI_CONFINE_SESSION` grant. A linked-worktree session publishes its verified current path with its own session ID for confined bash, then leaves isolation inert. A primary checkout arms when enabled, re-attaches this sid's own worktree across resume/restart, and reconciles orphans (below). |
+| Trigger (first `write`/`edit` targeting the repo) | Creates `<repo>/.worktrees/<sid>/` via `git worktree add -b feat/wt-<sid> … <base>` (base: `baseRef` setting → `origin/dev` → `origin/main` → `origin/HEAD` → `HEAD`), locks it with a `session:<sid> pid:<pid> host:<h> started:<iso>` reason (the liveness record), appends `/.worktrees/` to `<common-dir>/info/exclude`, hydrates (`linkFiles` symlinks + `postCreate`, both trust-gated), writes the manifest, then publishes the session worktree grant. Bash-only mutation workflows do not trigger (v1 accepted gap, #861). |
+| Enforce (`tool_call`) | `write`/`edit` → primary paths **denied** with a redirect reason naming the worktree target; exemption globs (default `NEXT_SESSION*.md`, `.review/**`) keep scratch/handoff files writable in primary. `read`/`grep`/`find`/`ls` → primary paths **rewritten** into the worktree (prefer the worktree copy; keep primary only for files that exist there and not in the worktree). `bash` → command wrapped `cd <wt> && ( … )` (in-place `tool_call.input` mutation — documented API; first mutation use in this repo, ADR-0120). `subagent` → `cwd` defaulted to the worktree (single/steps/tasks); children do not re-isolate because they already run in a linked worktree, but publish that current path as their confinement grant. |
 | Snapshot (`turn_end` + timer) | Dirty tree → temp-index commit pinned to `refs/pi-wip/<sid>` (`read-tree HEAD` → `add -A` → `write-tree` → `commit-tree` under `GIT_INDEX_FILE`). Captures tracked edits AND untracked files; never touches the real index; runs no hooks; skips ref churn on identical trees. Default timer fallback 5 min (`snapshotIntervalMs`). Also on clean `session_shutdown`. |
 | Recover (`session_start` reconciler) | Cross-references worktree lock reasons × manifests × `refs/pi-wip/*`; a dead-pid record is surfaced as an orphan (`ctx.ui.notify`) — **never auto-adopted**. `/worktree resume <sid>` re-attaches (re-creating the directory from the branch and restoring the WIP snapshot when it was reaped). |
-| Reap (`/worktree done` / `reap`) | Only when the tree is clean **and** `gh pr view <branch>` reports `MERGED` (squash merges defeat `git branch --merged` ancestor checks — never used). Sequence: unlock → `worktree remove` → `branch -D` → delete `refs/pi-wip/<sid>` → delete manifest. |
+| Reap (`/worktree done` / `reap`) | Only when the tree is clean **and** `gh pr view <branch>` reports `MERGED` (squash merges defeat `git branch --merged` ancestor checks — never used). Sequence: unlock → `worktree remove` → `branch -D` → delete `refs/pi-wip/<sid>` → delete manifest; successful `done` also revokes the current session grant. |
 
 ## Commands
 
@@ -50,6 +50,12 @@ absolute paths and `..` traversal are filtered). `enabled`/`reportOnly` are
 deliberately user-layer only — a hostile repo must not switch isolation off.
 
 Env override: `PI_SKIP_WORKTREE=1` (extension loads but registers nothing).
+
+`PI_SESSION_WORKTREE` and `PI_CONFINE_SESSION` are session-scoped wrapper
+inputs. They are revoked before every startup decision and on
+`session_shutdown`, including pi's `/new`, `/resume`, `/fork`, and `/reload`
+replacement lifecycle. Linked-worktree children replace inherited parent
+values with their verified current path and child session ID.
 
 ## Durability model
 

@@ -34,6 +34,7 @@ interface Notice {
 
 function loadExtension(): {
   fire: (hasUI?: boolean) => Promise<Notice[]>;
+  shutdown: () => Promise<void>;
 } {
   const handlers: Record<string, Handler> = {};
   const pi = {
@@ -44,8 +45,8 @@ function loadExtension(): {
     },
   };
   bashConfinement(pi as never);
-  const handler = handlers["session_start"];
-  if (!handler) throw new Error("session_start handler was not registered");
+  const startHandler = handlers["session_start"];
+  if (!startHandler) throw new Error("session_start handler was not registered");
   return {
     fire: async (hasUI = true) => {
       const notices: Notice[] = [];
@@ -53,8 +54,13 @@ function loadExtension(): {
         hasUI,
         ui: { notify: (text: string, level: string) => notices.push({ text, level }) },
       };
-      await handler(undefined, ctx);
+      await startHandler(undefined, ctx);
       return notices;
+    },
+    shutdown: async () => {
+      const shutdownHandler = handlers["session_shutdown"];
+      if (!shutdownHandler) throw new Error("session_shutdown handler was not registered");
+      await shutdownHandler(undefined, {});
     },
   };
 }
@@ -145,14 +151,68 @@ test("auto + probe unusable emits advisory warning, does not arm (Linux)", async
   assert.match(notices[0]?.text ?? "", /NOT confined/);
 });
 
-test("enforce + probe unusable refuses loudly, does not arm (Linux)", async () => {
+test("enforce + partial or unusable probe publishes strict refusal (Linux)", async () => {
   if (!isLinux) return;
   writeSettings({ extensionSettings: { bashConfinement: { mode: "enforce" } } });
-  process.env[ENV_LAUNCHER] = writeFakeLauncher(125, "");
-  const notices = await loadExtension().fire();
+
+  for (const [probeExit, probeOutput] of [
+    [0, "landlock: partially enforced"],
+    [125, ""],
+  ] as const) {
+    process.env[ENV_LAUNCHER] = writeFakeLauncher(probeExit, probeOutput);
+    const notices = await loadExtension().fire();
+    assert.equal(process.env[ENV_MODE], "refuse");
+    assert.equal(process.env[ENV_GRANTS_RW], undefined);
+    assert.equal(notices[0]?.level, "warning");
+    assert.match(notices[0]?.text ?? "", /refusing bash calls/);
+    assert.match(notices[0]?.text ?? "", /Requires shellPath.*pi-bash-sandbox/);
+  }
+});
+
+test("replacement into off or unusable mode revokes stale policy and grants", async () => {
+  process.env[ENV_MODE] = "enforce";
+  process.env[ENV_GRANTS_RW] = "/stale/grant";
+  writeSettings({ extensionSettings: { bashConfinement: { mode: "off" } } });
+  await loadExtension().fire();
   assert.equal(process.env[ENV_MODE], undefined);
-  assert.equal(notices[0]?.level, "warning");
-  assert.match(notices[0]?.text ?? "", /NOT confining/);
+  assert.equal(process.env[ENV_GRANTS_RW], undefined);
+
+  if (!isLinux) return;
+  writeSettings({ extensionSettings: { bashConfinement: { mode: "auto" } } });
+  const grantsPath = join(tmpHome, ".config", "pi", "bash-confinement-grants.conf");
+  mkdirSync(join(tmpHome, ".config", "pi"), { recursive: true });
+  writeFileSync(grantsPath, "/grant-a\n");
+  process.env[ENV_LAUNCHER] = writeFakeLauncher(0, "landlock: fully enforced");
+  const extension = loadExtension();
+  await extension.fire();
+  assert.equal(process.env[ENV_MODE], "enforce");
+  assert.match(process.env[ENV_GRANTS_RW] ?? "", /\/grant-a/);
+
+  writeFileSync(grantsPath, "/grant-b\n");
+  await extension.fire();
+  assert.doesNotMatch(process.env[ENV_GRANTS_RW] ?? "", /\/grant-a/);
+  assert.match(process.env[ENV_GRANTS_RW] ?? "", /\/grant-b/);
+
+  process.env[ENV_LAUNCHER] = writeFakeLauncher(125, "");
+  const replacementNotices = await extension.fire();
+  assert.equal(process.env[ENV_MODE], undefined);
+  assert.equal(process.env[ENV_GRANTS_RW], undefined);
+  assert.equal(replacementNotices[0]?.level, "warning");
+  assert.match(replacementNotices[0]?.text ?? "", /NOT confined/);
+});
+
+test("session shutdown revokes armed policy and grants", async () => {
+  if (!isLinux) return;
+  writeSettings({ extensionSettings: { bashConfinement: { mode: "auto" } } });
+  process.env[ENV_LAUNCHER] = writeFakeLauncher(0, "landlock: fully enforced");
+  const extension = loadExtension();
+  await extension.fire();
+  assert.equal(process.env[ENV_MODE], "enforce");
+  assert.ok(process.env[ENV_GRANTS_RW]);
+
+  await extension.shutdown();
+  assert.equal(process.env[ENV_MODE], undefined);
+  assert.equal(process.env[ENV_GRANTS_RW], undefined);
 });
 
 test("per-host grants file is appended to computed grants (Linux)", async () => {
