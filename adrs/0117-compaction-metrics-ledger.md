@@ -1,13 +1,15 @@
 ---
-status: Accepted
+status: Superseded
 date: 2026-07-21
 ---
 
 # ADR-0117: per-compaction metrics ledger with self-reported cost bases
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0151](0151-compaction-reported-usage.md)
 **Date:** 2026-07-21
 **Related:** [ADR-0019](0019-compaction-optimizer-extension.md) (compaction-optimizer — amended by addition, the ADR-0107/0108/0109 precedent), [ADR-0034](0034-cache-ratio-measurement.md) (cache-meter's `turns.jsonl` — the extension-owned-ledger precedent), [ADR-0073](0073-token-meter-extension.md) / [ADR-0077](0077-routing-policy-tag-and-streaming-usage.md) (token-meter field vocabulary + policy-tag A/B), pi_config #838 (this feature), #840 (upstream: pi discards summarizer usage), #839 (the cloud summarizer this ledger's A/B gates).
+
+Superseded by ADR-0151 after pinned pi began persisting summarizer usage on committed compaction entries. The historical body below is preserved unchanged.
 
 ## Context and Problem Statement
 

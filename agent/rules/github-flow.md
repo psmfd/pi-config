@@ -23,9 +23,23 @@ advance the stable `main` branch.
   required checks must pass: on `dev` — `validate`,
   `block-artifact-review-merge`, `verify`, and `lint-pr-title` (Conventional
   Commits PR-title lint, #731); on `main` — `validate`,
-  `block-artifact-review-merge`, and `promotion-head-guard`. See
-  [`AGENTS.md` Boundaries section](../AGENTS.md#boundaries) for the
-  emergency unlock procedure.
+  `block-artifact-review-merge`, and `promotion-head-guard`. See the
+  [emergency ruleset unlock](#emergency-ruleset-unlock) procedure for
+  required-check misconfiguration recovery.
+
+## Emergency ruleset unlock
+
+Use this procedure only when a required-check misconfiguration locks `main`:
+
+1. List ruleset IDs with
+   `gh api repos/psmfd/pi-config/rulesets --jq '.[] | {id, name}'`.
+2. Disable the affected ruleset with
+   `gh api --method PUT repos/psmfd/pi-config/rulesets/<id> -f enforcement=disabled`.
+3. Land the corrective pull request.
+4. Re-enable the ruleset with
+   `gh api --method PUT repos/psmfd/pi-config/rulesets/<id> -f enforcement=active`.
+
+The ruleset toggle itself is not gated.
 
 ## Branch Naming
 

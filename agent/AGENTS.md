@@ -66,9 +66,9 @@ Read-only specialists exposed via the `subagent` tool. The catalog below is **ge
 | `wsl2-expert` | read-only | WSL2 specialist — `wsl.exe` CLI surface, per-distro `/etc/wsl.conf` and host-side `%UserProfile%\.wslconfig`, distro lifecycle including `wsl --export` / `wsl --import` rootfs packaging (the load-bearing path for distributing as a pre-populated tarball), `/etc/wsl-distribution.conf` OOBE contract, systemd-in-WSL2 enablement, NAT vs mirrored networking modes, Windows ↔ Linux interop and `WSLENV`, WSLg, and runtime diagnostics. Read-only advisor. Spawns isolated subprocess. |
 <!-- END agent-catalog -->
 
-Per-agent tool restrictions and model-policy requests are in each `agent/agents/<name>.md` wrapper. Model policy follows ADR-0076/ADR-0085/ADR-0149 as extended by ADR-0090/ADR-0094: explicit wrapper `model:` pins remain authoritative, but no first-party wrapper currently carries one. Fourteen read-only specialists declare `local-llm: true`; this includes `gitflow-expert`, whose former mutation-risk exclusion ended when ADR-0123 replaced `bash` with mechanically read-only `git_read`/`github_read` tools. When the global local role permits it, the shared capability matrix may select the local `omlx/coding-workhorse` lane before cheapest-capable ranking. The three review specialists (`code-review-expert`, `security-review-expert`, `checkmarx-expert`) declare `capability-tier: frontier`, so the matrix chooses the highest-quality live frontier row provider-agnostically. Local-forbidden agents (wrappers that omit `tools`, or include `bash`) remove local candidates and fail closed when no non-local matrix pick exists. With auto-router active, `/auto lock current` or `/auto lock set <provider/id>` keeps the parent/orchestrator on an exact model until the user changes it; `/auto on` seeds that lock from the current model when none exists. Classifier/matrix ranking is capability-floor first, then local-first where local use is allowed, then cheapest-capable (`input + k·output`, k=1); tier requests rank quality first. A slash-qualified explicit or policy-selected model only reaches child argv when its exact `provider/id` survives the canonical registry/live-availability snapshot. When it does not, the spawn-time gate walks the ADR-0080 fallback ladder and reports the effective rung. See the [standalone matrix lifecycle reference](https://github.com/psmfd/pi-auto-router/blob/main/MATRIX_LIFECYCLE_V1.md) for status/review/refresh semantics and the no-policy-write boundary.
+Wrapper `model:` pins remain authoritative. Local routing requires the global role and explicit `local-llm: true` (14 first-party read-only specialists); wrappers with `bash` or no `tools` remain local-forbidden, and child selection fails closed when no permitted non-local candidate exists. The three review specialists remain `capability-tier: frontier`. With auto-router active, `/auto lock current` or `/auto lock set <provider/id>` pins the parent until changed; `/auto on` seeds an unset lock from the current model. See the [matrix lifecycle reference](https://github.com/psmfd/pi-auto-router/blob/main/MATRIX_LIFECYCLE_V1.md) for ADR-0076/0080/0085/0090/0094/0149 routing, availability, fallback, and review semantics.
 
-All 21 wrapper-paired skills carry `disable-model-invocation: true` on their underlying `agent/skills/<name>/SKILL.md` — they are removed from the parent session's `<available_skills>` system-prompt block, are unreachable through inline auto-trigger, and **must** route via the `subagent` tool (or via the `/review`, `/security-review`, `/full-review` workflows). Agent wrappers explicitly load their paired skill inside the spawned subprocess via `read` or `/skill:<name>`, so subagent behavior is unaffected. This enforces the agent-first routing rule structurally and trims ~7–11 KB from the parent system prompt on every session start. The three review specialists are *additionally* gated by a frontier capability-tier request, isolated subprocess execution, specialist-specific tool allowlists, and explicit read-only behavioral contracts (some retain constrained `bash` for inspection or scans); the live matrix chooses the concrete frontier model.
+All 21 wrapper-paired skills are hidden from parent model discovery with `disable-model-invocation: true`; route them through `subagent` or `/review`, `/security-review`, and `/full-review`. Each child wrapper explicitly loads its paired skill, preserving specialist behavior without parent prompt cost.
 
 ## Workflow catalog
 
@@ -99,6 +99,7 @@ These rules govern session behavior and apply to every task that matches their s
 | File issues first | Sub-rule of plan-before-code: when planning surfaces a work item that should exist as an issue (follow-up, upstream/downstream, tangentially-discovered bug), filing it is plan step 1 — before any code/config changes. Three-way classification at planning time: in-scope (do now) / out-of-scope-but-tracked (file + reference) / not-a-thing (explicitly drop with reasoning). Exemptions: micro-todos within the current PR's scope, Tier 3 review artifacts under `.review/`. | [`rules/file-issues-first.md`](rules/file-issues-first.md) |
 | Documentation in plan | Sub-rule of plan-before-code, sibling to file-issues-first: every plan must enumerate the documentation surfaces the change implies and classify each one in-scope (update now) / out-of-scope-but-tracked (file follow-up + reference) / not-a-thing (explicitly drop with reasoning) before any file modifications. Walks the canonical doc-sync map in `post-implementation-review.md` (single source of truth, not restated) plus ADR-eligibility, README impact, and AGENTS.md rule-table impact. Exemptions mirror plan-before-code and file-issues-first (trivial fixes, subagent-as-executor, Tier 3 `.review/`, doc-only edits). | [`rules/documentation-in-plan.md`](rules/documentation-in-plan.md) |
 | Post-implementation review | Three-tier gate: per-task (run `linter`, verify tests, self-review, update doc-sync pairs), pre-PR (run `scripts/validate.sh`, run `/review` on aggregate diff, **avoid auto-merge race** via draft-first / sequenced commit / accept follow-up debt), and post-merge (verify `gh pr view --json state,mergedAt,mergeCommit` returns `MERGED` with non-null commit before any branch deletion or follow-up closure). Doc-sync map enumerated in the rule. Testing doctrine (#1035): verify the world not the self-report; a guard only guards if the regression fails it (red-first proof); test the real entry path. | [`rules/post-implementation-review.md`](rules/post-implementation-review.md) |
+| Prompt budget | Static UTF-8 byte ratchets gate selected authored prompt surfaces: total AGENTS.md, visible skill metadata, and each wrapper body. Runtime meters remain authoritative for tokens, caching, cost, dynamic extension content, tool schemas, and pi's base prompt. | [`rules/prompt-budget.md`](rules/prompt-budget.md) |
 | Conventional Commits | Commit format `<type>(<scope>): <description>`. Imperative, lowercase, no period. No authorship attributions. Breaking changes use `!`. **PR titles inherit the same lowercase-start / no-leading-punctuation rule** when the repo runs a semantic-PR linter. | [`rules/conventional-commits.md`](rules/conventional-commits.md) |
 | GitHub Flow | `dev` is the protected integration branch: normal topic branches start from and target `dev`. `main` is the protected stable branch and advances through `dev` → `main` promotion PRs opened by `scripts/release.sh`; urgent stable fixes require explicit maintainer authorization plus the `stable-hotfix` label (ADR-0101) and propagate back to `dev` within the same working day. | [`rules/github-flow.md`](rules/github-flow.md) |
 | PR template standard | Three-section PR body: Summary / Test Plan / Risk (+ optional follow-ups). Type-of-change comes from the PR title rather than an in-body checklist. No `.github/PULL_REQUEST_TEMPLATE.md` — convention-enforced. | [`rules/pr-template-standard.md`](rules/pr-template-standard.md) |
@@ -121,74 +122,32 @@ These rules govern session behavior and apply to every task that matches their s
 - **`gitflow-expert` is mechanically read-only.** Git or GitHub mutations must route to the orchestrator or an explicitly authorized interactive specialist.
 - **No subagent invokes another subagent.** Cross-domain concerns surface as escalation notes for the orchestrator.
 - **Vendored extensions are version-pinned by snapshot.** Updates record the source pi version in the commit message. See `agent/extensions/subagent/README.md`.
-- **Both `dev` and `main` are protected by repository rulesets (`protect-dev`, `protect-main`) with no bypass actors — the rules bind the solo maintainer too (ADR-0102).** Normal work must merge to `dev` first; only release promotions and `stable-hotfix`-labeled, explicitly maintainer-authorized urgent fixes (ADR-0101) target `main`. All merges must satisfy the checks required by their target branch (`main` requires `promotion-head-guard`: head must be `dev` or the PR must carry the `stable-hotfix` label). **Unlock procedure** if a future required-check misconfiguration locks `main`: list ruleset IDs with `gh api repos/psmfd/pi-config/rulesets --jq '.[] | {id, name}'`, disable with `gh api --method PUT repos/psmfd/pi-config/rulesets/<id> -f enforcement=disabled`, land the corrective PR, then re-enable with `-f enforcement=active`. The toggle itself is not gated.
+- **`dev` and `main` are protected with no bypass actors, including the maintainer (ADR-0102).** Normal work merges to `dev`; only release promotions and explicitly authorized, `stable-hotfix`-labeled urgent fixes target `main` (ADR-0101). Required checks always apply; `promotion-head-guard` requires `dev` as head or the label. See the [emergency ruleset unlock runbook](rules/github-flow.md#emergency-ruleset-unlock) for required-check misconfiguration recovery.
 
 ## Repository layout (orchestration surface)
 
+The complete repository map lives in [`README.md#layout`](../README.md#layout). Keep this always-loaded view limited to surfaces that govern orchestration.
+
 ```text
 agent/
-├── settings.json
-├── skills/                  # Domain knowledge (agentskills.io standard, model-loadable)
-├── agents/                  # Subagent wrappers consumed by the subagent extension
-├── prompts/                 # Slash-command workflows (/review, /security-review, /full-review, /vendor-update)
-├── rules/                   # Behavioral rules — full text; this file inlines synopses
-├── vendor/
-│   ├── pi/                    # Pinned pi runtime — PSMFD-attested psmfd/pi release (ADR-0009 + ADR-0040); fetched at install time
-│   ├── nvm/                   # Pinned nvm installer (ADR-0010); fetched at install time
-│   ├── gh/                    # Pinned gh (GitHub CLI) release (ADR-0011); fetched at install time
-│   ├── yq/                    # Pinned mikefarah/yq release (ADR-0011); fetched at install time
-│   ├── shellcheck/            # Pinned shellcheck release (ADR-0011); fetched at install time
-│   ├── gitleaks/              # Pinned Gitleaks release (ADR-0037); fetched at install time
-│   ├── bash-parser/           # Pinned pi-bash-parser release (ADR-0099); bash-destructive-guard's AST second pass
-│   ├── cocoindex-code/        # ccc engine + embedding-model pin record (ADR-0033); acquired out-of-band by pipx
-│   └── landlock-run/          # Pinned landlock-run launcher (ADR-0146); Linux-only fetch — Phase 2a bash write confinement
+├── AGENTS.md              # Always-loaded orchestration playbook
+├── agents/                # Subagent wrappers and tool/model boundaries
+├── skills/                # Child-loaded domain knowledge
+├── prompts/               # Routed workflows and response commands
+├── rules/                 # On-demand behavioral policy
+├── vendor/                # Pinned runtime/tool acquisition records
 └── extensions/
-    ├── subagent/                 # Vendored from pi; pinned baseline in subagent/README.md (ADR-0001)
-    ├── secrets-guard/            # Blocks write/edit/bash/artifact_review that would surface secrets
-    ├── bash-destructive-guard/   # Blocks rm/mv + clobber/find -delete/dd/truncate outside safe paths; GuardFall-hardened via shared/shell-lex.ts (ADR-0072)
-    ├── gh-identity-guard/        # Blocks mutating gh/git push tool calls on gh-CLI identity drift (ADR-0022/0027)
-    ├── bash-confinement/         # Phase 2a bash write-confinement policy: arms landlock-run via the pi-bash-sandbox wrapper (Linux; ADR-0146)
-    ├── artifact-handoff/         # Registers `artifact_review` tool for Tier 3 (.review/) payloads
-    ├── web-fetch/                # Registers `web_fetch` tool against first-party-docs allowlist (ADR-0015)
-    ├── github-read/              # Dynamic typed read-only GitHub domain tools (ADR-0123)
-    ├── git-read/                 # Fixed-operation credential-free local Git inspection (ADR-0123)
-    ├── compaction-optimizer/     # Compaction how + when: archive + pruning + deterministic/hybrid modes w/ shrink ladder, prefix-cache-aware when-policy (ADR-0019/0107/0108/0109)
-    ├── expertise-client/         # Dual-profile agent-expertise-api client: local API key or upstream bearer/static OIDC; search + guarded create (ADR-0103)
-    └── …                         # Representative subset — see agent/extensions/README.md for the full catalog (context-manager, auto-router, token-meter, cache-meter, indexing, payload-tuner, expertise-fanout-gate, …)
+    ├── subagent/           # Isolated child dispatch
+    ├── *-guard/            # Secrets, destructive-command, and identity gates
+    ├── *-read/             # Typed read-only Git/GitHub surfaces
+    ├── *-meter/            # Token, cache, and prefill evidence
+    ├── auto-router/        # Model routing policy
+    ├── compaction-optimizer/ # Context compaction and archive policy
+    └── shared/             # Flat shared extension libraries
 
-adrs/                         # Architecture decisions (MADR format)
-hooks/                        # Git hooks (opt-in via INSTALL_GIT_HOOKS=1 ./setup.sh)
-├── secrets-guard.sh          # pre-commit: blocks unencrypted vault files, PEM keys, AWS access keys, GitHub PATs, SSH key paths
-└── gh-identity-guard.sh      # pre-push: GitHub-remote scoped; companion to agent/extensions/gh-identity-guard/ per ADR-0022/0027 (#257)
+adrs/                      # Architecture decisions
 scripts/
-├── regen-agent-catalog.sh    # Single source of truth for the agent catalog table
-├── validate.sh               # Pre-PR validator
-├── validate-pi-vendor.sh     # Structural check for agent/vendor/pi/ (ADR-0009)
-├── validate-nvm-vendor.sh    # Structural check for agent/vendor/nvm/ (ADR-0010)
-├── validate-gh-vendor.sh     # Structural check for agent/vendor/gh/ (ADR-0011)
-├── validate-yq-vendor.sh     # Structural check for agent/vendor/yq/ (ADR-0011)
-├── validate-shellcheck-vendor.sh  # Structural check for agent/vendor/shellcheck/ (ADR-0011)
-├── validate-gitleaks-vendor.sh    # Structural check for agent/vendor/gitleaks/ (ADR-0037)
-├── scan-secrets.sh                # Gitleaks wrapper for working-tree/history scans (ADR-0037)
-├── test-compaction-optimizer.sh   # Runs the compaction-optimizer node:test suite (ADR-0019)
-├── test-gh-identity-hook.sh       # Runs the gh-identity-guard pre-push hook test suite (#257)
-├── test-gh-identity-guard.sh      # Runs the gh-identity-guard node:test suite (ADR-0022)
-├── test-secrets-guard-hook.sh     # Runs the secrets-guard pre-commit hook regression suite (#922)
-├── typecheck-extensions.sh   # Per-extension `tsc --noEmit` for agent/extensions/ (ADR-0021)
-├── lint-extensions.sh        # ESLint v9 + @typescript-eslint type-aware against agent/extensions/ (ADR-0021)
-├── personalize.sh            # Rewrites upstream owner/repo references when forking pi_config
-└── lib/
-    ├── fetch-pi-binary.sh        # Sourceable `fetch_pi_binary()` helper (ADR-0009)
-    ├── platform-detect.sh        # OS/distro/package-manager/arch detection (ADR-0010, extended ADR-0011)
-    ├── install-helpers.sh        # `ih_run` + eight `ih_ensure_*` functions (ADR-0010, ADR-0011)
-    ├── extension-deps.sh         # Sourceable `ensure_extension_deps()`; installs pinned tsc/eslint/SDK into $HOME/.cache/pi_config/extension-deps/ + symlinks `<repo>/node_modules` (ADR-0021)
-    └── gh-verify-user.sh         # Sourceable `gh_verify_user <login>` helper; authoritative active-account probe via `gh api /user` (#217, #250)
-setup.sh                      # Idempotent installer; symlinks ~/.pi → repo
-.review/                      # Tier 3 artifact handoff payloads (ADR-0006/0007); never merged
-docs/archive/smolvm/          # Historical reference for the rescinded substrate ζ (per ADR-0020)
-.github/workflows/
-├── validate.yml              # Runs scripts/validate.sh (required status check on protected branches)
-├── artifact-review-guard.yml # Fails any PR with the `artifact-review` label
-└── setup-smoke.yml           # Fresh-OS smoke test of setup.sh on Ubuntu + macOS runners (#111)
-CODEOWNERS                    # `.review/**` ownership only; second policy surface for Tier 3
+├── regen-agent-catalog.sh # Regenerates the catalog above
+├── validate.sh            # Required pre-PR validation entry
+└── lib/                   # Shared shell helpers
 ```

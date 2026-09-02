@@ -368,6 +368,17 @@ else
   fi
 fi
 
+# --- 5a. Static authored-prompt budget (ADR-0150, #1067) -------------------
+info "Validating static authored-prompt budgets (ADR-0150)"
+if [ ! -x scripts/validate-prompt-budget.sh ]; then
+  err "prompt-budget: scripts/validate-prompt-budget.sh missing or not executable"
+elif prompt_budget_stage_out="$(scripts/validate-prompt-budget.sh 2>&1)"; then
+  ok "prompt-budget: regression suite and selected authored-surface check passed"
+else
+  printf '%s\n' "$prompt_budget_stage_out" >&2
+  err "prompt-budget: required validation stage failed"
+fi
+
 # --- 6. Vendored extensions ------------------------------------------------
 info "Validating agent/extensions/*"
 for d in agent/extensions/*/; do

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "unit": "bytes",
+  "scope": "Selected repository-authored prompt surfaces; see ADR-0150.",
+  "budgets": {
+    "agents-md": 25856,
+    "skills-visible": 0,
+    "wrapper-files": {
+      "agent/agents/ansible-expert.md": 2944,
+      "agent/agents/aws-expert.md": 5184,
+      "agent/agents/azure-devops-expert.md": 2304,
+      "agent/agents/azure-infra-expert.md": 2880,
+      "agent/agents/checkmarx-expert.md": 1984,
+      "agent/agents/code-review-expert.md": 3264,
+      "agent/agents/docker-expert.md": 3328,
+      "agent/agents/docs-expert.md": 1344,
+      "agent/agents/dotnet-expert.md": 3200,
+      "agent/agents/gh-cli-expert.md": 2112,
+      "agent/agents/gitflow-expert.md": 2304,
+      "agent/agents/helm-expert.md": 4352,
+      "agent/agents/hyperv-expert.md": 5632,
+      "agent/agents/linter.md": 2432,
+      "agent/agents/pi-agent-expert.md": 7040,
+      "agent/agents/security-review-expert.md": 3456,
+      "agent/agents/shell-expert.md": 3456,
+      "agent/agents/tauri-expert.md": 3328,
+      "agent/agents/vcluster-expert.md": 2560,
+      "agent/agents/work-item-management-expert.md": 2688,
+      "agent/agents/wsl2-expert.md": 6656
+    }
+  }
+}
