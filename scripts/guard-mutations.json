@@ -76,6 +76,455 @@
           "replace": "      await Promise.resolve();\n      const attestation = attestArgv(freshDefinition, argv);"
         }
       ]
+    },
+    {
+      "id": "p3-archive-digest",
+      "guard": "the acquired archive bytes must match the pinned source digest",
+      "reference": "ADR-0156 fail-closed native preflight; A2/P3",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": ["archive_digest"],
+      "edits": [{
+        "find": "    if sha256_file(archive) != source[\"sha256\"]:\n        fail(\"runtime archive digest mismatch\")",
+        "replace": "    if False and sha256_file(archive) != source[\"sha256\"]:\n        fail(\"runtime archive digest mismatch\")"
+      }]
+    },
+    {
+      "id": "p3-installed-file-digest",
+      "guard": "every installed payload is rehashed against the trusted manifest",
+      "reference": "ADR-0157 digest-attested installed generation",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": ["extracted_digest", "existing_digest_drift"],
+      "edits": [{
+        "find": "        if sha256_file(candidate) != entry[\"sha256\"]:\n            fail(f\"installed file digest mismatch: {entry['path']}\")",
+        "replace": "        if False and sha256_file(candidate) != entry[\"sha256\"]:\n            fail(f\"installed file digest mismatch: {entry['path']}\")"
+      }]
+    },
+    {
+      "id": "p3-exact-mode",
+      "guard": "runtime roots, directories, selectors, manifests, and payloads require exact private modes",
+      "reference": "ADR-0157 digest-attested installed generation",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": ["unsafe_root_mode"],
+      "edits": [{
+        "find": "    if mode_of(metadata) != expected_mode:\n        fail(f\"{label} mode must be exactly {expected_mode:04o}\")",
+        "replace": "    if False and mode_of(metadata) != expected_mode:\n        fail(f\"{label} mode must be exactly {expected_mode:04o}\")"
+      }]
+    },
+    {
+      "id": "p3-writable-ancestor",
+      "guard": "installation refuses group/world-writable existing ancestors",
+      "reference": "ADR-0157 digest-attested installed generation",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": ["writable_ancestor"],
+      "edits": [{
+        "find": "        if mode_of(metadata) & 0o022:\n            fail(\"installation path contains a group/world-writable ancestor\")",
+        "replace": "        if False and mode_of(metadata) & 0o022:\n            fail(\"installation path contains a group/world-writable ancestor\")"
+      }]
+    },
+    {
+      "id": "p3-expected-owner",
+      "guard": "every trusted path component and installed entry must match the expected effective UID",
+      "reference": "ADR-0157 digest-attested installed generation",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": ["wrong_owner"],
+      "edits": [{
+        "find": "    if metadata.st_uid != uid:\n        fail(f\"{label} has an unexpected owner\")",
+        "replace": "    if False and metadata.st_uid != uid:\n        fail(f\"{label} has an unexpected owner\")"
+      }, {
+        "find": "        if current != Path(current.anchor) and metadata.st_uid not in (0, uid):\n            fail(\"installation path contains an untrusted owner\")",
+        "replace": "        if False and current != Path(current.anchor) and metadata.st_uid not in (0, uid):\n            fail(\"installation path contains an untrusted owner\")"
+      }]
+    },
+    {
+      "id": "p3-no-symlink-follow",
+      "guard": "path inspection uses lstat so installation roots and entries cannot be accepted through symlinks",
+      "reference": "ADR-0156 fail-closed artifact paths",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": ["symlinked_root"],
+      "edits": [{
+        "find": "        metadata = path.lstat()",
+        "replace": "        metadata = path.stat()"
+      }, {
+        "find": "        metadata = current.lstat()",
+        "replace": "        metadata = current.stat()"
+      }]
+    },
+    {
+      "id": "p3-archive-inventory",
+      "guard": "the archive member set must exactly equal the closed source manifest inventory",
+      "reference": "ADR-0157 complete executable and dependency closure",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": ["archive_inventory"],
+      "edits": [{
+        "find": "            if set(by_name) != set(expected_members):\n                fail(\"runtime archive inventory does not exactly match the manifest\")",
+        "replace": "            if False and set(by_name) != set(expected_members):\n                fail(\"runtime archive inventory does not exactly match the manifest\")"
+      }]
+    },
+    {
+      "id": "p3-hard-link",
+      "guard": "installed regular files must have exactly one hard link",
+      "reference": "ADR-0157 protected roots and grant safety",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": ["hard_link"],
+      "edits": [{
+        "find": "    if expected_type == \"file\" and metadata.st_nlink != 1:\n        fail(f\"{label} must have exactly one hard link\")",
+        "replace": "    if False and expected_type == \"file\" and metadata.st_nlink != 1:\n        fail(f\"{label} must have exactly one hard link\")"
+      }]
+    },
+    {
+      "id": "p3-closed-inventory",
+      "guard": "installed generation contents must match the manifest bidirectionally",
+      "reference": "ADR-0157 complete executable and dependency closure",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": ["closed_inventory"],
+      "edits": [{
+        "find": "    if actual_dirs != expected_dirs or actual_files != expected_files:\n        fail(\"runtime generation inventory does not exactly match its manifest\")",
+        "replace": "    if False and (actual_dirs != expected_dirs or actual_files != expected_files):\n        fail(\"runtime generation inventory does not exactly match its manifest\")"
+      }]
+    },
+    {
+      "id": "p3-installed-manifest",
+      "guard": "the installed manifest bytes must equal the trusted canonical source manifest",
+      "reference": "ADR-0157 digest-attested installed generation",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": ["installed_manifest_drift"],
+      "edits": [{
+        "find": "    if actual_manifest != manifest_bytes:\n        fail(\"installed runtime manifest does not match the trusted source manifest (a manifest edit requires a new generation string; remove the stale generation directory to reinstall)\")",
+        "replace": "    if False and actual_manifest != manifest_bytes:\n        fail(\"installed runtime manifest does not match the trusted source manifest (a manifest edit requires a new generation string; remove the stale generation directory to reinstall)\")"
+      }]
+    },
+    {
+      "id": "p3-selector-revalidation",
+      "guard": "an existing selector and selected generation are validated before any install or reselection",
+      "reference": "ADR-0157 fresh provenance and readiness checks",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": ["malformed_selector"],
+      "edits": [{
+        "find": "        selected_before = validate_selector(selector, generations, trusted, uid)",
+        "replace": "        selected_before = None"
+      }]
+    },
+    {
+      "id": "p3-platform-gate",
+      "guard": "the installer refuses non-Linux-ARM64 hosts before creating installation state",
+      "reference": "ADR-0156 platform scope; A2/P3",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": ["unsupported_platform"],
+      "edits": [{
+        "find": "    if observed_platform not in (\"linux-aarch64\", \"linux-arm64\"):",
+        "replace": "    if False and observed_platform not in (\"linux-aarch64\", \"linux-arm64\"):"
+      }]
+    },
+    {
+      "id": "p3-fixture-production-home",
+      "guard": "the fixture driver refuses the passwd-derived production HOME",
+      "reference": "A2/P3 test isolation",
+      "file": "scripts/fixtures/p3-expertise-runtime/install-test-driver.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": ["fixture_production_root"],
+      "edits": [{
+        "find": "    if home == account_home:",
+        "replace": "    if False and home == account_home:"
+      }]
+    },
+    {
+      "id": "p3-fixture-production-root",
+      "guard": "the fixture driver resolves and refuses aliases of the production runtime root",
+      "reference": "A2/P3 test isolation",
+      "file": "scripts/fixtures/p3-expertise-runtime/install-test-driver.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": ["fixture_production_alias"],
+      "edits": [{
+        "find": "        args.root.resolve(strict=False).relative_to(production_root)",
+        "replace": "        raise ValueError"
+      }]
+    },
+    {
+      "id": "p3-path-normalization",
+      "guard": "manifest paths and archive member names must be normalized relative paths with no '..' component",
+      "reference": "ADR-0157 digest-attested installed generation",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": [
+        "manifest_traversal",
+        "member_traversal"
+      ],
+      "edits": [
+        {
+          "find": "    if path.is_absolute() or raw != path.as_posix() or any(part in (\"\", \".\", \"..\") for part in path.parts):",
+          "replace": "    if path.is_absolute() or raw != path.as_posix() or any(part in (\"\", \".\") for part in path.parts):"
+        }
+      ]
+    },
+    {
+      "id": "p3-selector-digest",
+      "guard": "the selector must bind the canonical digest of the trusted manifest it names",
+      "reference": "ADR-0157 digest-attested installed generation",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": [
+        "selector_digest"
+      ],
+      "edits": [
+        {
+          "find": "    if digest != sha256_bytes(manifest_bytes):\n        fail(\"runtime selector manifest digest mismatch\")",
+          "replace": "    if False and digest != sha256_bytes(manifest_bytes):\n        fail(\"runtime selector manifest digest mismatch\")"
+        }
+      ]
+    },
+    {
+      "id": "p3-selector-trusted",
+      "guard": "the selector may name only a generation present in the trusted manifest set",
+      "reference": "ADR-0157 digest-attested installed generation",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": [
+        "selector_untrusted"
+      ],
+      "edits": [
+        {
+          "find": "    if generation not in trusted or not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):",
+          "replace": "    if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):"
+        }
+      ]
+    },
+    {
+      "id": "p3-installed-size",
+      "guard": "an installed file must have exactly its manifest size before its digest is checked",
+      "reference": "ADR-0157 digest-attested installed generation",
+      "file": "scripts/install-expertise-runtime.py",
+      "suite": "scripts/test-p3-expertise-runtime-install.sh",
+      "expectFailing": [
+        "installed_size"
+      ],
+      "edits": [
+        {
+          "find": "        if metadata.st_size != entry[\"size\"]:\n            fail(f\"installed file size mismatch: {entry['path']}\")",
+          "replace": "        if False:\n            fail(f\"installed file size mismatch: {entry['path']}\")"
+        }
+      ]
+    },
+    {
+      "id": "p4-artifact-digest",
+      "guard": "the descriptor-read native bytes must match the code-owned policy digest before ELF parsing or loading",
+      "reference": "ADR-0156 fail-closed native preflight; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["digest_mismatch"],
+      "edits": [{
+        "find": "  if (sha256(artifactBytes) !== policy.artifact.sha256) fail(\"P4_ARTIFACT_DIGEST\");",
+        "replace": "  if (false && sha256(artifactBytes) !== policy.artifact.sha256) fail(\"P4_ARTIFACT_DIGEST\");"
+      }]
+    },
+    {
+      "id": "p4-elf-machine",
+      "guard": "the authenticated ELF must identify the approved AArch64 machine before loading",
+      "reference": "ADR-0156 fail-closed native preflight; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["wrong_machine"],
+      "edits": [{
+        "find": "  if (bytes.readUInt16LE(18) !== policy.machine) fail(\"P4_ELF_MACHINE\");",
+        "replace": "  if (false && bytes.readUInt16LE(18) !== policy.machine) fail(\"P4_ELF_MACHINE\");"
+      }]
+    },
+    {
+      "id": "p4-dynamic-needed",
+      "guard": "the authenticated ELF dynamic dependency set must exactly equal the approved ABI profile",
+      "reference": "ADR-0156 dynamic ABI gate; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["unexpected_dependency"],
+      "edits": [{
+        "find": "  if (!equalStrings(needed, [...policy.needed].sort())) fail(\"P4_ELF_NEEDED\");",
+        "replace": "  if (false && !equalStrings(needed, [...policy.needed].sort())) fail(\"P4_ELF_NEEDED\");"
+      }]
+    },
+    {
+      "id": "p4-manifest-compatibility",
+      "guard": "the installed manifest compatibility tuple must equal the immutable code-owned policy",
+      "reference": "ADR-0156 compatibility tuple; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["wrong_manifest_compatibility"],
+      "edits": [{
+        "find": "  if (compatibility.pi !== policy.compatibility.pi || compatibility.bun !== policy.compatibility.bun || compatibility.sqlite !== policy.compatibility.sqlite) fail(\"P4_MANIFEST_COMPATIBILITY\");",
+        "replace": "  if (false && (compatibility.pi !== policy.compatibility.pi || compatibility.bun !== policy.compatibility.bun || compatibility.sqlite !== policy.compatibility.sqlite)) fail(\"P4_MANIFEST_COMPATIBILITY\");"
+      }]
+    },
+    {
+      "id": "p4-runtime-bun",
+      "guard": "the live Bun version must equal the approved compatibility tuple before loading",
+      "reference": "ADR-0156 compatibility tuple; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["wrong_runtime_bun"],
+      "edits": [{
+        "find": "  if (runtime.bun !== policy.compatibility.bun) fail(\"P4_RUNTIME_BUN\");",
+        "replace": "  if (false && runtime.bun !== policy.compatibility.bun) fail(\"P4_RUNTIME_BUN\");"
+      }]
+    },
+    {
+      "id": "p4-final-inode-recheck",
+      "guard": "the pathname inode and metadata must still match the descriptor snapshot immediately before Bun reopens it",
+      "reference": "ADR-0156 same-user TOCTOU residual; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["final_recheck"],
+      "edits": [{
+        "find": "  if (finalPath.dev !== opened.dev || finalPath.ino !== opened.ino || finalPath.size !== opened.size || finalPath.ctimeMs !== opened.ctimeMs) fail(\"P4_ARTIFACT_FINAL_RECHECK\");",
+        "replace": "  if (false && (finalPath.dev !== opened.dev || finalPath.ino !== opened.ino || finalPath.size !== opened.size || finalPath.ctimeMs !== opened.ctimeMs)) fail(\"P4_ARTIFACT_FINAL_RECHECK\");"
+      }]
+    },
+    {
+      "id": "p4-sql-loader-denial",
+      "guard": "SQL load_extension remains unauthorized before and after the single private JavaScript load",
+      "reference": "ADR-0156 capability-confined native initialization; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["sql_loader_enabled"],
+      "edits": [{
+        "find": "  fail(\"P4_SQL_LOADER_ENABLED\");",
+        "replace": "  return;"
+      }]
+    },
+    {
+      "id": "p4-single-loader-call",
+      "guard": "the private initializer makes exactly one Bun loader call and latches every attempt per connection",
+      "reference": "ADR-0156 capability-confined native initialization; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["production_cardinality_structure"],
+      "edits": [{
+        "find": "  try { database.loadExtension(verified.artifactPath); }",
+        "replace": "  database.loadExtension(verified.artifactPath);\n  try { database.loadExtension(verified.artifactPath); }"
+      }]
+    },
+    {
+      "id": "p4-trusted-ancestor-mode",
+      "guard": "every absolute ancestor is trusted-owned and not group/world writable",
+      "reference": "ADR-0156 fail-closed paths; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["writable_ancestor"],
+      "edits": [{
+        "find": "  if (metadata.uid !== 0 && metadata.uid !== uid) fail(\"P4_PATH_OWNER\");\n  if ((modeOf(metadata) & 0o022) !== 0) fail(\"P4_PATH_WRITABLE\");",
+        "replace": "  if (metadata.uid !== 0 && metadata.uid !== uid) fail(\"P4_PATH_OWNER\");\n  if (false && (modeOf(metadata) & 0o022) !== 0) fail(\"P4_PATH_WRITABLE\");"
+      }]
+    },
+    {
+      "id": "p4-dynamic-load-mapping",
+      "guard": "PT_DYNAMIC must map unambiguously inside one file-backed PT_LOAD",
+      "reference": "ADR-0156 ELF and dynamic ABI gate; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["dynamic_outside_load"],
+      "edits": [{
+        "find": "  if (dynamicMappings.length !== 1) fail(\"P4_ELF_DYNAMIC_MAPPING\");",
+        "replace": "  if (false && dynamicMappings.length !== 1) fail(\"P4_ELF_DYNAMIC_MAPPING\");"
+      }]
+    },
+    {
+      "id": "p4-gnu-stack-count",
+      "guard": "the ELF carries exactly one non-executable PT_GNU_STACK",
+      "reference": "ADR-0156 ELF gate; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["missing_gnu_stack", "duplicate_gnu_stack"],
+      "edits": [{
+        "find": "  if (gnuStackCount !== 1) fail(\"P4_ELF_GNU_STACK\");",
+        "replace": "  if (false && gnuStackCount !== 1) fail(\"P4_ELF_GNU_STACK\");"
+      }]
+    },
+    {
+      "id": "p4-version-chain-termination",
+      "guard": "Verneed and Vernaux chains terminate exactly",
+      "reference": "ADR-0156 dynamic ABI gate; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["version_need_unterminated", "version_aux_unterminated"],
+      "edits": [{
+        "find": "        auxOffset += next;\n      } else if (next !== 0) fail(\"P4_ELF_VERSION_TERMINATION\");",
+        "replace": "        auxOffset += next;\n      } else if (false && next !== 0) fail(\"P4_ELF_VERSION_TERMINATION\");"
+      }, {
+        "find": "      needOffset += next;\n    } else if (next !== 0) fail(\"P4_ELF_VERSION_TERMINATION\");",
+        "replace": "      needOffset += next;\n    } else if (false && next !== 0) fail(\"P4_ELF_VERSION_TERMINATION\");"
+      }]
+    },
+    {
+      "id": "p4-executable-stack",
+      "guard": "the single PT_GNU_STACK is non-executable",
+      "reference": "ADR-0156 ELF gate; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["executable_gnu_stack"],
+      "edits": [{
+        "find": "      if ((flags & 1) !== 0) fail(\"P4_ELF_EXEC_STACK\");",
+        "replace": "      if (false && (flags & 1) !== 0) fail(\"P4_ELF_EXEC_STACK\");"
+      }]
+    },
+    {
+      "id": "p4-version-chain-alignment",
+      "guard": "Verneed and Vernaux forward offsets are at least one record and four-byte aligned",
+      "reference": "ADR-0156 dynamic ABI gate; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["version_need_misaligned", "version_aux_misaligned"],
+      "edits": [{
+        "find": "      if (next < 16 || next % 4 !== 0) fail(\"P4_ELF_VERSION_ALIGNMENT\");\n      needOffset += next;",
+        "replace": "      if (false && (next < 16 || next % 4 !== 0)) fail(\"P4_ELF_VERSION_ALIGNMENT\");\n      needOffset += next;"
+      }, {
+        "find": "        if (next < 16 || next % 4 !== 0) fail(\"P4_ELF_VERSION_ALIGNMENT\");\n        auxOffset += next;",
+        "replace": "        if (false && (next < 16 || next % 4 !== 0)) fail(\"P4_ELF_VERSION_ALIGNMENT\");\n        auxOffset += next;"
+      }]
+    },
+    {
+      "id": "p4-version-record-overlap",
+      "guard": "Verneed and Vernaux records cannot overlap",
+      "reference": "ADR-0156 dynamic ABI gate; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["version_need_overlap"],
+      "edits": [{
+        "find": "    if (claimed.some((item) => start < item.end && item.start < end)) fail(\"P4_ELF_VERSION_OVERLAP\");",
+        "replace": "    if (false && claimed.some((item) => start < item.end && item.start < end)) fail(\"P4_ELF_VERSION_OVERLAP\");"
+      }]
+    },
+    {
+      "id": "p4-load-attempt-latch-order",
+      "guard": "the per-connection attempt latch is set before the sole loader call so failures cannot be retried",
+      "reference": "ADR-0156 exact-once native initialization; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["production_latch_order_structure"],
+      "edits": [{
+        "find": "  attemptedLoads.add(database);\n  try { database.loadExtension(verified.artifactPath); }\n  catch { return fail(\"P4_LOAD_FAILED\"); }",
+        "replace": "  try { database.loadExtension(verified.artifactPath); }\n  catch { return fail(\"P4_LOAD_FAILED\"); }\n  attemptedLoads.add(database);"
+      }]
+    },
+    {
+      "id": "p4-test-seam-no-path",
+      "guard": "the exported test seam returns no selected native path and carries no loader capability",
+      "reference": "ADR-0156 private native capability; A2/P4",
+      "file": "agent/extensions/shared/expertise-native-runtime.ts",
+      "suite": "scripts/test-p4-native-preflight.sh",
+      "expectFailing": ["valid_spy"],
+      "edits": [{
+        "find": "export const testExpertiseNativePreflight = (options: PreflightTestOptions): { generation: string; version: string } => {\n  const verified = preflightInstalledRuntime(options);\n  return { generation: verified.generation, version: verified.version };\n};",
+        "replace": "export const testExpertiseNativePreflight = (options: PreflightTestOptions): { generation: string; version: string } => {\n  const verified = preflightInstalledRuntime(options);\n  return { artifactPath: verified.artifactPath, generation: verified.generation, version: verified.version } as unknown as { generation: string; version: string };\n};"
+      }]
     }
   ]
 }

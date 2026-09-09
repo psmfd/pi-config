@@ -1900,6 +1900,69 @@ else
   err "hashline-edit: scripts/test-hashline-edit.sh missing or not executable; required check skipped"
 fi
 
+# --- 9b-p2. installed-pi mutation-tool ownership feasibility (ADR-0157) ----
+info "Running installed-pi P2 tool-ownership probe"
+if [ -x scripts/test-p2-tool-ownership.sh ]; then
+  if p2o_output="$(scripts/test-p2-tool-ownership.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$p2o_output"
+    fi
+    ok "P2 tool ownership: installed-pi probes passed"
+  else
+    p2o_status=$?
+    printf '%s\n' "$p2o_output" >&2
+    if [ "$p2o_status" -eq 2 ]; then
+      err "P2 tool ownership: environment unavailable (jq/node/sha256 tool/pinned pi cache or version; see probe output above); required check skipped"
+    else
+      err "P2 tool ownership: probe failed (exit $p2o_status)"
+    fi
+  fi
+else
+  err "P2 tool ownership: scripts/test-p2-tool-ownership.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-p3. digest-attested expertise runtime installation (ADR-0156/0157) --
+info "Running P3 expertise runtime installation tests"
+if [ -x scripts/test-p3-expertise-runtime-install.sh ]; then
+  if p3r_output="$(scripts/test-p3-expertise-runtime-install.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$p3r_output"
+    fi
+    ok "P3 expertise runtime: installation tests passed"
+  else
+    p3r_status=$?
+    printf '%s\n' "$p3r_output" >&2
+    if [ "$p3r_status" -eq 2 ]; then
+      err "P3 expertise runtime: environment unavailable (python3/find/id, a sha256 tool, GNU or BSD stat, or a fixture could not be built; see output above); required check skipped"
+    else
+      err "P3 expertise runtime: installation tests failed (exit $p3r_status)"
+    fi
+  fi
+else
+  err "P3 expertise runtime: scripts/test-p3-expertise-runtime-install.sh missing or not executable; required check skipped"
+fi
+
+# --- 9b-p4. fail-closed expertise native preflight (ADR-0156) --------------
+info "Running P4 expertise native-preflight tests"
+if [ -x scripts/test-p4-native-preflight.sh ]; then
+  if p4n_output="$(scripts/test-p4-native-preflight.sh 2>&1)"; then
+    if [ "$VERBOSE" = "1" ]; then
+      printf '%s\n' "$p4n_output"
+    fi
+    ok "P4 expertise native preflight: installed-pi probes passed"
+  else
+    p4n_status=$?
+    printf '%s\n' "$p4n_output" >&2
+    if [ "$p4n_status" -eq 2 ]; then
+      err "P4 expertise native preflight: environment unavailable (python3/jq/node/id, pinned pi, or fixture install; see output above); required check skipped"
+    else
+      err "P4 expertise native preflight: probes failed (exit $p4n_status)"
+    fi
+  fi
+else
+  err "P4 expertise native preflight: scripts/test-p4-native-preflight.sh missing or not executable; required check skipped"
+fi
+
 # --- 9b-token-cli. token-meter CLI self-test (ADR-0073) --------------------
 info "Running token-meter CLI self-test"
 if [ -x scripts/token-meter.sh ]; then

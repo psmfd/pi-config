@@ -88,3 +88,9 @@ expertise-audit-*.json
 # the extension when armed; it is operator-local measurement data, not source.
 # It was committed by accident in #925 and untracked here.
 agent/extensions/compaction-optimizer/events.jsonl
+
+# Python bytecode caches. scripts/install-expertise-runtime.py and its fixture
+# driver (PR #1101, ADR-0158) are the first Python under scripts/; py_compile
+# and the P3 suite write these.
+__pycache__/
+*.py[cod]

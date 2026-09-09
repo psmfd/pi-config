@@ -134,7 +134,7 @@ PY
     continue
   fi
 
-  out="$("$suite" 2>&1)"
+  out="$(GUARD_MUTATION_ID="$id" "$suite" 2>&1)"
   suite_rc=$?
   # Restore before asserting, so an assertion failure never leaves a mutated
   # tree behind.
